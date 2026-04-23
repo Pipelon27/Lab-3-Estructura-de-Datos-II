@@ -1,0 +1,196 @@
+{
+  "npcs": [
+    {
+      "id": "npc_marcus",
+      "name": "Marcus Rivera",
+      "group": "athletes",
+      "public_personality": "Friendly team captain who welcomes everyone",
+      "private_personality": "Secretly being pressured by the Smile Club to bully weaker students",
+      "schedule": {
+        "arrival": 0, "class_1": 0, "break_1": 1, "class_2": 0,
+        "lunch": 3, "activities": 1, "departure": 0, "night": 5
+      },
+      "dialogue_ids": {
+        "aiden": "dlg_marcus_aiden",
+        "lena": "dlg_marcus_lena"
+      }
+    },
+    {
+      "id": "npc_sophie",
+      "name": "Sophie Chen",
+      "group": "tech_club",
+      "public_personality": "Quiet coder who keeps to herself",
+      "private_personality": "Runs an anonymous anti-bullying blog exposing the Smile Club",
+      "schedule": {
+        "arrival": 0, "class_1": 2, "break_1": 4, "class_2": 2,
+        "lunch": 3, "activities": 2, "departure": 0, "night": 2
+      },
+      "dialogue_ids": {
+        "aiden": "dlg_sophie_aiden",
+        "lena": "dlg_sophie_lena"
+      }
+    },
+    {
+      "id": "npc_dylan",
+      "name": "Dylan Brooks",
+      "group": "populars",
+      "public_personality": "Charming influencer loved by everyone",
+      "private_personality": "Core enforcer of the Smile Club — organises harassment campaigns",
+      "schedule": {
+        "arrival": 0, "class_1": 0, "break_1": 3, "class_2": 0,
+        "lunch": 3, "activities": 5, "departure": 0, "night": 5
+      },
+      "dialogue_ids": {
+        "aiden": "dlg_dylan_aiden",
+        "lena": "dlg_dylan_lena"
+      }
+    },
+    {
+      "id": "npc_emma",
+      "name": "Emma Torres",
+      "group": "academics",
+      "public_personality": "Studious valedictorian focused on grades",
+      "private_personality": "Being blackmailed by the Smile Club to write essays for members",
+      "schedule": {
+        "arrival": 0, "class_1": 4, "break_1": 4, "class_2": 4,
+        "lunch": 3, "activities": 4, "departure": 0, "night": 4
+      },
+      "dialogue_ids": {
+        "aiden": "dlg_emma_aiden",
+        "lena": "dlg_emma_lena"
+      }
+    },
+    {
+      "id": "npc_jake",
+      "name": "Jake Morrison",
+      "group": "rebels",
+      "public_personality": "Known troublemaker who skips class",
+      "private_personality": "Has photographic evidence against the Smile Club but is afraid to share",
+      "schedule": {
+        "arrival": 0, "class_1": 0, "break_1": 5, "class_2": 0,
+        "lunch": 3, "activities": 5, "departure": 0, "night": 5
+      },
+      "dialogue_ids": {
+        "aiden": "dlg_jake_aiden",
+        "lena": "dlg_jake_lena"
+      }
+    },
+    {
+      "id": "npc_mia",
+      "name": "Mia Nakamura",
+      "group": "outsiders",
+      "public_personality": "Shy transfer student who avoids crowds",
+      "private_personality": "Current victim of a coordinated cyberbullying campaign by Ava",
+      "schedule": {
+        "arrival": 0, "class_1": 0, "break_1": 4, "class_2": 0,
+        "lunch": 3, "activities": 4, "departure": 0, "night": 0
+      },
+      "dialogue_ids": {
+        "aiden": "dlg_mia_aiden",
+        "lena": "dlg_mia_lena"
+      }
+    },
+    {
+      "id": "npc_director",
+      "name": "Director Walsh",
+      "group": "academics",
+      "public_personality": "Respected principal who promotes anti-bullying",
+      "private_personality": "Created the Smile Club as a tool for social control of students",
+      "schedule": {
+        "arrival": 0, "class_1": 0, "break_1": 0, "class_2": 0,
+        "lunch": 0, "activities": 0, "departure": 0, "night": 6
+      },
+      "dialogue_ids": {
+        "aiden": "dlg_walsh_aiden",
+        "lena": "dlg_walsh_lena"
+      }
+    },
+    {
+      "id": "npc_tyler",
+      "name": "Tyler Dunn",
+      "group": "athletes",
+      "public_personality": "Star quarterback — aggressive but popular",
+      "private_personality": "Bullies weaker students to maintain social dominance",
+      "schedule": {
+        "arrival": 0, "class_1": 0, "break_1": 1, "class_2": 0,
+        "lunch": 3, "activities": 1, "departure": 0, "night": 5
+      },
+      "dialogue_ids": {
+        "aiden": "dlg_tyler_aiden",
+        "lena": "dlg_tyler_lena"
+      }
+    },
+    {
+      "id": "npc_ava",
+      "name": "Ava Patel",
+      "group": "populars",
+      "public_personality": "Social media queen with thousands of followers",
+      "private_personality": "Manages the anonymous harassment accounts for the Smile Club",
+      "schedule": {
+        "arrival": 0, "class_1": 0, "break_1": 3, "class_2": 0,
+        "lunch": 3, "activities": 2, "departure": 0, "night": 5
+      },
+      "dialogue_ids": {
+        "aiden": "dlg_ava_aiden",
+        "lena": "dlg_ava_lena"
+      }
+    },
+    {
+      "id": "npc_lucas",
+      "name": "Lucas Kim",
+      "group": "tech_club",
+      "public_personality": "Hardware enthusiast who builds custom PCs",
+      "private_personality": "Unknowingly maintains the Smile Club servers in the basement",
+      "schedule": {
+        "arrival": 0, "class_1": 2, "break_1": 2, "class_2": 2,
+        "lunch": 3, "activities": 2, "departure": 0, "night": 2
+      },
+      "dialogue_ids": {
+        "aiden": "dlg_lucas_aiden",
+        "lena": "dlg_lucas_lena"
+      }
+    },
+    {
+      "id": "npc_zoe",
+      "name": "Zoe Martin",
+      "group": "rebels",
+      "public_personality": "Graffiti artist and general provocateur",
+      "private_personality": "Leaves coded messages around the school hinting at the Smile Club",
+      "schedule": {
+        "arrival": 0, "class_1": 0, "break_1": 5, "class_2": 0,
+        "lunch": 3, "activities": 5, "departure": 0, "night": 5
+      },
+      "dialogue_ids": {
+        "aiden": "dlg_zoe_aiden",
+        "lena": "dlg_zoe_lena"
+      }
+    },
+    {
+      "id": "npc_noah",
+      "name": "Noah Harris",
+      "group": "outsiders",
+      "public_personality": "Shy bookworm always in the library",
+      "private_personality": "Knows the full history of the original anti-bullying system before Walsh corrupted it",
+      "schedule": {
+        "arrival": 0, "class_1": 4, "break_1": 4, "class_2": 4,
+        "lunch": 3, "activities": 4, "departure": 0, "night": 4
+      },
+      "dialogue_ids": {
+        "aiden": "dlg_noah_aiden",
+        "lena": "dlg_noah_lena"
+      }
+    }
+  ],
+  "relationships": [
+    {"from": "npc_marcus", "to": "npc_tyler", "stats": {"friendship": 70, "respect": 60, "fear": 10, "trust": 40, "suspicion": 15}},
+    {"from": "npc_dylan", "to": "npc_ava", "stats": {"friendship": 80, "respect": 50, "fear": 0, "trust": 60, "suspicion": 10}},
+    {"from": "npc_sophie", "to": "npc_lucas", "stats": {"friendship": 75, "respect": 70, "fear": 0, "trust": 65, "suspicion": 5}},
+    {"from": "npc_jake", "to": "npc_zoe", "stats": {"friendship": 65, "respect": 55, "fear": 0, "trust": 55, "suspicion": 10}},
+    {"from": "npc_mia", "to": "npc_noah", "stats": {"friendship": 55, "respect": 50, "fear": 0, "trust": 45, "suspicion": 5}},
+    {"from": "npc_director", "to": "npc_dylan", "stats": {"friendship": 30, "respect": 20, "fear": 40, "trust": 20, "suspicion": 60}},
+    {"from": "npc_tyler", "to": "npc_mia", "stats": {"friendship": 10, "respect": 5, "fear": 0, "trust": 10, "suspicion": 20}},
+    {"from": "npc_ava", "to": "npc_mia", "stats": {"friendship": 5, "respect": 5, "fear": 0, "trust": 5, "suspicion": 30}},
+    {"from": "npc_emma", "to": "npc_director", "stats": {"friendship": 20, "respect": 60, "fear": 50, "trust": 15, "suspicion": 70}},
+    {"from": "npc_lucas", "to": "npc_director", "stats": {"friendship": 40, "respect": 55, "fear": 10, "trust": 30, "suspicion": 10}}
+  ]
+}

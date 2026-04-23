@@ -1,0 +1,372 @@
+{
+  "dialogues": [
+    {
+      "id": "dlg_marcus_aiden",
+      "tree": {
+        "id": "m_root",
+        "speaker": "Marcus Rivera",
+        "text": "Hey, you're the new kid right? Name's Marcus. Welcome to Ravenside High!",
+        "consequences": {},
+        "is_player_choice": false,
+        "children": [
+          {
+            "id": "m_c1",
+            "speaker": "Player",
+            "text": "Thanks! What's this place like?",
+            "consequences": {},
+            "is_player_choice": true,
+            "children": [
+              {
+                "id": "m_c1r",
+                "speaker": "Marcus Rivera",
+                "text": "It's... mostly fine. But watch out for the Smile Club. They run things around here — and not in a good way.",
+                "consequences": {"reputation_changes": {"athletes": 5}, "xp": 10},
+                "is_player_choice": false,
+                "children": []
+              }
+            ]
+          },
+          {
+            "id": "m_c2",
+            "speaker": "Player",
+            "text": "Yeah. Who runs things around here?",
+            "consequences": {},
+            "is_player_choice": true,
+            "children": [
+              {
+                "id": "m_c2r",
+                "speaker": "Marcus Rivera",
+                "text": "Director Walsh is the principal. But Dylan Brooks? He acts like he owns the halls. And lately... people are afraid of him.",
+                "consequences": {"xp": 15, "reputation_changes": {"athletes": 3}},
+                "is_player_choice": false,
+                "children": []
+              }
+            ]
+          },
+          {
+            "id": "m_c3",
+            "speaker": "Player",
+            "text": "I'm not here to make friends. Just point me to the cafeteria.",
+            "consequences": {"reputation_changes": {"athletes": -3}},
+            "is_player_choice": true,
+            "children": [
+              {
+                "id": "m_c3r",
+                "speaker": "Marcus Rivera",
+                "text": "Alright then... It's down the main hall. Can't miss it.",
+                "consequences": {},
+                "is_player_choice": false,
+                "children": []
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "dlg_marcus_lena",
+      "tree": {
+        "id": "m2_root",
+        "speaker": "Marcus Rivera",
+        "text": "Oh hey — you must be Aiden's sister. I'm Marcus. He's already making a name for himself on the field.",
+        "consequences": {},
+        "is_player_choice": false,
+        "children": [
+          {
+            "id": "m2_c1",
+            "speaker": "Player",
+            "text": "I'm Lena. What can you tell me about the school's network? Any interesting systems?",
+            "consequences": {},
+            "is_player_choice": true,
+            "children": [
+              {
+                "id": "m2_c1r",
+                "speaker": "Marcus Rivera",
+                "text": "Network? I'm more of a ball-and-field guy. But Sophie Chen in the tech club — she'd know everything about that.",
+                "consequences": {"mission_unlock": "mission_strange_rumours", "xp": 10},
+                "is_player_choice": false,
+                "children": []
+              }
+            ]
+          },
+          {
+            "id": "m2_c2",
+            "speaker": "Player",
+            "text": "Nice to meet you. Any survival tips for the new girl?",
+            "consequences": {},
+            "is_player_choice": true,
+            "children": [
+              {
+                "id": "m2_c2r",
+                "speaker": "Marcus Rivera",
+                "text": "Keep your head down, make the right friends, and don't attract the wrong attention. Especially from Dylan's crew.",
+                "consequences": {"reputation_changes": {"athletes": 5}, "xp": 5},
+                "is_player_choice": false,
+                "children": []
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "dlg_sophie_aiden",
+      "tree": {
+        "id": "s_root",
+        "speaker": "Sophie Chen",
+        "text": "You're Aiden, right? I heard you've been asking about the Smile Club. Be careful who hears you.",
+        "consequences": {},
+        "is_player_choice": false,
+        "children": [
+          {
+            "id": "s_c1",
+            "speaker": "Player",
+            "text": "I think something's really wrong here. Can you help me figure it out?",
+            "consequences": {"xp": 15},
+            "is_player_choice": true,
+            "children": [
+              {
+                "id": "s_c1r",
+                "speaker": "Sophie Chen",
+                "text": "Finally, someone who sees it. Come to the Computer Lab — I'll show you what I've been tracking. But we need to be discreet.",
+                "consequences": {"reputation_changes": {"tech_club": 10}},
+                "is_player_choice": false,
+                "children": []
+              }
+            ]
+          },
+          {
+            "id": "s_c2",
+            "speaker": "Player",
+            "text": "Never mind, forget I asked.",
+            "consequences": {},
+            "is_player_choice": true,
+            "children": [
+              {
+                "id": "s_c2r",
+                "speaker": "Sophie Chen",
+                "text": "Suit yourself. But the truth doesn't stay hidden forever. When you're ready... I'll be in the lab.",
+                "consequences": {},
+                "is_player_choice": false,
+                "children": []
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "dlg_sophie_lena",
+      "tree": {
+        "id": "s2_root",
+        "speaker": "Sophie Chen",
+        "text": "Lena Parker? Word is you're decent with code. I could use someone like you.",
+        "consequences": {},
+        "is_player_choice": false,
+        "children": [
+          {
+            "id": "s2_c1",
+            "speaker": "Player",
+            "text": "I'm good with more than code. What do you need?",
+            "consequences": {"xp": 20},
+            "is_player_choice": true,
+            "children": [
+              {
+                "id": "s2_c1r",
+                "speaker": "Sophie Chen",
+                "text": "The school's 'anti-bullying' system is a front. Director Walsh built it to monitor and control students. I need help cracking it.",
+                "consequences": {"reputation_changes": {"tech_club": 12}, "mission_unlock": "mission_unmasked"},
+                "is_player_choice": false,
+                "children": []
+              }
+            ]
+          },
+          {
+            "id": "s2_c2",
+            "speaker": "Player",
+            "text": "Sounds dangerous. Count me out.",
+            "consequences": {},
+            "is_player_choice": true,
+            "children": [
+              {
+                "id": "s2_c2r",
+                "speaker": "Sophie Chen",
+                "text": "Dangerous is what they did to Mia Nakamura. Think about that.",
+                "consequences": {},
+                "is_player_choice": false,
+                "children": []
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "dlg_dylan_aiden",
+      "tree": {
+        "id": "d_root",
+        "speaker": "Dylan Brooks",
+        "text": "Well, well. The new kid. You've been making waves, Parker. I like that — or maybe I don't.",
+        "consequences": {},
+        "is_player_choice": false,
+        "children": [
+          {
+            "id": "d_c1",
+            "speaker": "Player",
+            "text": "I know about the Smile Club, Dylan.",
+            "consequences": {"xp": 20},
+            "is_player_choice": true,
+            "children": [
+              {
+                "id": "d_c1r",
+                "speaker": "Dylan Brooks",
+                "text": "Ha. You don't know anything. And if you're smart, you'll keep it that way. This is MY school.",
+                "consequences": {"reputation_changes": {"populars": -10}, "npc_stat_changes": {"npc_dylan": {"suspicion": 20}}},
+                "is_player_choice": false,
+                "children": []
+              }
+            ]
+          },
+          {
+            "id": "d_c2",
+            "speaker": "Player",
+            "text": "I'm just trying to fit in. No trouble here.",
+            "consequences": {},
+            "is_player_choice": true,
+            "children": [
+              {
+                "id": "d_c2r",
+                "speaker": "Dylan Brooks",
+                "text": "Smart answer. Keep playing nice, and maybe you'll survive here. Smile, Parker.",
+                "consequences": {"reputation_changes": {"populars": 3}},
+                "is_player_choice": false,
+                "children": []
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "dlg_mia_aiden",
+      "tree": {
+        "id": "mia_root",
+        "speaker": "Mia Nakamura",
+        "text": "Oh... hi. Sorry, I didn't see you there. I was just... it doesn't matter.",
+        "consequences": {},
+        "is_player_choice": false,
+        "children": [
+          {
+            "id": "mia_c1",
+            "speaker": "Player",
+            "text": "Hey, are you okay? You seem upset.",
+            "consequences": {"xp": 10},
+            "is_player_choice": true,
+            "children": [
+              {
+                "id": "mia_c1r",
+                "speaker": "Mia Nakamura",
+                "text": "I... someone's been posting things about me online. Fake accounts. Horrible things. I don't know who it is.",
+                "consequences": {"reputation_changes": {"outsiders": 8}, "reveal_mask": "npc_mia"},
+                "is_player_choice": false,
+                "children": []
+              }
+            ]
+          },
+          {
+            "id": "mia_c2",
+            "speaker": "Player",
+            "text": "Whatever. See you around.",
+            "consequences": {"reputation_changes": {"outsiders": -5}},
+            "is_player_choice": true,
+            "children": [
+              {
+                "id": "mia_c2r",
+                "speaker": "Mia Nakamura",
+                "text": "... yeah. See you.",
+                "consequences": {},
+                "is_player_choice": false,
+                "children": []
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "dlg_jake_aiden",
+      "tree": {
+        "id": "j_root",
+        "speaker": "Jake Morrison",
+        "text": "You're either brave or stupid coming up here, new kid. Rooftop's mine.",
+        "consequences": {},
+        "is_player_choice": false,
+        "children": [
+          {
+            "id": "j_c1",
+            "speaker": "Player",
+            "text": "I heard you have proof about the Smile Club. I need it.",
+            "consequences": {"xp": 15},
+            "is_player_choice": true,
+            "children": [
+              {
+                "id": "j_c1r",
+                "speaker": "Jake Morrison",
+                "text": "Maybe I do. Maybe I don't. Either way, I'm not giving it up for free. Bring me something the Smile Club doesn't want found, and we'll talk.",
+                "consequences": {"reputation_changes": {"rebels": 10}},
+                "is_player_choice": false,
+                "children": []
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "dlg_walsh_aiden",
+      "tree": {
+        "id": "w_root",
+        "speaker": "Director Walsh",
+        "text": "Ah, Aiden Parker. Settling in well, I hope? Ravenside prides itself on being a welcoming environment.",
+        "consequences": {},
+        "is_player_choice": false,
+        "children": [
+          {
+            "id": "w_c1",
+            "speaker": "Player",
+            "text": "I know about the Smile Club. I know you created it. It's over, Walsh.",
+            "consequences": {"xp": 50},
+            "is_player_choice": true,
+            "children": [
+              {
+                "id": "w_c1r",
+                "speaker": "Director Walsh",
+                "text": "You have no idea what you're talking about. The Smile Club was designed to PROTECT students. Everything I do is for this school.",
+                "consequences": {"reputation_changes": {"academics": -10}, "reveal_mask": "npc_director"},
+                "is_player_choice": false,
+                "children": []
+              }
+            ]
+          },
+          {
+            "id": "w_c2",
+            "speaker": "Player",
+            "text": "Yes sir, everything's great. Thank you.",
+            "consequences": {},
+            "is_player_choice": true,
+            "children": [
+              {
+                "id": "w_c2r",
+                "speaker": "Director Walsh",
+                "text": "Good. Remember — at Ravenside, we smile. Always.",
+                "consequences": {},
+                "is_player_choice": false,
+                "children": []
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

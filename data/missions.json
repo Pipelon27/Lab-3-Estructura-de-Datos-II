@@ -1,0 +1,109 @@
+{
+  "missions": [
+    {
+      "id": "mission_first_day",
+      "title": "First Day at Ravenside",
+      "description": "It's your first day at Ravenside High. Explore the school, find the cafeteria, and get to know some of your classmates.",
+      "objectives": [
+        {"type": "go_to_zone", "target": "3", "description": "Visit the Cafeteria", "required": 1},
+        {"type": "talk_to", "target": "npc_marcus", "description": "Talk to Marcus Rivera", "required": 1}
+      ],
+      "prerequisites": [],
+      "rewards": {"xp": 50, "reputation": {"athletes": 5}},
+      "status": "available"
+    },
+    {
+      "id": "mission_strange_rumours",
+      "title": "Strange Rumours",
+      "description": "Marcus mentioned something about a 'Smile Club'. Sophie Chen in the Computer Lab might know more.",
+      "objectives": [
+        {"type": "talk_to", "target": "npc_sophie", "description": "Talk to Sophie Chen", "required": 1},
+        {"type": "go_to_zone", "target": "2", "description": "Visit the Computer Lab", "required": 1}
+      ],
+      "prerequisites": ["mission_first_day"],
+      "rewards": {"xp": 80, "reputation": {"tech_club": 10}},
+      "status": "locked"
+    },
+    {
+      "id": "mission_library_secrets",
+      "title": "Library Secrets",
+      "description": "Rumour has it that old records in the Library contain the original anti-bullying system's history. Talk to Noah.",
+      "objectives": [
+        {"type": "go_to_zone", "target": "4", "description": "Go to the Library", "required": 1},
+        {"type": "talk_to", "target": "npc_noah", "description": "Talk to Noah Harris", "required": 1}
+      ],
+      "prerequisites": ["mission_strange_rumours"],
+      "rewards": {"xp": 60, "reputation": {"academics": 8}},
+      "status": "locked"
+    },
+    {
+      "id": "mission_rebel_evidence",
+      "title": "Rebel Evidence",
+      "description": "Jake Morrison on the Rooftop claims to have evidence against the Smile Club. Can you convince him to share it?",
+      "objectives": [
+        {"type": "go_to_zone", "target": "5", "description": "Go to the Rooftop", "required": 1},
+        {"type": "talk_to", "target": "npc_jake", "description": "Talk to Jake Morrison", "required": 1}
+      ],
+      "prerequisites": ["mission_strange_rumours"],
+      "rewards": {"xp": 90, "reputation": {"rebels": 12}},
+      "status": "locked"
+    },
+    {
+      "id": "mission_unmasked",
+      "title": "Unmasked",
+      "description": "You need hard proof. Hack into the Computer Lab server and confront Jake with what you find.",
+      "objectives": [
+        {"type": "hack_target", "target": "lab_server", "description": "Hack the lab server", "required": 1},
+        {"type": "talk_to", "target": "npc_jake", "description": "Share what you found with Jake", "required": 1}
+      ],
+      "prerequisites": ["mission_rebel_evidence"],
+      "rewards": {
+        "xp": 120,
+        "reputation": {"rebels": 15, "tech_club": 10},
+        "items": [{"name": "USB Evidence", "category": "usb", "description": "Contains proof of the Smile Club's activities"}]
+      },
+      "status": "locked"
+    },
+    {
+      "id": "mission_helping_mia",
+      "title": "Helping Mia",
+      "description": "Mia Nakamura is a target of cyberbullying. Help her by intercepting the harassment or standing up to her bullies.",
+      "objectives": [
+        {"type": "talk_to", "target": "npc_mia", "description": "Talk to Mia about what's happening", "required": 1},
+        {"type": "talk_to", "target": "npc_ava", "description": "Confront Ava Patel", "required": 1}
+      ],
+      "prerequisites": ["mission_strange_rumours"],
+      "rewards": {"xp": 100, "reputation": {"outsiders": 15, "populars": -5}},
+      "status": "locked"
+    },
+    {
+      "id": "mission_server_room",
+      "title": "Server Room Access",
+      "description": "You need to find a way into the Basement. Lucas Kim might know how to get in.",
+      "objectives": [
+        {"type": "talk_to", "target": "npc_lucas", "description": "Ask Lucas about the basement servers", "required": 1},
+        {"type": "collect_item", "target": "Basement Key", "description": "Obtain the Basement Key", "required": 1}
+      ],
+      "prerequisites": ["mission_unmasked"],
+      "rewards": {
+        "xp": 100,
+        "unlock_zone": 6,
+        "items": [{"name": "Basement Key", "category": "key", "description": "Opens the door to the school basement"}]
+      },
+      "status": "locked"
+    },
+    {
+      "id": "mission_final_showdown",
+      "title": "Final Showdown",
+      "description": "This is it. Enter the Basement, disable the Smile Club's central server, and confront Director Walsh with the evidence.",
+      "objectives": [
+        {"type": "go_to_zone", "target": "6", "description": "Enter the Basement", "required": 1},
+        {"type": "hack_target", "target": "smile_server", "description": "Disable the Smile Club server", "required": 1},
+        {"type": "talk_to", "target": "npc_director", "description": "Confront Director Walsh", "required": 1}
+      ],
+      "prerequisites": ["mission_server_room"],
+      "rewards": {"xp": 200},
+      "status": "locked"
+    }
+  ]
+}
