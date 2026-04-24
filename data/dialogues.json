@@ -368,5 +368,79 @@
         ]
       }
     }
+    ,
+    {
+      "id": "dlg_oscar_aiden",
+      "tree": {
+        "id": "o_root",
+        "speaker": "Oscar Jimenez",
+        "text": "New kid. Ping pong. Now.",
+        "consequences": {},
+        "is_player_choice": false,
+        "children": [
+          {
+            "id": "o_q1",
+            "speaker": "Player",
+            "text": "Why should I?",
+            "consequences": {},
+            "is_player_choice": true,
+            "children": [
+              {
+                "id": "o_r1",
+                "speaker": "Oscar Jimenez",
+                "text": "Lose, and your reputation drops.\nWin, and people respect you.",
+                "consequences": {},
+                "is_player_choice": false,
+                "children": [
+                  {
+                    "id": "o_r2",
+                    "speaker": "Oscar Jimenez",
+                    "text": "So... scared?",
+                    "consequences": {},
+                    "is_player_choice": false,
+                    "children": [
+                      {
+                        "id": "o_choice_yes",
+                        "speaker": "Player",
+                        "text": "Yes, accept the challenge",
+                        "consequences": {"start_pingpong": true},
+                        "is_player_choice": true,
+                        "children": [
+                          {
+                            "id": "o_accept_resp",
+                            "speaker": "Aiden",
+                            "text": "Let\u2019s do it.",
+                            "consequences": {},
+                            "is_player_choice": false,
+                            "children": []
+                          }
+                        ]
+                      },
+                      {
+                        "id": "o_choice_no",
+                        "speaker": "Player",
+                        "text": "No, reject the challenge",
+                        "consequences": {},
+                        "is_player_choice": true,
+                        "children": [
+                          {
+                            "id": "o_coward",
+                            "speaker": "Oscar Jimenez",
+                            "text": "Coward.",
+                            "consequences": {},
+                            "is_player_choice": false,
+                            "children": []
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    }
   ]
 }

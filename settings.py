@@ -162,6 +162,7 @@ class GameState(Enum):
     DIALOGUE         = auto()
     COMBAT           = auto()
     HACKING          = auto()
+    PINGPONG         = auto()
     TRADING          = auto()
     INVENTORY_SCREEN = auto()
     SKILL_TREE_SCREEN = auto()

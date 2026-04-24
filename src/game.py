@@ -12,6 +12,7 @@ receives input and which draw calls are active.
 from __future__ import annotations
 
 import random
+import math
 import pygame
 from collections import deque
 
@@ -42,6 +43,7 @@ from src.trade      import TradeSystem
 from src.dialogue   import DialogueSystem
 from src.ui         import UI
 from src.world_map  import WorldMap
+from src.pingpong   import PingPongGame
 
 
 class Game:
@@ -132,6 +134,41 @@ class Game:
     def _init_npcs(self):
         self.npc_manager = NPCManager()
         self.npc_manager.load_npcs_from_json()
+        # Position Oscar and two observers in the Main Hall (top-right)
+        oscar = self.npc_manager.get_npc_by_id("npc_oscar")
+        if oscar:
+            oscar.current_floor = self.current_floor
+            # Place Oscar in the Main Hall room (coordinates from map.Room definition)
+            # Main Hall: x=1050..(1050+1100), y=16..(16+1934)
+            mh_x = 1050
+            mh_y = 16
+            mh_w = 1100
+            mh_h = 1934
+            # place Oscar at the center of the watcher circle so he remains inside
+            oscar_center_x = mh_x + mh_w - 260
+            oscar_center_y = mh_y + 120
+            oscar.rect.centerx = oscar_center_x
+            oscar.rect.centery = oscar_center_y
+            # ensure observers exist, are stationary, and hidden names
+            # gather observers and arrange them in a circle around Oscar
+            obs_ids = [
+                "npc_oscar_obs1",
+                "npc_oscar_obs2",
+                "npc_oscar_obs3",
+                "npc_oscar_obs4",
+            ]
+            # increase radius so watchers are a bit more distanced
+            radius = 160
+            for i, oid in enumerate(obs_ids):
+                obs = self.npc_manager.get_npc_by_id(oid)
+                if not obs:
+                    continue
+                obs.current_floor = self.current_floor
+                obs.ai_enabled = False
+                obs.show_name = False
+                angle = (i / len(obs_ids)) * (2 * math.pi)
+                obs.rect.centerx = oscar.rect.centerx + int(math.cos(angle) * radius)
+                obs.rect.centery = oscar.rect.centery + int(math.sin(angle) * radius)
 
     def _init_systems(self):
         self.reputation      = ReputationSystem()
@@ -143,6 +180,8 @@ class Game:
         self.dialogue_system = DialogueSystem()
         self.dialogue_system.load_dialogues_from_json()
         self.camera = Camera(self._floor_w, self._floor_h)
+        # Ping-pong minigame
+        self.pingpong = PingPongGame()
 
     def _init_ui(self):
         self.ui = UI(self.screen)
@@ -235,6 +274,7 @@ class Game:
         handler = {
             GameState.PLAYING:          self._keys_playing,
             GameState.DIALOGUE:         lambda e: self.dialogue_system.handle_input(e),
+            GameState.PINGPONG:        lambda e: self.pingpong.handle_input(e),
             GameState.COMBAT:           lambda e: self.combat_system.handle_input(e, self.player),
             GameState.HACKING:          lambda e: self.hacking_game.handle_input(e),
             GameState.TRADING:          lambda e: self.trade_system.handle_input(e),
@@ -393,6 +433,16 @@ class Game:
             self._update_playing(dt)
         elif self.state == GameState.COMBAT:
             result = self.combat_system.update(dt)
+            # Ensure player dash is processed while in combat state
+            if getattr(self.player, "_dashing", False):
+                floor = self.school_map.get_floor(self.current_floor)
+                walls = list(floor.walls) if floor else []
+                npcs_on_floor = self.npc_manager.get_npcs_on_floor(self.current_floor)
+                for npc in npcs_on_floor:
+                    walls.append(npc.rect)
+                # Update dash movement/trail even when combat owns the main loop
+                self.player._update_dash(walls)
+
             if result is not None:
                 self.state = GameState.PLAYING
                 if result == "win":
@@ -401,6 +451,26 @@ class Game:
                 elif result == "lose":
                     self.ui.show_notification("You were knocked out…", NOTIF_ERROR)
                     self.player.health = self.player.max_health // 2
+        elif self.state == GameState.PINGPONG:
+            result = self.pingpong.update(dt)
+            # When a match result arrives, show end-screen and apply reputation changes
+            if result is not None and not getattr(self.pingpong, 'waiting_for_dismiss', False):
+                if result == "win":
+                    # add +20 reputation
+                    self.reputation.reputation_score = min(100, self.reputation.reputation_score + 20)
+                    self.pingpong.end_message = "Win Match\n+20 Reputation"
+                elif result == "lose":
+                    if self.reputation.reputation_score > 0:
+                        self.reputation.reputation_score = max(0, self.reputation.reputation_score - 10)
+                        self.pingpong.end_message = "Lose Match\n-10 Reputation"
+                    else:
+                        self.pingpong.end_message = "Lose Match"
+                self.pingpong.waiting_for_dismiss = True
+            # When player dismisses the end screen, finish the minigame and return to playing
+            if getattr(self.pingpong, 'finished', False):
+                self.pingpong.finished = False
+                self.pingpong.reset()
+                self.state = GameState.PLAYING
         elif self.state == GameState.HACKING:
             result = self.hacking_game.update(dt)
             if result is not None:
@@ -575,6 +645,10 @@ class Game:
                 self.ui.show_notification(
                     f"You see {npc.name}'s true side…", NOTIF_WARNING,
                 )
+        if "start_pingpong" in result and result["start_pingpong"]:
+            opponent = self.npc_manager.get_npc_by_id("npc_oscar")
+            self.pingpong.start(self.player, opponent)
+            self.state = GameState.PINGPONG
 
     # ── network ───────────────────────────────────────────────
 
@@ -601,6 +675,7 @@ class Game:
             GameState.COMBAT:            lambda: (self._draw_world(), self.combat_system.draw(self.screen, self.camera)),
             GameState.HACKING:           lambda: self.hacking_game.draw(self.screen),
             GameState.DIALOGUE:          lambda: (self._draw_world(), self.dialogue_system.draw(self.screen)),
+            GameState.PINGPONG:          lambda: self.pingpong.draw(self.screen),
             GameState.TRADING:           lambda: (self._draw_world(), self.trade_system.draw(self.screen)),
             GameState.PAUSED:            lambda: (self._draw_world(), self.ui.draw_pause_menu(self.screen)),
             GameState.INVENTORY_SCREEN:  lambda: self.ui.draw_inventory(self.screen, self.inventory),
@@ -620,7 +695,7 @@ class Game:
             ) if floor else None
             self.ui.draw_hud(self.screen, self.player,
                              self.current_phase, self.day_number,
-                             floor, room)
+                             floor, room, self.reputation)
 
         # Notifications always on top
         self.ui.draw_notifications(self.screen)
@@ -643,4 +718,11 @@ class Game:
             self.player.rect.centerx,
             self.player.rect.centery,
         )
+        # Show Oscar marker on the mini-map if available
+        try:
+            oscar = self.npc_manager.get_npc_by_id("npc_oscar")
+            if oscar:
+                self.world_map.set_marker("Oscar Jimenez", oscar.current_floor, oscar.rect.centerx, oscar.rect.centery, color=(200, 120, 40))
+        except Exception:
+            pass
         self.world_map.draw(self.screen)

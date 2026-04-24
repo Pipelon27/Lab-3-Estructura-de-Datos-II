@@ -31,6 +31,8 @@ class ReputationSystem:
             g.value: 50 for g in SocialGroup
         }
         self.karma: int = 0
+        # global single-value reputation stat (starts at 0)
+        self.reputation_score: int = 0
 
     # ── modify ────────────────────────────────────────────────
 
@@ -135,11 +137,12 @@ class ReputationSystem:
     # ── serialisation ─────────────────────────────────────────
 
     def to_dict(self) -> dict:
-        return {"standings": dict(self.standings), "karma": self.karma}
+        return {"standings": dict(self.standings), "karma": self.karma, "reputation_score": self.reputation_score}
 
     def from_dict(self, data: dict):
         self.standings = data.get("standings", self.standings)
         self.karma     = data.get("karma", 0)
+        self.reputation_score = data.get("reputation_score", 0)
 
     def __repr__(self):
         return f"Reputation(avg={self.average():.0f}, karma={self.karma})"

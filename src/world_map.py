@@ -66,6 +66,16 @@ class WorldMap:
         self._font_header = pygame.font.SysFont("arial", 28, bold=True)
 
         self._centre_on_floor(self.current_tab)
+        # Optional named markers (e.g., NPCs) to show on the map: {name: (floor, x, y, color)}
+        self._markers = {}
+
+    def set_marker(self, name: str, floor_id: int, x: int, y: int, color=(200, 120, 40)):
+        """Register or update a named marker to be drawn on the map."""
+        self._markers[name] = (floor_id, x, y, color)
+
+    def clear_marker(self, name: str):
+        if name in self._markers:
+            del self._markers[name]
 
     # ── public helpers ────────────────────────────────────────
 
@@ -281,6 +291,17 @@ class WorldMap:
             pygame.draw.circle(screen, WHITE, (px, py), r, 2)
             you = self._font_room.render("YOU", True, (255, 220, 60))
             screen.blit(you, you.get_rect(center=(px, py - r - 8)))
+
+        # Draw any markers (e.g., Oscar) if they are on this floor
+        for name, (mfloor, mx, my, mcol) in self._markers.items():
+            if mfloor != self.current_tab:
+                continue
+            sx, sy = self._world_to_screen(mx, my)
+            mr = max(3, int(6 * z * 3))
+            pygame.draw.circle(screen, mcol, (sx, sy), mr)
+            pygame.draw.circle(screen, WHITE, (sx, sy), mr, 1)
+            lbl = self._font_room.render(name.replace('_', ' ').upper(), True, mcol)
+            screen.blit(lbl, lbl.get_rect(center=(sx, sy - mr - 8)))
 
     # ── tooltip drawing ───────────────────────────────────────
 

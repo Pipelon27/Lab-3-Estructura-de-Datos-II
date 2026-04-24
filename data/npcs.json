@@ -180,6 +180,56 @@
         "lena": "dlg_noah_lena"
       }
     }
+    ,
+    {
+      "id": "npc_oscar",
+      "name": "Oscar Jimenez",
+      "group": "populars",
+      "public_personality": "New kid. Ping pong. Now.",
+      "private_personality": "Challenger who thrives on attention",
+      "schedule": { "arrival": 0, "class_1": 0, "break_1": 0, "class_2": 0, "lunch": 0, "activities": 0, "departure": 0, "night": 0 },
+      "dialogue_ids": {
+        "aiden": "dlg_oscar_aiden",
+        "lena": "dlg_oscar_aiden"
+      }
+    },
+    {
+      "id": "npc_oscar_obs1",
+      "name": "Watcher One",
+      "group": "outsiders",
+      "public_personality": "Quiet observer",
+      "private_personality": "",
+      "schedule": { "arrival": 0, "class_1": 0, "break_1": 0, "class_2": 0, "lunch": 0, "activities": 0, "departure": 0, "night": 0 },
+      "dialogue_ids": {}
+    },
+    {
+      "id": "npc_oscar_obs2",
+      "name": "Watcher Two",
+      "group": "outsiders",
+      "public_personality": "Quiet observer",
+      "private_personality": "",
+      "schedule": { "arrival": 0, "class_1": 0, "break_1": 0, "class_2": 0, "lunch": 0, "activities": 0, "departure": 0, "night": 0 },
+      "dialogue_ids": {}
+    }
+    ,
+    {
+      "id": "npc_oscar_obs3",
+      "name": "Watcher Three",
+      "group": "outsiders",
+      "public_personality": "Quiet observer",
+      "private_personality": "",
+      "schedule": { "arrival": 0, "class_1": 0, "break_1": 0, "class_2": 0, "lunch": 0, "activities": 0, "departure": 0, "night": 0 },
+      "dialogue_ids": {}
+    },
+    {
+      "id": "npc_oscar_obs4",
+      "name": "Watcher Four",
+      "group": "outsiders",
+      "public_personality": "Quiet observer",
+      "private_personality": "",
+      "schedule": { "arrival": 0, "class_1": 0, "break_1": 0, "class_2": 0, "lunch": 0, "activities": 0, "departure": 0, "night": 0 },
+      "dialogue_ids": {}
+    }
   ],
   "relationships": [
     {"from": "npc_marcus", "to": "npc_tyler", "stats": {"friendship": 70, "respect": 60, "fear": 10, "trust": 40, "suspicion": 15}},

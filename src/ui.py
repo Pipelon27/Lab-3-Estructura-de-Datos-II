@@ -117,7 +117,7 @@ class UI:
     # ── HUD ───────────────────────────────────────────────────
 
     def draw_hud(self, screen: pygame.Surface, player, current_phase,
-                 day_number: int, floor=None, room=None):
+                 day_number: int, floor=None, room=None, reputation=None):
         """Draw the in-game heads-up display."""
         # ── health bar ──
         self._bar(screen, 16, 16, 180, 14,
@@ -152,6 +152,16 @@ class UI:
 
         # ── circular minimap (bottom-right) ──
         self._draw_minimap_circle(screen, floor, player)
+
+        # ── reputation bar (bottom-left) ──
+        try:
+            rep_val = reputation.reputation_score if reputation is not None else 0
+        except Exception:
+            rep_val = 0
+        # draw above the bottom edge
+        rep_x = 16
+        rep_y = SCREEN_HEIGHT - 36
+        self._bar(screen, rep_x, rep_y, 220, 14, rep_val, 100, UI_ACCENT, UI_PANEL, "Rep")
 
     def _bar(self, screen, x, y, w, h, cur, mx, fg, bg, label=""):
         """Utility: draw a filled bar with a label."""

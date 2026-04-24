@@ -175,6 +175,9 @@ class NPC:
         self._wander_timer = random.uniform(1, 4)
         self._wander_dx    = 0
         self._wander_dy    = 0
+        # Controls for AI and name display (can hide name for observers)
+        self.ai_enabled = True
+        self.show_name = True
 
     # ── schedule ──────────────────────────────────────────────
 
@@ -216,6 +219,14 @@ class NPC:
 
     def update(self, dt: float, walls: list[pygame.Rect] | None = None):
         """Simple random wander behaviour."""
+        # If AI disabled, don't change wander behaviour or move
+        if not getattr(self, "ai_enabled", True):
+            # still ensure NPC stays within the floor bounds
+            max_x = getattr(self, '_floor_w', 3200) - NPC_SIZE - 30
+            max_y = getattr(self, '_floor_h', 2400) - NPC_SIZE - 30
+            self.rect.clamp_ip(pygame.Rect(30, 30, max_x, max_y))
+            return
+
         self._wander_timer -= dt
         if self._wander_timer <= 0:
             self._wander_timer = random.uniform(2, 5)
@@ -268,10 +279,11 @@ class NPC:
         pygame.draw.rect(screen, self.color, dr, border_radius=4)
         pygame.draw.rect(screen, WHITE, dr, 1, border_radius=4)
 
-        # Name label
-        font = pygame.font.SysFont("arial", 13)
-        label = font.render(self.name, True, WHITE)
-        screen.blit(label, label.get_rect(center=(dr.centerx, dr.top - 10)))
+        # Name label (can be hidden for observers)
+        if getattr(self, 'show_name', True):
+            font = pygame.font.SysFont("arial", 13)
+            label = font.render(self.name, True, WHITE)
+            screen.blit(label, label.get_rect(center=(dr.centerx, dr.top - 10)))
 
         # Bad-day indicator
         if self.having_bad_day:
@@ -462,11 +474,19 @@ class NPCManager:
 
     def update_on_floor(self, dt: float, floor_id: int, floor=None, walls: list[pygame.Rect] | None = None):
         """Tick AI for NPCs on the given floor."""
-        for npc in self.get_npcs_on_floor(floor_id):
+        npcs = self.get_npcs_on_floor(floor_id)
+        for npc in npcs:
             if floor:
                 npc._floor_w = floor.width
                 npc._floor_h = floor.height
-            npc.update(dt, walls)
+            # Build wall list including static walls + other NPCs (avoid self)
+            combined_walls: list[pygame.Rect] = list(walls) if walls else []
+            for other in npcs:
+                if other is npc:
+                    continue
+                # Use a copy of the rect to avoid accidental aliasing
+                combined_walls.append(other.rect.copy())
+            npc.update(dt, combined_walls)
 
     def __repr__(self):
         return f"NPCManager({len(self.npcs)} npcs, {self.relationships})"
