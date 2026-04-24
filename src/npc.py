@@ -230,13 +230,35 @@ class NPC:
             elif self._wander_dy < 0:
                 self.direction = Direction.UP
 
-        self.rect.x += int(self._wander_dx * dt * 30)
-        self.rect.y += int(self._wander_dy * dt * 30)
+        dx = int(self._wander_dx * dt * 30)
+        dy = int(self._wander_dy * dt * 30)
+
+        if walls:
+            self.rect.x += dx
+            self._collide(walls, dx, 0)
+            self.rect.y += dy
+            self._collide(walls, 0, dy)
+        else:
+            self.rect.x += dx
+            self.rect.y += dy
 
         # Stay within zone bounds (uses floor bounds if available)
         max_x = getattr(self, '_floor_w', 3200) - NPC_SIZE - 30
         max_y = getattr(self, '_floor_h', 2400) - NPC_SIZE - 30
         self.rect.clamp_ip(pygame.Rect(30, 30, max_x, max_y))
+
+    def _collide(self, walls: list[pygame.Rect], dx: float, dy: float):
+        """Push the NPC out of any wall it overlaps."""
+        for wall in walls:
+            if self.rect.colliderect(wall):
+                if dx > 0:
+                    self.rect.right = wall.left
+                elif dx < 0:
+                    self.rect.left = wall.right
+                if dy > 0:
+                    self.rect.bottom = wall.top
+                elif dy < 0:
+                    self.rect.top = wall.bottom
 
     # ── drawing ───────────────────────────────────────────────
 
@@ -438,13 +460,13 @@ class NPCManager:
         for npc in self.get_npcs_in_zone(current_zone):
             npc.update(dt)
 
-    def update_on_floor(self, dt: float, floor_id: int, floor=None):
+    def update_on_floor(self, dt: float, floor_id: int, floor=None, walls: list[pygame.Rect] | None = None):
         """Tick AI for NPCs on the given floor."""
         for npc in self.get_npcs_on_floor(floor_id):
             if floor:
                 npc._floor_w = floor.width
                 npc._floor_h = floor.height
-            npc.update(dt)
+            npc.update(dt, walls)
 
     def __repr__(self):
         return f"NPCManager({len(self.npcs)} npcs, {self.relationships})"

@@ -23,7 +23,7 @@ from settings import (
     NOTIF_SUCCESS, NOTIF_ERROR,
     SCREEN_WIDTH, SCREEN_HEIGHT,
     Direction,
-    KEY_LIGHT_ATTACK, KEY_HEAVY_ATTACK, KEY_BLOCK, KEY_DASH,
+    KEY_LIGHT_ATTACK, KEY_HEAVY_ATTACK, KEY_BLOCK, KEY_DASH, KEY_DASH_ALT, KEY_DASH_ALT2,
 )
 
 
@@ -112,7 +112,7 @@ class CombatSystem:
                     self.timer = ATTACK_COOLDOWN + 5
             elif event.key == KEY_BLOCK:
                 self.state = CombatState.BLOCKING
-            elif event.key == KEY_DASH:
+            elif event.key in (KEY_DASH, KEY_DASH_ALT, KEY_DASH_ALT2):
                 player.start_dash()
                 self.state = CombatState.DASHING
                 self.timer = 10

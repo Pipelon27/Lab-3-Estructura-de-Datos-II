@@ -18,7 +18,7 @@ from settings import (
     SCREEN_WIDTH, SCREEN_HEIGHT,
     XP_PER_LEVEL, SKILL_POINT_PER_LEVEL,
     Character, Direction,
-    KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT, KEY_DASH,
+    KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT, KEY_DASH, KEY_DASH_ALT, KEY_DASH_ALT2,
     WHITE, BLACK,
 )
 from src.skill_tree import SkillTree, build_aiden_tree, build_lena_tree
@@ -64,6 +64,7 @@ class Player:
         self._dash_timer    = 0
         self._dash_dx       = 0
         self._dash_dy       = 0
+        self._dash_trail    = []  # List of (Rect, timer)
 
         # Stats
         self.health      = PLAYER_MAX_HEALTH
@@ -125,7 +126,7 @@ class Player:
             dy *= 0.7071
 
         # Sprint
-        sprinting = keys[KEY_DASH] and self.stamina > 0 and (dx != 0 or dy != 0)
+        sprinting = (keys[KEY_DASH] or keys[KEY_DASH_ALT] or keys[KEY_DASH_ALT2]) and self.stamina > 0 and (dx != 0 or dy != 0)
         spd = self.sprint_speed if sprinting else self.speed
         if sprinting:
             self.stamina = max(0, self.stamina - STAMINA_SPRINT_COST)
@@ -141,6 +142,13 @@ class Player:
             self.stamina = min(self.max_stamina,
                                self.stamina + STAMINA_REGEN_RATE)
 
+        # Update dash trail
+        new_trail = []
+        for r, t in self._dash_trail:
+            if t > 0:
+                new_trail.append((r, t - 1))
+        self._dash_trail = new_trail
+
     def start_dash(self):
         """Initiate a quick dash in the current direction."""
         if self.stamina < DASH_STAMINA_COST or self._dashing:
@@ -154,10 +162,12 @@ class Player:
         elif self.direction == Direction.DOWN:  dy = 1
         elif self.direction == Direction.LEFT:  dx = -1
         elif self.direction == Direction.RIGHT: dx = 1
+            
         self._dash_dx = dx * DASH_SPEED
         self._dash_dy = dy * DASH_SPEED
 
     def _update_dash(self, walls):
+        self._dash_trail.append((self.rect.copy(), 15))
         self.rect.x += int(self._dash_dx)
         self._collide(walls, self._dash_dx, 0)
         self.rect.y += int(self._dash_dy)
@@ -207,6 +217,13 @@ class Player:
 
     def draw(self, screen: pygame.Surface, camera):
         """Draw the player as a coloured rectangle with a direction arrow."""
+        # Draw dash trail
+        for r, t in self._dash_trail:
+            alpha = int(255 * (t / 15.0) * 0.4)
+            trail_surf = pygame.Surface(r.size, pygame.SRCALPHA)
+            trail_surf.fill((*self.color[:3], alpha))
+            screen.blit(trail_surf, camera.apply_rect(r))
+
         draw_rect = camera.apply(self)
 
         # Body

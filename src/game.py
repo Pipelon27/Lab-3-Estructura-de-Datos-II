@@ -25,7 +25,7 @@ from settings import (
     KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT,
     KEY_INTERACT, KEY_USE, KEY_INVENTORY, KEY_SKILL_TREE,
     KEY_HELP, KEY_PAUSE, KEY_MAP,
-    KEY_LIGHT_ATTACK, KEY_HEAVY_ATTACK, KEY_BLOCK, KEY_DASH,
+    KEY_LIGHT_ATTACK, KEY_HEAVY_ATTACK, KEY_BLOCK, KEY_DASH, KEY_DASH_ALT, KEY_DASH_ALT2,
     KEY_HACK,
     MOTIVATIONAL_MESSAGES,
 )
@@ -267,7 +267,7 @@ class Game:
             if hackable:
                 self.hacking_game.start(hackable, self.player)
                 self.state = GameState.HACKING
-        elif event.key == KEY_DASH:
+        elif event.key in (KEY_DASH, KEY_DASH_ALT, KEY_DASH_ALT2):
             self.player.start_dash()
 
     def _keys_paused(self, event: pygame.event.Event):
@@ -436,7 +436,12 @@ class Game:
         # Movement
         keys  = pygame.key.get_pressed()
         floor = self.school_map.get_floor(self.current_floor)
-        walls = floor.walls if floor else []
+        walls = list(floor.walls) if floor else []
+        
+        npcs_on_floor = self.npc_manager.get_npcs_on_floor(self.current_floor)
+        for npc in npcs_on_floor:
+            walls.append(npc.rect)
+            
         self.player.update(keys, walls, dt)
 
         # Seamless staircase detection (silent floor switch)
@@ -449,7 +454,9 @@ class Game:
         self.camera.update(self.player)
 
         # NPC AI — only update NPCs on current floor
-        self.npc_manager.update_on_floor(dt, self.current_floor, floor)
+        npc_walls = list(floor.walls) if floor else []
+        npc_walls.append(self.player.rect)
+        self.npc_manager.update_on_floor(dt, self.current_floor, floor, npc_walls)
 
         # Day timer
         self.day_timer += dt

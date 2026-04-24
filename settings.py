@@ -252,9 +252,11 @@ KEY_LIGHT_ATTACK = pygame.K_j
 KEY_HEAVY_ATTACK = pygame.K_u
 KEY_BLOCK        = pygame.K_l
 KEY_DASH         = pygame.K_LSHIFT
+KEY_DASH_ALT     = pygame.K_RSHIFT
+KEY_DASH_ALT2    = pygame.K_RCTRL
 
 # Hacking (Lena)
-KEY_HACK         = pygame.K_f
+KEY_HACK         = pygame.K_v
 KEY_MAP          = pygame.K_m
 
 # ──────────────────────────────────────────────────────────────
