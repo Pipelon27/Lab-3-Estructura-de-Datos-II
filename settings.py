@@ -252,9 +252,10 @@ KEY_PAUSE        = pygame.K_ESCAPE
 KEY_LIGHT_ATTACK = pygame.K_j
 KEY_HEAVY_ATTACK = pygame.K_u
 KEY_BLOCK        = pygame.K_l
-KEY_DASH         = pygame.K_LSHIFT
-KEY_DASH_ALT     = pygame.K_RSHIFT
-KEY_DASH_ALT2    = pygame.K_RCTRL
+# Dash is bound to Space only (disable Shift/Ctrl dash aliases)
+KEY_DASH         = pygame.K_SPACE
+KEY_DASH_ALT     = KEY_DASH
+KEY_DASH_ALT2    = KEY_DASH
 
 # Hacking (Lena)
 KEY_HACK         = pygame.K_v

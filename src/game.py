@@ -289,8 +289,17 @@ class Game:
     # ── key handlers per state ────────────────────────────────
 
     def _keys_playing(self, event: pygame.event.Event):
+        # If SPACE (KEY_INTERACT) and an NPC is nearby, open dialogue;
+        # otherwise treat SPACE (and dash aliases) as dash.
         if event.key == KEY_INTERACT:
-            self._try_interact()
+            npc = self._nearest_npc(NPC_INTERACTION_RANGE)
+            if npc:
+                self._try_interact()
+            else:
+                self.player.start_dash()
+        elif event.key in (KEY_DASH_ALT, KEY_DASH_ALT2):
+            # alt dash keys still trigger dash
+            self.player.start_dash()
         elif event.key == KEY_INVENTORY:
             self.previous_state = self.state
             self.state = GameState.INVENTORY_SCREEN
@@ -307,8 +316,7 @@ class Game:
             if hackable:
                 self.hacking_game.start(hackable, self.player)
                 self.state = GameState.HACKING
-        elif event.key in (KEY_DASH, KEY_DASH_ALT, KEY_DASH_ALT2):
-            self.player.start_dash()
+        
 
     def _keys_paused(self, event: pygame.event.Event):
         if event.key == pygame.K_q:
