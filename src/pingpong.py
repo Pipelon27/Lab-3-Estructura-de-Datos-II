@@ -63,6 +63,8 @@ class PingPongGame:
         self.last_touch = None
         # ball color (default orange)
         self.ball_color = (255, 140, 0)
+        self.ball_trail_color = (255, 140, 0)
+        self.ball_dash_timer = 0.0
         # per-ball dash visual timer (used per-ball now)
         # Per-point base speed and per-hit speed multiplier (faster arcade)
         # start slightly faster and ramp up more slowly
@@ -87,6 +89,21 @@ class PingPongGame:
         self.countdown_active = False
         self.countdown_timer = 0.0
         self.countdown_go_time = 0.8
+        # Progressive multiball over time (starts with only one ball)
+        self.match_elapsed = 0.0
+        self.spawn_timer = 0.0
+        self.oscar_spawn_lock_timer = 0.0
+        # Visual bounce arc values (pseudo 3D parabola)
+        self.ball_z = 0.0
+        self.ball_vz = 0.0
+        self.z_gravity = 1400.0
+        self.ball_bounce_count = 0
+        self.ball_first_bounce_side = "player"
+        self.min_ball_speed = 390.0
+        self.max_return_speed = 700.0
+        self.super_shot_speed = 1200.0
+        # Super Shot (auto): unlocks every 6 player points
+        self.super_points_spent = 0
 
     def start(self, player, opponent):
         self.player = player
@@ -100,6 +117,9 @@ class PingPongGame:
         self.finished = False
         self.countdown_active = False
         self.countdown_timer = 0.0
+        self.match_elapsed = 0.0
+        self.spawn_timer = 0.0
+        self.oscar_spawn_lock_timer = 0.0
 
     def court_rect(self) -> pygame.Rect:
         return pygame.Rect(
@@ -110,10 +130,8 @@ class PingPongGame:
         )
 
     def reset(self):
-        # Place main ball near opponent (Oscar) side instead of centre
-        court = self.court_rect()
-        spawn_x = int(court.right - self.sprite_size - 12)
-        spawn_y = int(court.top + court.h // 2)
+        # Place main ball from Oscar's current position
+        spawn_x, spawn_y = self._get_oscar_spawn_center()
         self.ball.center = (spawn_x, spawn_y)
         # reset to per-point base speed (starts slow each point)
         self.ball_vel = [self.base_vx, self.base_vy]
@@ -141,14 +159,140 @@ class PingPongGame:
         self.dash_timer = 0
         self.dash_active = False
         self.show_menu = getattr(self, 'show_menu', True)
+        self.match_elapsed = 0.0
+        self.spawn_timer = 0.0
+        self.oscar_spawn_lock_timer = 0.0
+        self.ball_z = 0.0
+        self.ball_vz = 0.0
+        self.ball_bounce_count = 0
+        self.ball_first_bounce_side = "player"
+        self.ball_dash_timer = 0.0
+        self.ball_trail_color = (255, 140, 0)
+        self.super_points_spent = 0
+
+    def _get_oscar_spawn_center(self) -> tuple[int, int]:
+        """Spawn from Oscar's live rendered position and keep the ball fully visible."""
+        court = self.court_rect()
+        half_h = self.sprite_size // 2
+        opp_y = int(getattr(self, "opp_y", court.top + court.h // 2))
+        opp_y = max(court.top + half_h, min(court.bottom - half_h, opp_y))
+        opp_rect = pygame.Rect(int(court.right + 12), int(opp_y - half_h), self.sprite_size, self.sprite_size)
+
+        radius = self.ball.width // 2
+        spawn_x = opp_rect.centerx - (self.sprite_size // 2) - radius - 2
+        spawn_y = opp_rect.centery
+        spawn_x = max(radius, min(SCREEN_WIDTH - radius, spawn_x))
+        spawn_y = max(radius, min(SCREEN_HEIGHT - radius, spawn_y))
+        return spawn_x, spawn_y
+
+    def _arm_ball_bounce(self, ball_state: dict | None = None, first_bounce_side: str | None = None):
+        """Initialize a new arc so balls visually bounce over the table."""
+        if ball_state is None:
+            self.ball_z = 0.0
+            self.ball_vz = 640.0
+            self.ball_bounce_count = 0
+            self.ball_first_bounce_side = first_bounce_side
+        else:
+            ball_state["z"] = 0.0
+            ball_state["vz"] = 640.0
+            ball_state["bounce_count"] = 0
+            ball_state["first_bounce_side"] = first_bounce_side
+
+    def _update_ball_bounce(self, dt: float, court: pygame.Rect, rect: pygame.Rect, ball_state: dict | None = None):
+        if ball_state is None:
+            self.ball_vz -= self.z_gravity * dt
+            self.ball_z += self.ball_vz * dt
+            if self.ball_z < 0:
+                self.ball_z = 0
+                self.ball_vz = abs(self.ball_vz) * 0.72
+                self.ball_bounce_count += 1
+                if self.ball_vz < 120:
+                    self.ball_vz = 460.0
+            return
+        vz = ball_state.get("vz", 0.0) - self.z_gravity * dt
+        z = ball_state.get("z", 0.0) + vz * dt
+        if z < 0:
+            z = 0
+            vz = abs(vz) * 0.72
+            ball_state["bounce_count"] = ball_state.get("bounce_count", 0) + 1
+            if vz < 120:
+                vz = 460.0
+        ball_state["z"] = z
+        ball_state["vz"] = vz
+
+    def _get_super_shot_progress(self) -> float:
+        earned = max(0, self.player_score - self.super_points_spent)
+        return min(1.0, earned / 6.0)
+
+    def _super_shot_available(self) -> bool:
+        return (self.player_score - self.super_points_spent) >= 6
+
+    def _enforce_min_speed(self, vel: list[float], min_speed: float | None = None):
+        ms = self.min_ball_speed if min_speed is None else min_speed
+        speed = math.hypot(vel[0], vel[1]) or 0.0
+        if speed >= ms or speed <= 0.0:
+            return
+        scale = ms / speed
+        vel[0] *= scale
+        vel[1] *= scale
+
+    def _cap_speed(self, vel: list[float], max_speed: float | None = None):
+        ms = self.max_return_speed if max_speed is None else max_speed
+        speed = math.hypot(vel[0], vel[1]) or 0.0
+        if speed <= ms or speed <= 0.0:
+            return
+        scale = ms / speed
+        vel[0] *= scale
+        vel[1] *= scale
+
+    def _steer_for_first_bounce(self, rect: pygame.Rect, vel: list[float], first_bounce_side: str, court: pygame.Rect):
+        """Adjust horizontal speed so first floor contact lands on opposite side."""
+        t_first = max(0.45, (2.0 * 640.0) / self.z_gravity)
+        net_x = (court.left + court.right) // 2
+        if first_bounce_side == "player":
+            target_x = (court.left + net_x) // 2
+        else:
+            target_x = (net_x + court.right) // 2
+        desired_vx = (target_x - rect.centerx) / t_first
+        vel[0] = desired_vx
+
+    def _queue_oscar_extra_ball(self, player_rect: pygame.Rect, delay: float = 0.0, strong: bool = False):
+        """Spawn an extra ball from Oscar's current position."""
+        spawn_x, spawn_y = self._get_oscar_spawn_center()
+        court = self.court_rect()
+        dupe_rect = pygame.Rect(0, 0, self.ball.width, self.ball.height)
+        dupe_rect.center = (spawn_x, spawn_y)
+        px = player_rect.centerx
+        py = player_rect.centery
+        vx = px - dupe_rect.centerx
+        vy = py - dupe_rect.centery
+        mag = math.hypot(vx, vy) or 1.0
+        speed = max(300.0, min(820.0, math.hypot(self.ball_vel[0], self.ball_vel[1])))
+        trail = (220, 40, 40) if strong else (255, 140, 0)
+        dupe_vel = [-(abs(vx / mag) * speed), (vy / mag) * speed]
+        self._steer_for_first_bounce(dupe_rect, dupe_vel, "player", court)
+        self._enforce_min_speed(dupe_vel, self.min_ball_speed * 0.95)
+        self._cap_speed(dupe_vel, self.max_return_speed * 0.95)
+
+        self.spawn_queue.append({
+            "delay": delay,
+            "rect": dupe_rect,
+            "vel": dupe_vel,
+            "strong": strong,
+            "dash_timer": 0.0,
+            "trail_color": trail,
+            "z": 0.0,
+            "vz": 640.0,
+            "bounce_count": 0,
+            "first_bounce_side": "player",
+        })
+        # lock Oscar briefly so ball clearly appears from his current position
+        self.oscar_spawn_lock_timer = 0.15
 
     def handle_input(self, event: pygame.event.Event):
         if event.type == pygame.KEYDOWN:
-            # SPACE is context-sensitive: if super is fully charged and player is colliding with a ball,
-            # activate Super Shot. Otherwise it triggers dash (handled in update via key state).
             if event.key == pygame.K_SPACE:
-                # SPACE triggers dash (handled in update via key state);
-                # Super Shot removed — no special action on KEYDOWN here.
+                # SPACE triggers dash in update via key state.
                 pass
             elif getattr(self, 'waiting_for_dismiss', False):
                 # any key dismisses the end screen
@@ -182,16 +326,35 @@ class PingPongGame:
             return None
         if not self.active:
             return None
+        court = self.court_rect()
+        self.match_elapsed += dt
+        self.spawn_timer -= dt
+        if self.oscar_spawn_lock_timer > 0:
+            self.oscar_spawn_lock_timer = max(0.0, self.oscar_spawn_lock_timer - dt)
+        if self.ball_dash_timer > 0:
+            self.ball_dash_timer = max(0.0, self.ball_dash_timer - dt)
         # move main ball
         self.ball.x += int(self.ball_vel[0] * dt)
         self.ball.y += int(self.ball_vel[1] * dt)
+        self._enforce_min_speed(self.ball_vel)
+        self._update_ball_bounce(dt, court, self.ball)
         # process spawn queue: decrement delays and spawn balls one-by-one
         if self.spawn_queue:
             for q in list(self.spawn_queue):
                 q["delay"] -= dt
                 if q["delay"] <= 0:
                     # spawn into extra_balls
-                    self.extra_balls.append({"rect": q["rect"], "vel": q["vel"], "strong": q.get("strong", False), "dash_timer": q.get("dash_timer", 0.0), "trail_color": q.get("trail_color", (255,140,0))})
+                    self.extra_balls.append({
+                        "rect": q["rect"],
+                        "vel": q["vel"],
+                        "strong": q.get("strong", False),
+                        "dash_timer": q.get("dash_timer", 0.0),
+                        "trail_color": q.get("trail_color", (255, 140, 0)),
+                        "z": q.get("z", 0.0),
+                        "vz": q.get("vz", 640.0),
+                        "bounce_count": q.get("bounce_count", 0),
+                        "first_bounce_side": q.get("first_bounce_side", "player"),
+                    })
                     try:
                         self.spawn_queue.remove(q)
                     except ValueError:
@@ -207,16 +370,15 @@ class PingPongGame:
                 mult = 1.0
             b["rect"].x += int(b["vel"][0] * mult * dt)
             b["rect"].y += int(b["vel"][1] * mult * dt)
-
-        # court rectangle (smaller)
-        court = self.court_rect()
+            self._enforce_min_speed(b["vel"], self.min_ball_speed * 0.95)
+            self._update_ball_bounce(dt, court, b["rect"], b)
 
         # player movement via WASD + dash (tuned a bit faster for arcade feel)
         keys = pygame.key.get_pressed()
         move_speed = 280.0
         if keys[KEY_DASH] and self.dash_timer <= 0:
             self.dash_active = True
-            self.dash_timer = DASH_DURATION / 60.0  # convert frames to seconds approx
+            self.dash_timer = DASH_DURATION / 60.0
         if self.dash_active:
             move_speed *= 2.0
             self.dash_timer -= dt
@@ -272,6 +434,40 @@ class PingPongGame:
                 self.player_x = max(court.left - rim, min(court.right + rim, self.player_x))
         # player and opponent square sprite rects (no invisible paddles)
         player_rect = pygame.Rect(int(self.player_x - self.sprite_size // 2), int(self.player_y - self.sprite_size // 2), self.sprite_size, self.sprite_size)
+        # Start with only one ball, then progressively add more over time.
+        allowed_extra = min(8, int(self.match_elapsed // 8.0))
+        if self.spawn_timer <= 0 and (len(self.extra_balls) + len(self.spawn_queue)) < allowed_extra:
+            strong = (int(self.match_elapsed) % 3 == 0)
+            self._queue_oscar_extra_ball(player_rect, delay=0.0, strong=strong)
+            self.spawn_timer = max(1.3, 3.8 - min(2.3, self.match_elapsed / 18.0))
+
+        # Super Shot auto-activates on valid contact every 6 points.
+        if self._super_shot_available():
+            used = False
+            if self.ball.colliderect(player_rect) and self.ball_vel[0] < 0:
+                self.ball_vel[0] = abs(self.ball_vel[0]) * 4.0
+                self.ball_vel[1] *= 1.9
+                self.ball_color = (245, 220, 60)
+                self.ball_trail_color = (245, 220, 60)
+                self.ball_dash_timer = 0.65
+                self._arm_ball_bounce(first_bounce_side="oscar")
+                self._steer_for_first_bounce(self.ball, self.ball_vel, "oscar", court)
+                self._enforce_min_speed(self.ball_vel, self.super_shot_speed)
+                used = True
+            else:
+                for b in self.extra_balls:
+                    if b["rect"].colliderect(player_rect) and b["vel"][0] < 0:
+                        b["vel"][0] = abs(b["vel"][0]) * 4.0
+                        b["vel"][1] *= 1.9
+                        b["trail_color"] = (245, 220, 60)
+                        b["dash_timer"] = 0.65
+                        self._arm_ball_bounce(b, first_bounce_side="oscar")
+                        self._steer_for_first_bounce(b["rect"], b["vel"], "oscar", court)
+                        self._enforce_min_speed(b["vel"], self.super_shot_speed)
+                        used = True
+                        break
+            if used:
+                self.super_points_spent += 6
 
         # opponent AI: choose behavior based on incoming balls
         # Prefer staying still; only move when a ball (non-purple) is clearly approaching
@@ -298,7 +494,7 @@ class PingPongGame:
         half_h = self.sprite_size // 2
         deadzone = 8
         diff = target_y - self.opp_y
-        if abs(diff) > deadzone:
+        if self.oscar_spawn_lock_timer <= 0 and abs(diff) > deadzone:
             # move toward target but don't overshoot; use dt-scaled speed
             move = math.copysign(min(self.opp_speed * dt, abs(diff)), diff)
             self.opp_y += move
@@ -315,113 +511,97 @@ class PingPongGame:
             if self.dash_active:
                 self.ball_vel[0] *= 1.6
                 self.ball_vel[1] *= 1.6
-                # give main ball a trail effect color blue
-                self.ball_color = (120, 200, 255)
+            # player hit keeps orange ball but with energized translucent effect
+            self.ball_color = (255, 140, 0)
+            self.ball_trail_color = (255, 140, 0)
+            self.ball_dash_timer = 0.5
             # reflect to right and increase speed
             self.ball_vel[0] = abs(self.ball_vel[0]) * self.hit_speed_mult
             self.ball_vel[1] *= self.hit_speed_mult
+            self._arm_ball_bounce(first_bounce_side="oscar")
+            self._steer_for_first_bounce(self.ball, self.ball_vel, "oscar", court)
+            self._enforce_min_speed(self.ball_vel)
+            self._cap_speed(self.ball_vel)
             self.last_touch = 'player'
         if self.ball.colliderect(opp_rect) and self.ball_vel[0] > 0:
             # if main ball is purple, Oscar avoids it and does not return it
-            if self.ball_color == (160, 60, 200):
+            if self.ball_color in ((160, 60, 200), (245, 220, 60)):
                 # do not reflect; allow ball to pass
                 pass
             else:
                 offset = (self.ball.centery - opp_rect.centery) / (opp_rect.height / 2)
                 self.ball_vel[1] += offset * 80
                 self.ball_vel[0] = -abs(self.ball_vel[0]) * self.hit_speed_mult
+                self.ball_color = (255, 140, 0)
+                self.ball_trail_color = (255, 140, 0)
+                self.ball_dash_timer = 0.45
+                self._arm_ball_bounce(first_bounce_side="player")
+                self._steer_for_first_bounce(self.ball, self.ball_vel, "player", court)
+                self._enforce_min_speed(self.ball_vel)
+                self._cap_speed(self.ball_vel, self.max_return_speed * 0.95)
                 self.last_touch = 'opponent'
-            # On opponent hit, spawn multiple real balls aimed to the player
-            if not self.dup_spawned_this_point:
-                # enqueue balls to spawn one-by-one with small delays and varied directions
-                num = 6
-                main_speed = math.hypot(self.ball_vel[0], self.ball_vel[1]) or 1.0
-                # spawn balls paced: at least 1.5s between each
-                delay_step = 1.5
-                for i in range(num):
-                    dupe_rect = pygame.Rect(0, 0, self.ball.width, self.ball.height)
-                    # spawn slightly outside opponent sprite to avoid overlapping the main ball
-                    dupe_rect.centerx = opp_rect.centerx + (self.sprite_size // 2) + 12
-                    dupe_rect.centery = opp_rect.centery + (i - num//2) * 18
-                    px = player_rect.centerx
-                    py = player_rect.centery
-                    vx = px - dupe_rect.centerx + (i - num//2) * 12
-                    vy = py - dupe_rect.centery + (i - num//2) * 6
-                    mag = math.hypot(vx, vy) or 1.0
-                    dupe_vx = (vx / mag) * main_speed * (1.0 + (i % 2) * 0.15)
-                    dupe_vy = (vy / mag) * main_speed * (1.0 + (i % 3) * 0.08)
-                    strong = (i % 3 == 0)
-                    trail = (220, 40, 40) if strong else (255, 140, 0)
-                    self.spawn_queue.append({"delay": i * delay_step, "rect": dupe_rect, "vel": [dupe_vx, dupe_vy], "strong": strong, "dash_timer": 0.0, "trail_color": trail})
-                self.dup_spawned_this_point = True
+            # extra balls are now generated progressively by time (not instant volley bursts)
 
         # Side/top/bottom walls reflect
-        if self.ball.top <= court.top:
-            self.ball.top = court.top
-            self.ball_vel[1] = abs(self.ball_vel[1])
-        if self.ball.bottom >= court.bottom:
-            self.ball.bottom = court.bottom
-            self.ball_vel[1] = -abs(self.ball_vel[1])
+        # No hard bounces on extreme table edges: softly keep balls inside vertical bounds.
+        inner_top = court.top + 22
+        inner_bottom = court.bottom - 22
+        if self.ball.top <= inner_top:
+            self.ball.top = inner_top
+            self.ball_vel[1] = abs(self.ball_vel[1]) * 0.45
+        if self.ball.bottom >= inner_bottom:
+            self.ball.bottom = inner_bottom
+            self.ball_vel[1] = -abs(self.ball_vel[1]) * 0.45
 
         # update extra balls collisions and bounds
         for b in list(self.extra_balls):
-            # reflect on court top/bottom
-            if b["rect"].top <= court.top:
-                b["rect"].top = court.top
-                b["vel"][1] = abs(b["vel"][1])
-            if b["rect"].bottom >= court.bottom:
-                b["rect"].bottom = court.bottom
-                b["vel"][1] = -abs(b["vel"][1])
+            # avoid hard edge rebounds for extras too
+            if b["rect"].top <= inner_top:
+                b["rect"].top = inner_top
+                b["vel"][1] = abs(b["vel"][1]) * 0.45
+            if b["rect"].bottom >= inner_bottom:
+                b["rect"].bottom = inner_bottom
+                b["vel"][1] = -abs(b["vel"][1]) * 0.45
             # collisions with player
             if b["rect"].colliderect(player_rect) and b["vel"][0] < 0:
                 # if ball is strong, hitting it returns it much stronger with purple effect
                 if b.get("strong"):
                     b["vel"][0] = abs(b["vel"][0]) * 2.2
                     b["vel"][1] *= 1.6
-                    b["dash_timer"] = 0.6
                     b["trail_color"] = (160, 60, 200)
+                    self._arm_ball_bounce(b, first_bounce_side="oscar")
                 else:
                     b["vel"][0] = abs(b["vel"][0]) * self.hit_speed_mult
                     b["vel"][1] *= self.hit_speed_mult
+                    self._arm_ball_bounce(b, first_bounce_side="oscar")
+                self._steer_for_first_bounce(b["rect"], b["vel"], "oscar", court)
+                # red/strong returns stay purple; normal returns stay orange
+                if not b.get("strong"):
+                    b["trail_color"] = (255, 140, 0)
+                b["dash_timer"] = 0.5
+                self._enforce_min_speed(b["vel"], self.min_ball_speed * 0.95)
+                self._cap_speed(b["vel"])
                 # apply player dash effect
                 if self.dash_active:
                     b["vel"][0] *= 1.6
                     b["vel"][1] *= 1.6
-                    b["dash_timer"] = 0.35
+                    b["dash_timer"] = 0.6
+                    self._cap_speed(b["vel"], self.max_return_speed * 1.1)
                 self.last_touch = 'player'
             # collisions with opponent
             if b["rect"].colliderect(opp_rect) and b["vel"][0] > 0:
                 # if this extra ball is purple, Oscar avoids it and won't return it
-                if b.get("trail_color") == (160, 60, 200):
+                if b.get("trail_color") in ((160, 60, 200), (245, 220, 60)):
                     pass
                 else:
                     b["vel"][0] = -abs(b["vel"][0]) * self.hit_speed_mult
                     b["vel"][1] *= self.hit_speed_mult
+                    b["trail_color"] = (255, 140, 0)
+                    b["dash_timer"] = 0.45
+                    self._arm_ball_bounce(b, first_bounce_side="player")
+                    self._steer_for_first_bounce(b["rect"], b["vel"], "player", court)
+                    self._cap_speed(b["vel"], self.max_return_speed * 0.95)
                     self.last_touch = 'opponent'
-
-        # Scoring only when the ball fully exits the screen (more arcade feel)
-        scored = False
-        if self.ball.right < 0:
-            scored = True
-            scorer_side = 'left'
-        elif self.ball.left > SCREEN_WIDTH:
-            scored = True
-            scorer_side = 'right'
-
-        if scored:
-            if scorer_side == 'right':
-                # player scored (ball crossed opponent side)
-                self.player_score += 1
-            else:
-                # opponent scored
-                self.opponent_score += 1
-                # opponent scored — taunt Oscar
-                self._taunt_msg = self.taunts[self._taunt_index % len(self.taunts)]
-                self._taunt_index += 1
-                self._taunt_timer = 2.0
-            # reset ball near center but bias slightly toward last scorer's side
-            # After a score we leave main ball in center and allow rally to continue with extra balls
-            pass
 
         # handle taunt timer
         if self._taunt_timer > 0:
@@ -448,16 +628,18 @@ class PingPongGame:
                 self._taunt_msg = self.taunts[self._taunt_index % len(self.taunts)]
                 self._taunt_index += 1
                 self._taunt_timer = 2.0
-            # reset main ball near opponent (Oscar) side and slow base speed
-            court = self.court_rect()
-            spawn_x = int(court.right - self.sprite_size - 12)
-            spawn_y = int(court.top + court.h // 2)
+            # reset main ball from Oscar's current side and slow base speed
+            spawn_x, spawn_y = self._get_oscar_spawn_center()
             self.ball.center = (spawn_x, spawn_y)
             # send ball away from Oscar (to player)
             self.ball_vel[0] = -abs(self.base_vx)
             self.ball_vel[1] = 0.0
-            # clear extra balls for new rally
-            self.extra_balls.clear()
+            self._arm_ball_bounce(first_bounce_side="player")
+            self._steer_for_first_bounce(self.ball, self.ball_vel, "player", court)
+            self._enforce_min_speed(self.ball_vel)
+            self._cap_speed(self.ball_vel, self.max_return_speed * 0.95)
+            self.oscar_spawn_lock_timer = 0.2
+            # keep extra balls alive after a point; only reset main-ball duplicate trigger
             self.dup_spawned_this_point = False
 
         # Check scoring for extra balls (ensure correct side -> correct scorer)
@@ -501,15 +683,6 @@ class PingPongGame:
 
         court = self.court_rect()
         if getattr(self, 'show_menu', False):
-            # draw the court and characters as the pre-match backdrop (simple, no separate UI box)
-            border_color = (30, 30, 40)
-            pygame.draw.rect(screen, border_color, (court.left - 8, court.top - 8, court.width + 16, court.height + 16), 6, border_radius=6)
-            # corner posts
-            post_w = 12
-            pygame.draw.rect(screen, UI_ACCENT, (court.left - 20, court.top - 20, post_w, post_w))
-            pygame.draw.rect(screen, UI_ACCENT, (court.right + 8, court.top - 20, post_w, post_w))
-            pygame.draw.rect(screen, UI_ACCENT, (court.left - 20, court.bottom + 8, post_w, post_w))
-            pygame.draw.rect(screen, UI_ACCENT, (court.right + 8, court.bottom + 8, post_w, post_w))
             # draw table (same look as during play)
             top_l = (court.left + 40, court.top + 24)
             top_r = (court.right - 40, court.top + 24)
@@ -532,14 +705,36 @@ class PingPongGame:
             opp_sprite_x = int(court.right + 12)
             opp_sprite_y = int(self.opp_y - self.sprite_size // 2)
             pygame.draw.rect(screen, UI_ACCENT, (opp_sprite_x, opp_sprite_y, self.sprite_size, self.sprite_size))
+            # Blur/dim the background so this UI sits in front of the court and players
+            snapshot = screen.copy()
+            small = pygame.transform.smoothscale(snapshot, (max(1, SCREEN_WIDTH // 6), max(1, SCREEN_HEIGHT // 6)))
+            blurred = pygame.transform.smoothscale(small, (SCREEN_WIDTH, SCREEN_HEIGHT))
+            screen.blit(blurred, (0, 0))
+            fog = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+            fog.fill((10, 10, 18, 130))
+            screen.blit(fog, (0, 0))
+
+            panel_w = 560
+            panel_h = 220
+            panel_x = (SCREEN_WIDTH - panel_w) // 2
+            panel_y = (SCREEN_HEIGHT - panel_h) // 2
+            pygame.draw.rect(screen, (16, 16, 28), (panel_x, panel_y, panel_w, panel_h), border_radius=14)
+            pygame.draw.rect(screen, UI_ACCENT, (panel_x, panel_y, panel_w, panel_h), 2, border_radius=14)
+
+            title_font = pygame.font.SysFont("arial", 34, bold=True)
+            title = "Ping Pong - Controls"
+            screen.blit(title_font.render(title, True, UI_ACCENT), (SCREEN_WIDTH // 2 - title_font.size(title)[0] // 2, panel_y + 18))
+
             # prompt to start
             hint_font = pygame.font.SysFont("arial", 28, bold=True)
             hint = "Press Enter to Start"
-            screen.blit(hint_font.render(hint, True, UI_ACCENT), (SCREEN_WIDTH//2 - hint_font.size(hint)[0]//2, court.bottom + 8))
+            screen.blit(hint_font.render(hint, True, UI_ACCENT), (SCREEN_WIDTH // 2 - hint_font.size(hint)[0] // 2, panel_y + 148))
             # small controls hint
             small = pygame.font.SysFont("arial", 18)
             ctrl = "WASD - Move    SPACE - Dash"
-            screen.blit(small.render(ctrl, True, WHITE), (SCREEN_WIDTH//2 - small.size(ctrl)[0]//2, court.bottom + 40))
+            screen.blit(small.render(ctrl, True, WHITE), (SCREEN_WIDTH // 2 - small.size(ctrl)[0] // 2, panel_y + 90))
+            ctrl2 = "Super Shot auto-triggers every 6 points on hit"
+            screen.blit(small.render(ctrl2, True, WHITE), (SCREEN_WIDTH // 2 - small.size(ctrl2)[0] // 2, panel_y + 116))
             return
         # draw countdown overlay if active
         if getattr(self, 'countdown_active', False):
@@ -604,13 +799,32 @@ class PingPongGame:
         opp_sprite_y = int(self.opp_y - self.sprite_size // 2)
         pygame.draw.rect(screen, UI_ACCENT, (opp_sprite_x, opp_sprite_y, self.sprite_size, self.sprite_size))
 
-        # draw main ball (with optional trail)
-        if getattr(self, 'ball_dash_timer', 0) > 0:
-            pass
-        pygame.draw.circle(screen, self.ball_color, (self.ball.centerx, self.ball.centery), self.ball.width // 2)
+        # draw main ball trail
+        ball_draw_y = int(self.ball.centery - self.ball_z * 0.22)
+        if self.ball_dash_timer > 0:
+            bvx = self.ball_vel[0]
+            bvy = self.ball_vel[1]
+            mag = math.hypot(bvx, bvy) or 1.0
+            nx = -bvx / mag
+            ny = -bvy / mag
+            for i, a in enumerate((0.3, 0.18, 0.08), start=1):
+                ox = int(nx * (6 * i))
+                oy = int(ny * (6 * i))
+                surf = pygame.Surface((self.ball.width * 2, self.ball.height * 2), pygame.SRCALPHA)
+                col = self.ball_trail_color
+                pygame.draw.circle(surf, (col[0], col[1], col[2], int(200 * a)), (self.ball.width, self.ball.height), self.ball.width)
+                screen.blit(surf, (self.ball.centerx - self.ball.width + ox, ball_draw_y - self.ball.height + oy))
+            # translucent halo around the ball on energized hits
+            glow = pygame.Surface((self.ball.width * 4, self.ball.height * 4), pygame.SRCALPHA)
+            col = self.ball_trail_color
+            pygame.draw.circle(glow, (col[0], col[1], col[2], 70), (self.ball.width * 2, self.ball.height * 2), int(self.ball.width * 1.6))
+            screen.blit(glow, (self.ball.centerx - self.ball.width * 2, ball_draw_y - self.ball.height * 2))
+        pygame.draw.circle(screen, self.ball_color, (self.ball.centerx, ball_draw_y), self.ball.width // 2)
 
         # draw extra balls with trails
         for b in self.extra_balls:
+            bz = b.get("z", 0.0)
+            draw_y = int(b['rect'].centery - bz * 0.22)
             # trail: if dash_timer > 0 draw a faded trail in b['trail_color']
             if b.get('dash_timer', 0) > 0:
                 bvx = b['vel'][0]
@@ -624,10 +838,14 @@ class PingPongGame:
                     surf = pygame.Surface((b['rect'].width * 2, b['rect'].height * 2), pygame.SRCALPHA)
                     col = b.get('trail_color', (255, 140, 0))
                     pygame.draw.circle(surf, (col[0], col[1], col[2], int(200 * a)), (b['rect'].width, b['rect'].height), b['rect'].width)
-                    screen.blit(surf, (b['rect'].centerx - b['rect'].width + ox, b['rect'].centery - b['rect'].height + oy))
+                    screen.blit(surf, (b['rect'].centerx - b['rect'].width + ox, draw_y - b['rect'].height + oy))
+                glow = pygame.Surface((b['rect'].width * 4, b['rect'].height * 4), pygame.SRCALPHA)
+                col = b.get('trail_color', (255, 140, 0))
+                pygame.draw.circle(glow, (col[0], col[1], col[2], 70), (b['rect'].width * 2, b['rect'].height * 2), int(b['rect'].width * 1.6))
+                screen.blit(glow, (b['rect'].centerx - b['rect'].width * 2, draw_y - b['rect'].height * 2))
             # draw ball
             col = b.get('trail_color', (255, 140, 0))
-            pygame.draw.circle(screen, col, (b['rect'].centerx, b['rect'].centery), b['rect'].width // 2)
+            pygame.draw.circle(screen, col, (b['rect'].centerx, draw_y), b['rect'].width // 2)
 
         # Top score bars (left: player green, right: opponent red) with numeric fraction
         bar_w = 220
@@ -652,18 +870,40 @@ class PingPongGame:
         tw = smallf.size(text2)[0]
         screen.blit(smallf.render(text2, True, (255, 255, 255)), (rx + bar_w - tw - 6, ry - 2))
 
-        # (Super Shot removed — no bottom bar)
+        # Super Shot bar (fills yellow, 1 charge each 6 points)
+        super_w = 380
+        super_h = 22
+        sx = (SCREEN_WIDTH - super_w) // 2
+        sy = SCREEN_HEIGHT - 40
+        pygame.draw.rect(screen, (35, 35, 35), (sx, sy, super_w, super_h), border_radius=6)
+        progress = self._get_super_shot_progress()
+        fill_w = int((super_w - 4) * progress)
+        pygame.draw.rect(screen, (240, 210, 60), (sx + 2, sy + 2, max(0, fill_w), super_h - 4), border_radius=6)
+        sfont = pygame.font.SysFont("arial", 16, bold=True)
+        if self._super_shot_available():
+            st = "Super Shot READY (Auto on hit)"
+            scol = (255, 230, 80)
+        else:
+            need = max(0, 6 - (self.player_score - self.super_points_spent))
+            st = f"Super Shot Auto ({need} points to charge)"
+            scol = WHITE
+        sw = sfont.size(st)[0]
+        screen.blit(sfont.render(st, True, scol), (SCREEN_WIDTH // 2 - sw // 2, sy - 20))
 
         # opponent name (above opponent sprite)
         name_font = pygame.font.SysFont("arial", 18, bold=True)
         opp_name = self.opponent.name if self.opponent else "Oscar"
         screen.blit(name_font.render(opp_name, True, WHITE), (opp_sprite_x, opp_sprite_y - 20))
+        # player name (below player sprite)
+        player_name = "Aiden"
+        pw = name_font.size(player_name)[0]
+        screen.blit(name_font.render(player_name, True, WHITE), (player_sprite_x + (self.sprite_size - pw) // 2, player_sprite_y + self.sprite_size + 8))
 
         # taunt
         if self._taunt_msg:
             tfont = pygame.font.SysFont("arial", 20)
             tw = tfont.size(self._taunt_msg)[0]
-            screen.blit(tfont.render(self._taunt_msg, True, (240, 200, 60)), ((SCREEN_WIDTH - tw) // 2, SCREEN_HEIGHT - 80))
+            screen.blit(tfont.render(self._taunt_msg, True, (240, 200, 60)), ((SCREEN_WIDTH - tw) // 2, SCREEN_HEIGHT - 115))
 
         # (Super messages removed)
 
