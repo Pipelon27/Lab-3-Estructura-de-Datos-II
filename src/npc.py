@@ -222,16 +222,21 @@ class NPC:
         # If AI disabled, don't change wander behaviour or move
         if not getattr(self, "ai_enabled", True):
             # still ensure NPC stays within the floor bounds
-            max_x = getattr(self, '_floor_w', 3200) - NPC_SIZE - 30
-            max_y = getattr(self, '_floor_h', 2400) - NPC_SIZE - 30
-            self.rect.clamp_ip(pygame.Rect(30, 30, max_x, max_y))
+            bound_rect = getattr(self, 'bound_rect', None)
+            if bound_rect:
+                self.rect.clamp_ip(bound_rect)
+            else:
+                max_x = getattr(self, '_floor_w', 3200) - NPC_SIZE - 30
+                max_y = getattr(self, '_floor_h', 2400) - NPC_SIZE - 30
+                self.rect.clamp_ip(pygame.Rect(30, 30, max_x, max_y))
             return
 
         self._wander_timer -= dt
         if self._wander_timer <= 0:
             self._wander_timer = random.uniform(2, 5)
-            self._wander_dx = random.choice([-1, 0, 0, 1]) * NPC_SPEED
-            self._wander_dy = random.choice([-1, 0, 0, 1]) * NPC_SPEED
+            speed = NPC_SPEED * getattr(self, 'speed_multiplier', 1.0)
+            self._wander_dx = random.choice([-1, 0, 0, 1]) * speed
+            self._wander_dy = random.choice([-1, 0, 0, 1]) * speed
             if self._wander_dx > 0:
                 self.direction = Direction.RIGHT
             elif self._wander_dx < 0:
@@ -254,9 +259,13 @@ class NPC:
             self.rect.y += dy
 
         # Stay within zone bounds (uses floor bounds if available)
-        max_x = getattr(self, '_floor_w', 3200) - NPC_SIZE - 30
-        max_y = getattr(self, '_floor_h', 2400) - NPC_SIZE - 30
-        self.rect.clamp_ip(pygame.Rect(30, 30, max_x, max_y))
+        bound_rect = getattr(self, 'bound_rect', None)
+        if bound_rect:
+            self.rect.clamp_ip(bound_rect)
+        else:
+            max_x = getattr(self, '_floor_w', 3200) - NPC_SIZE - 30
+            max_y = getattr(self, '_floor_h', 2400) - NPC_SIZE - 30
+            self.rect.clamp_ip(pygame.Rect(30, 30, max_x, max_y))
 
     def _collide(self, walls: list[pygame.Rect], dx: float, dy: float):
         """Push the NPC out of any wall it overlaps."""

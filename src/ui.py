@@ -82,6 +82,18 @@ class UI:
         self.font_title   = pygame.font.SysFont("arial", 48, bold=True)
         self.font_menu    = pygame.font.SysFont("arial", 30)
         self.font_hint    = pygame.font.SysFont("arial", 16)
+        
+        self.wallet_icon_rect = pygame.Rect(SCREEN_WIDTH - 200, SCREEN_HEIGHT - 60, 40, 40)
+        
+        # New Wallet UI constants
+        cx, cy = SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2
+        self.wallet_bg_rect = pygame.Rect(cx - 340, cy - 220, 680, 440)
+        
+        # ID Card inside Left Slot 2 (visible area)
+        self.wallet_id_rect = pygame.Rect(cx - 310, cy - 140, 280, 50)
+        
+        # Bill inside Right Slot 2 (visible area)
+        self.wallet_bill_rect = pygame.Rect(cx + 30, cy - 140, 280, 50)
 
     # ── notifications ─────────────────────────────────────────
 
@@ -92,11 +104,16 @@ class UI:
         if len(self._notifs) > self.MAX_NOTIFS:
             self._notifs.pop(0)
 
+    def trigger_level_up(self):
+        self._level_up_timer = 4.0
+
     def update(self, dt: float):
         """Tick notification timers."""
         for n in self._notifs:
             n.timer -= dt
         self._notifs = [n for n in self._notifs if not n.expired]
+        if getattr(self, '_level_up_timer', 0) > 0:
+            self._level_up_timer -= dt
 
     def draw_notifications(self, screen: pygame.Surface):
         """Render active notifications (top-right corner)."""
@@ -113,6 +130,37 @@ class UI:
             screen.blit(bg_surf, bg)
             screen.blit(surf, r)
             y += 30
+
+        timer = getattr(self, '_level_up_timer', 0)
+        if timer > 0:
+            font = pygame.font.SysFont("arial", 80, bold=True)
+            text_str = "LEVEL UP!"
+            text = font.render(text_str, True, (255, 215, 0))
+            outline = font.render(text_str, True, (0, 0, 0))
+            
+            cx, cy = SCREEN_WIDTH // 2, SCREEN_HEIGHT // 4
+            
+            alpha = 255
+            if timer < 1.0:
+                alpha = int(255 * timer)
+                
+            w, h = text.get_size()
+            surf = pygame.Surface((w + 6, h + 6), pygame.SRCALPHA)
+            
+            for dx, dy in [(-3,-3), (3,-3), (-3,3), (3,3), (0,-3), (0,3), (-3,0), (3,0)]:
+                surf.blit(outline, (3 + dx, 3 + dy))
+            surf.blit(text, (3, 3))
+            
+            surf.set_alpha(alpha)
+            
+            # pulsing effect
+            scale = 1.0 + 0.08 * math.sin(timer * 8)
+            if scale != 1.0:
+                new_size = (int(surf.get_width() * scale), int(surf.get_height() * scale))
+                scaled_surf = pygame.transform.smoothscale(surf, new_size)
+                screen.blit(scaled_surf, scaled_surf.get_rect(center=(cx, cy)))
+            else:
+                screen.blit(surf, surf.get_rect(center=(cx, cy)))
 
     # ── HUD ───────────────────────────────────────────────────
 
@@ -162,6 +210,19 @@ class UI:
         rep_x = 16
         rep_y = SCREEN_HEIGHT - 36
         self._bar(screen, rep_x, rep_y, 220, 14, rep_val, 100, UI_ACCENT, UI_PANEL, "Rep")
+
+        # ── wallet icon (left of minimap) ──
+        # Draw the wallet shape
+        pygame.draw.rect(screen, (110, 70, 40), self.wallet_icon_rect, border_radius=4)
+        pygame.draw.rect(screen, (150, 100, 60), self.wallet_icon_rect, 2, border_radius=4)
+        # Draw wallet flap/strap
+        strap_rect = pygame.Rect(self.wallet_icon_rect.centerx - 6, self.wallet_icon_rect.y, 12, 25)
+        pygame.draw.rect(screen, (70, 40, 20), strap_rect, border_radius=2)
+        # Draw wallet clasp
+        pygame.draw.rect(screen, (220, 180, 50), (self.wallet_icon_rect.centerx - 4, self.wallet_icon_rect.y + 18, 8, 8), border_radius=1)
+        # Label above icon
+        w_lbl = self.font_hint.render("Wallet", True, UI_TEXT_DIM)
+        screen.blit(w_lbl, w_lbl.get_rect(center=(self.wallet_icon_rect.centerx, self.wallet_icon_rect.top - 12)))
 
     def _bar(self, screen, x, y, w, h, cur, mx, fg, bg, label=""):
         """Utility: draw a filled bar with a label."""
@@ -256,7 +317,7 @@ class UI:
 
     # ── pause menu ────────────────────────────────────────────
 
-    def draw_pause_menu(self, screen: pygame.Surface):
+    def draw_pause_menu(self, screen: pygame.Surface, sel: int = 0):
         """Semi-transparent pause overlay."""
         overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
         overlay.fill((0, 0, 0, 140))
@@ -267,14 +328,13 @@ class UI:
             self.font_title.render("PAUSED", True, UI_ACCENT),
             self.font_title.render("PAUSED", True, UI_ACCENT).get_rect(center=(cx, 250)),
         )
-        screen.blit(
-            self.font_menu.render("Press ESC to resume", True, UI_TEXT),
-            self.font_menu.render("Press ESC to resume", True, UI_TEXT).get_rect(center=(cx, 330)),
-        )
-        screen.blit(
-            self.font_menu.render("Press Q to quit", True, UI_TEXT_DIM),
-            self.font_menu.render("Press Q to quit", True, UI_TEXT_DIM).get_rect(center=(cx, 380)),
-        )
+        
+        options = ["Resume", "Change Character", "Quit"]
+        for i, opt in enumerate(options):
+            col = UI_ACCENT if i == sel else UI_TEXT_DIM
+            prefix = "► " if i == sel else "  "
+            text_surf = self.font_menu.render(prefix + opt, True, col)
+            screen.blit(text_surf, text_surf.get_rect(center=(cx, 330 + i * 50)))
 
     # ── help screen ───────────────────────────────────────────
 
@@ -419,3 +479,111 @@ class UI:
             self.font_hint.render("Press ESC to return to menu", True, UI_TEXT_DIM),
             (cx - 100, SCREEN_HEIGHT - 40),
         )
+
+    # ── wallet ui ─────────────────────────────────────────────
+
+    def draw_wallet(self, screen: pygame.Surface, active_item: str | None, character):
+        """Draw the wallet interface. Semi-transparent background."""
+        overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 200))
+        screen.blit(overlay, (0, 0))
+
+        cx, cy = SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2
+        
+        if not active_item:
+            # 1. Draw Wallet Background (Outside/Main Body)
+            pygame.draw.rect(screen, (50, 25, 15), self.wallet_bg_rect, border_radius=12)
+            pygame.draw.rect(screen, (30, 15, 10), self.wallet_bg_rect, 4, border_radius=12)
+            
+            # Middle fold
+            pygame.draw.line(screen, (20, 10, 5), (cx, self.wallet_bg_rect.y), (cx, self.wallet_bg_rect.bottom), 6)
+            
+            # Stitching on the outer edge
+            pygame.draw.rect(screen, (100, 50, 30), self.wallet_bg_rect.inflate(-12, -12), 2, border_radius=10)
+
+            # 3. Draw Left & Right Slots
+            slot_ys = [cy - 180, cy - 90, cy, cy + 90]
+            
+            for i, sy in enumerate(slot_ys):
+                # --- Left Side ---
+                # Draw ID card before drawing its pocket cover (Slot 2 = index 1)
+                if i == 1:
+                    full_id = pygame.Rect(self.wallet_id_rect.x, self.wallet_id_rect.y, self.wallet_id_rect.width, 160)
+                    pygame.draw.rect(screen, (220, 220, 230), full_id, border_radius=8)
+                    pygame.draw.rect(screen, (100, 100, 150), full_id, 2, border_radius=8)
+                    id_title = self.font_hud_md.render("Ravenside High ID", True, BLACK)
+                    screen.blit(id_title, (full_id.x + 10, full_id.y + 8))
+                
+                # Draw Left Pocket Cover
+                pocket_h = self.wallet_bg_rect.bottom - sy - 10
+                pocket_rect_left = pygame.Rect(self.wallet_bg_rect.x + 20, sy, 300, pocket_h)
+                pygame.draw.rect(screen, (60, 30, 18), pocket_rect_left, border_radius=4)
+                pygame.draw.rect(screen, (35, 18, 10), pocket_rect_left, 2, border_radius=4)
+                pygame.draw.line(screen, (100, 50, 30), (pocket_rect_left.x + 5, pocket_rect_left.y + 4), (pocket_rect_left.right - 5, pocket_rect_left.y + 4), 1)
+
+                # --- Right Side ---
+                # Draw Bill before drawing its pocket cover (Slot 2 = index 1)
+                if i == 1:
+                    full_bill = pygame.Rect(self.wallet_bill_rect.x, self.wallet_bill_rect.y, self.wallet_bill_rect.width, 160)
+                    pygame.draw.rect(screen, (100, 150, 100), full_bill, border_radius=4)
+                    pygame.draw.rect(screen, (50, 100, 50), full_bill, 2, border_radius=4)
+                    bill_title = self.font_hud_lg.render("$5", True, (20, 60, 20))
+                    screen.blit(bill_title, (full_bill.x + 10, full_bill.y + 6))
+
+                # Draw Right Pocket Cover
+                pocket_rect_right = pygame.Rect(cx + 20, sy, 300, pocket_h)
+                pygame.draw.rect(screen, (60, 30, 18), pocket_rect_right, border_radius=4)
+                pygame.draw.rect(screen, (35, 18, 10), pocket_rect_right, 2, border_radius=4)
+                pygame.draw.line(screen, (100, 50, 30), (pocket_rect_right.x + 5, pocket_rect_right.y + 4), (pocket_rect_right.right - 5, pocket_rect_right.y + 4), 1)
+
+            # Hint
+            hint = self.font_hint.render("Click an item to inspect. Press ESC or click outside to close.", True, UI_TEXT_DIM)
+            screen.blit(hint, hint.get_rect(center=(cx, self.wallet_bg_rect.bottom + 30)))
+            
+        else:
+            # Draw active item zoomed in
+            if active_item == "id":
+                big_id = pygame.Rect(cx - 250, cy - 150, 500, 300)
+                pygame.draw.rect(screen, (220, 220, 230), big_id, border_radius=12)
+                pygame.draw.rect(screen, (100, 100, 150), big_id, 4, border_radius=12)
+                
+                # ID Header
+                header = self.font_menu.render("Ravenside High - Student ID", True, (50, 50, 100))
+                screen.blit(header, header.get_rect(center=(cx, big_id.y + 40)))
+                pygame.draw.line(screen, (100, 100, 150), (big_id.x + 20, big_id.y + 70), (big_id.right - 20, big_id.y + 70), 3)
+                
+                # Details
+                y_off = big_id.y + 100
+                first_name = character.value.title() if character else "Aiden"
+                details = [
+                    f"Name: {first_name} Timbers",
+                    "Student ID: 202467",
+                    "Grade: 10th grade"
+                ]
+                for d in details:
+                    text = self.font_hud_lg.render(d, True, BLACK)
+                    screen.blit(text, (big_id.x + 40, y_off))
+                    y_off += 50
+                    
+                # Photo placeholder
+                photo_rect = pygame.Rect(big_id.right - 140, big_id.y + 100, 100, 130)
+                pygame.draw.rect(screen, (180, 180, 190), photo_rect)
+                pygame.draw.rect(screen, (100, 100, 100), photo_rect, 2)
+                
+            elif active_item == "bill":
+                big_bill = pygame.Rect(cx - 300, cy - 120, 600, 240)
+                pygame.draw.rect(screen, (100, 150, 100), big_bill, border_radius=8)
+                pygame.draw.rect(screen, (50, 100, 50), big_bill, 4, border_radius=8)
+                
+                # Bill details
+                tl = self.font_title.render("5", True, (20, 60, 20))
+                screen.blit(tl, (big_bill.x + 20, big_bill.y + 10))
+                screen.blit(tl, (big_bill.right - 40, big_bill.y + 10))
+                screen.blit(tl, (big_bill.x + 20, big_bill.bottom - 50))
+                screen.blit(tl, (big_bill.right - 40, big_bill.bottom - 50))
+                
+                center_text = self.font_title.render("FIVE DOLLARS", True, (40, 90, 40))
+                screen.blit(center_text, center_text.get_rect(center=(cx, cy)))
+                
+            hint = self.font_hint.render("Click anywhere to return to wallet.", True, UI_TEXT)
+            screen.blit(hint, hint.get_rect(center=(cx, cy + 220)))

@@ -50,6 +50,10 @@ class WorldMap:
         self._drag_start     = (0, 0)
         self._drag_offset0   = (0.0, 0.0)
 
+        # Teleport confirmation
+        self._confirm_teleport = False
+        self._teleport_target  = None
+
         # Hover state
         self._hovered_room   = None
 
@@ -90,8 +94,19 @@ class WorldMap:
         """Process input. Return True if the map should close."""
         if event.type == pygame.KEYDOWN:
             from settings import KEY_MAP, KEY_PAUSE
-            if event.key in (KEY_MAP, KEY_PAUSE):
-                return True
+            if self._confirm_teleport:
+                if event.key == pygame.K_SPACE:
+                    self.teleport_requested = True
+                    self.teleport_floor = self._teleport_target[0]
+                    self.teleport_pos = (self._teleport_target[1], self._teleport_target[2])
+                    self._confirm_teleport = False
+                    return True
+                elif event.key == pygame.K_ESCAPE:
+                    self._confirm_teleport = False
+                    return False
+            else:
+                if event.key in (KEY_MAP, KEY_PAUSE):
+                    return True
 
         elif event.type == pygame.MOUSEBUTTONDOWN:
             if event.button == 1:
@@ -112,7 +127,15 @@ class WorldMap:
 
         elif event.type == pygame.MOUSEBUTTONUP:
             if event.button == 1:
-                self._dragging = False
+                if self._dragging:
+                    self._dragging = False
+                    dx = abs(event.pos[0] - self._drag_start[0])
+                    dy = abs(event.pos[1] - self._drag_start[1])
+                    if dx < 5 and dy < 5 and not self._confirm_teleport:
+                        wx, wy = self._screen_to_world(*event.pos)
+                        self._teleport_target = (self.current_tab, wx, wy)
+                        self._confirm_teleport = True
+                        return False
 
         elif event.type == pygame.MOUSEMOTION:
             if self._dragging:
@@ -155,13 +178,17 @@ class WorldMap:
         screen.set_clip(None)
 
         # Tooltip (drawn on top, outside clip)
-        self._draw_tooltip(screen)
+        if not self._confirm_teleport:
+            self._draw_tooltip(screen)
 
         # Controls hint
         hint = self._font_room.render(
-            "Drag: pan   Scroll: zoom   Click tabs to switch   M / ESC: close",
+            "Click: Teleport   Drag: pan   Scroll: zoom   Click tabs to switch   M / ESC: close",
             True, UI_TEXT_DIM)
         screen.blit(hint, (12, SCREEN_HEIGHT - 20))
+
+        if self._confirm_teleport:
+            self._draw_teleport_confirm(screen)
 
     # ── internal ──────────────────────────────────────────────
 
@@ -349,3 +376,26 @@ class WorldMap:
         for s in surfs:
             screen.blit(s, (tx + p, cy))
             cy += s.get_height() + 2
+
+    # ── teleport confirm drawing ──────────────────────────────
+
+    def _draw_teleport_confirm(self, screen):
+        box_w, box_h = 400, 160
+        bx = (SCREEN_WIDTH - box_w) // 2
+        by = (SCREEN_HEIGHT - box_h) // 2
+
+        overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 150))
+        screen.blit(overlay, (0, 0))
+
+        pygame.draw.rect(screen, UI_PANEL, (bx, by, box_w, box_h), border_radius=8)
+        pygame.draw.rect(screen, UI_ACCENT, (bx, by, box_w, box_h), 2, border_radius=8)
+
+        title = self._font_tip_t.render("Teleport to this zone?", True, WHITE)
+        screen.blit(title, title.get_rect(center=(SCREEN_WIDTH // 2, by + 40)))
+
+        hint1 = self._font_tip.render("Press SPACE to confirm", True, (100, 200, 100))
+        hint2 = self._font_tip.render("Press ESC to cancel", True, (220, 100, 100))
+        
+        screen.blit(hint1, hint1.get_rect(center=(SCREEN_WIDTH // 2, by + 90)))
+        screen.blit(hint2, hint2.get_rect(center=(SCREEN_WIDTH // 2, by + 120)))

@@ -289,9 +289,9 @@ class DialogueSystem:
 
         choices = self.active_tree.get_choices()
         if choices:
-            if event.key == pygame.K_UP:
+            if event.key in (pygame.K_UP, pygame.K_w):
                 self._choice_index = max(0, self._choice_index - 1)
-            elif event.key == pygame.K_DOWN:
+            elif event.key in (pygame.K_DOWN, pygame.K_s):
                 self._choice_index = min(len(choices) - 1, self._choice_index + 1)
             elif event.key in (pygame.K_RETURN, pygame.K_SPACE):
                 cons = self.active_tree.make_choice(self._choice_index)

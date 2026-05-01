@@ -19,7 +19,7 @@ from collections import deque
 from settings import (
     SCREEN_WIDTH, SCREEN_HEIGHT, FPS,
     BLACK, WHITE,
-    FLOOR_1F, FLOOR_SIZES, ZONE_TO_FLOOR,
+    FLOOR_1F, FLOOR_CAMPUS, FLOOR_SIZES, ZONE_TO_FLOOR,
     PLAYER_SIZE, NPC_INTERACTION_RANGE, ATTACK_RANGE,
     GameState, Character, DayPhase, ItemCategory, Ending,
     NOTIF_SUCCESS, NOTIF_WARNING, NOTIF_ERROR, NOTIF_INFO,
@@ -70,6 +70,8 @@ class Game:
         self.running        = True
         self.state          = GameState.PLAYING
         self.previous_state = GameState.PLAYING
+        self.active_wallet_item = None
+        self.pause_sel      = 0
 
         # Transition cooldown (prevents rapid re-triggering)
         self._transition_cooldown: float = 0.0
@@ -107,14 +109,14 @@ class Game:
 
     def _init_map(self):
         self.school_map    = SchoolMap()
-        self.current_floor = FLOOR_1F
+        self.current_floor = FLOOR_CAMPUS
         floor = self.school_map.get_floor(self.current_floor)
-        self._floor_w = floor.width  if floor else 3200
-        self._floor_h = floor.height if floor else 2400
+        self._floor_w = floor.width  if floor else 4000
+        self._floor_h = floor.height if floor else 3000
 
     def _init_players(self):
-        # Spawn in the Main Hall (centre of 1F corridor)
-        cx, cy = 1600, 1000
+        # Spawn in the Entrance Roundabout (Campus)
+        cx, cy = 2000, 2700
         if self.character == Character.AIDEN:
             self.player = Aiden(cx, cy)
         else:
@@ -134,22 +136,19 @@ class Game:
     def _init_npcs(self):
         self.npc_manager = NPCManager()
         self.npc_manager.load_npcs_from_json()
-        # Position Oscar and two observers in the Main Hall (top-right)
+        
+        from src.npc import NPC
+        from settings import SocialGroup, NPC_SIZE
+        
+        # Position Oscar and observers inside the Ping Pong Courts on the campus floor
         oscar = self.npc_manager.get_npc_by_id("npc_oscar")
         if oscar:
-            oscar.current_floor = self.current_floor
-            # Place Oscar in the Main Hall room (coordinates from map.Room definition)
-            # Main Hall: x=1050..(1050+1100), y=16..(16+1934)
-            mh_x = 1050
-            mh_y = 16
-            mh_w = 1100
-            mh_h = 1934
-            # place Oscar at the center of the watcher circle so he remains inside
-            oscar_center_x = mh_x + mh_w - 260
-            oscar_center_y = mh_y + 120
-            oscar.rect.centerx = oscar_center_x
-            oscar.rect.centery = oscar_center_y
-            # ensure observers exist, are stationary, and hidden names
+            oscar.current_floor = FLOOR_CAMPUS
+            oscar.ai_enabled = True
+            oscar.bound_rect = pygame.Rect(3100 + 30, 2100 + 30, 780 - 60 - NPC_SIZE, 750 - 60 - NPC_SIZE)
+            # Place Oscar near the centre of the court
+            oscar.rect.centerx = 3490
+            oscar.rect.centery = 2375
             # gather observers and arrange them in a circle around Oscar
             obs_ids = [
                 "npc_oscar_obs1",
@@ -157,18 +156,46 @@ class Game:
                 "npc_oscar_obs3",
                 "npc_oscar_obs4",
             ]
-            # increase radius so watchers are a bit more distanced
-            radius = 160
+            radius = 210
             for i, oid in enumerate(obs_ids):
                 obs = self.npc_manager.get_npc_by_id(oid)
                 if not obs:
                     continue
-                obs.current_floor = self.current_floor
-                obs.ai_enabled = False
-                obs.show_name = False
+                obs.current_floor = FLOOR_CAMPUS
+                obs.ai_enabled = True
+                obs.bound_rect = pygame.Rect(3100 + 30, 2100 + 30, 780 - 60 - NPC_SIZE, 750 - 60 - NPC_SIZE)
+                obs.name = "Club Member"
+                obs.show_name = True
                 angle = (i / len(obs_ids)) * (2 * math.pi)
                 obs.rect.centerx = oscar.rect.centerx + int(math.cos(angle) * radius)
                 obs.rect.centery = oscar.rect.centery + int(math.sin(angle) * radius)
+
+        # Create additional random NPCs across all floors
+        random_names = ["Alex", "Jordan", "Taylor", "Morgan", "Casey", "Riley", "Sam", "Jamie", "Drew", "Avery", "Cameron", "Dakota", "Quinn", "Skyler", "Harper", "Finley"]
+        groups = list(SocialGroup)
+        for floor_id, floor in self.school_map.floors.items():
+            rooms = list(floor.rooms.values())
+            for i in range(10):  # 10 random NPCs per floor
+                if not rooms: continue
+                room = random.choice(rooms)
+                nid = f"npc_rnd_{floor_id}_{i}"
+                npc_name = random.choice(random_names)
+                npc_group = random.choice(groups)
+                npc = NPC(nid, npc_name, npc_group, "Walking", "Walking")
+                npc.current_floor = floor_id
+                npc.ai_enabled = True
+                npc.speed_multiplier = 2.5 # Make them move faster
+                for _ in range(10):
+                    if room.rect.width > 60 and room.rect.height > 60:
+                        npc.rect.x = room.rect.x + random.randint(30, room.rect.width - 60)
+                        npc.rect.y = room.rect.y + random.randint(30, room.rect.height - 60)
+                    else:
+                        npc.rect.x = room.rect.x
+                        npc.rect.y = room.rect.y
+                    if not any(npc.rect.colliderect(w) for w in floor.walls):
+                        break
+                self.npc_manager.npcs[nid] = npc
+                self.npc_manager.relationships.add_node(nid)
 
     def _init_systems(self):
         self.reputation      = ReputationSystem()
@@ -231,6 +258,11 @@ class Game:
                 close = self.world_map.handle_event(event)
                 if close:
                     self.state = self.previous_state
+                    if getattr(self.world_map, 'teleport_requested', False):
+                        self.world_map.teleport_requested = False
+                        tfloor = self.world_map.teleport_floor
+                        tx, ty = self.world_map.teleport_pos
+                        self._go_to_floor(tfloor, int(tx), int(ty))
                 continue
             if event.type == pygame.KEYDOWN:
                 self._on_key_down(event)
@@ -239,6 +271,22 @@ class Game:
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 if self.state == GameState.TRADING:
                     self.trade_system.handle_click(event.pos)
+                elif self.state == GameState.PLAYING:
+                    if self.ui.wallet_icon_rect.collidepoint(event.pos):
+                        self.previous_state = self.state
+                        self.state = GameState.WALLET
+                        self.active_wallet_item = None
+                elif self.state == GameState.WALLET:
+                    if self.active_wallet_item:
+                        # Click anywhere to go back to wallet view
+                        self.active_wallet_item = None
+                    else:
+                        if self.ui.wallet_id_rect.collidepoint(event.pos):
+                            self.active_wallet_item = "id"
+                        elif self.ui.wallet_bill_rect.collidepoint(event.pos):
+                            self.active_wallet_item = "bill"
+                        elif not self.ui.wallet_bg_rect.collidepoint(event.pos) and not self.ui.wallet_bill_rect.collidepoint(event.pos):
+                            self.state = GameState.PLAYING
 
     def _on_key_down(self, event: pygame.event.Event):
         # ── universal keys ──
@@ -251,15 +299,25 @@ class Game:
             return
 
         if event.key == KEY_PAUSE:
-            if self.state == GameState.PAUSED:
+            # When ping-pong is active, let the minigame handle ESC itself
+            if self.state == GameState.PINGPONG:
+                pass  # fall through to state-specific dispatch below
+            elif self.state == GameState.PAUSED:
                 self.state = GameState.PLAYING
             elif self.state == GameState.PLAYING:
                 self.state = GameState.PAUSED
             elif self.state in (GameState.INVENTORY_SCREEN,
                                 GameState.SKILL_TREE_SCREEN,
-                                GameState.HELP):
-                self.state = GameState.PLAYING
-            return
+                                GameState.HELP,
+                                GameState.WALLET):
+                if self.state == GameState.WALLET and self.active_wallet_item:
+                    self.active_wallet_item = None
+                else:
+                    self.state = GameState.PLAYING
+            else:
+                return
+            if self.state != GameState.PINGPONG:
+                return
 
         if event.key == KEY_MAP:
             if self.state == GameState.PLAYING:
@@ -319,7 +377,45 @@ class Game:
         
 
     def _keys_paused(self, event: pygame.event.Event):
-        if event.key == pygame.K_q:
+        if event.key in (pygame.K_UP, pygame.K_w):
+            self.pause_sel = (getattr(self, 'pause_sel', 0) - 1) % 3
+        elif event.key in (pygame.K_DOWN, pygame.K_s):
+            self.pause_sel = (getattr(self, 'pause_sel', 0) + 1) % 3
+        elif event.key in (pygame.K_RETURN, pygame.K_SPACE):
+            sel = getattr(self, 'pause_sel', 0)
+            if sel == 0:
+                self.state = GameState.PLAYING
+            elif sel == 1:
+                from settings import Character, NOTIF_INFO
+                from src.player import Aiden, Lena
+                
+                self.character = Character.LENA if self.character == Character.AIDEN else Character.AIDEN
+                
+                # Preserve stats so swapping doesn't reset progress!
+                old_level = self.player.level
+                old_xp = self.player.xp
+                old_sp = getattr(self.player, 'skill_points', 0)
+                old_hp = self.player.health
+                old_max_hp = self.player.max_health
+
+                old_x, old_y = self.player.rect.center
+                if self.character == Character.AIDEN:
+                    self.player = Aiden(old_x, old_y)
+                else:
+                    self.player = Lena(old_x, old_y)
+                
+                self.player.level = old_level
+                self.player.xp = old_xp
+                self.player.skill_points = old_sp
+                self.player.max_health = old_max_hp
+                self.player.health = min(old_hp, self.player.max_health)
+                self._last_known_level = self.player.level
+                    
+                self.ui.show_notification(f"Swapped to {self.character.value.title()}", NOTIF_INFO)
+                self.state = GameState.PLAYING
+            else:
+                self.running = False
+        elif event.key == pygame.K_q:
             self.running = False
 
     def _keys_game_over(self, event: pygame.event.Event):
@@ -421,6 +517,24 @@ class Game:
             self.camera.set_bounds(floor.width, floor.height)
             self.player.rect.centerx = sx
             self.player.rect.centery = sy
+
+            # Push out of walls to be safe if teleporting inside one
+            for w in floor.walls:
+                if self.player.rect.colliderect(w):
+                    dl = self.player.rect.right - w.left
+                    dr = w.right - self.player.rect.left
+                    dt = self.player.rect.bottom - w.top
+                    db = w.bottom - self.player.rect.top
+                    m = min(dl, dr, dt, db)
+                    if m == dl:
+                        self.player.rect.right = w.left - 2
+                    elif m == dr:
+                        self.player.rect.left = w.right + 2
+                    elif m == dt:
+                        self.player.rect.bottom = w.top - 2
+                    elif m == db:
+                        self.player.rect.top = w.bottom + 2
+
             self.camera.update(self.player)  # snap camera
             # Advance "go_to_zone" objectives (map old zone IDs)
             for old_zid, (fid, _, _) in ZONE_TO_FLOOR.items():
@@ -436,6 +550,13 @@ class Game:
     def _update(self, dt: float):
         # Always tick UI (notifications)
         self.ui.update(dt)
+
+        if not hasattr(self, '_last_known_level'):
+            self._last_known_level = self.player.level
+        if self.player.level > self._last_known_level:
+            self._last_known_level = self.player.level
+            if hasattr(self.ui, 'trigger_level_up'):
+                self.ui.trigger_level_up()
 
         if self.state == GameState.PLAYING:
             self._update_playing(dt)
@@ -461,12 +582,24 @@ class Game:
                     self.player.health = self.player.max_health // 2
         elif self.state == GameState.PINGPONG:
             result = self.pingpong.update(dt)
+            # 'settings' from the pause menu — exit minigame cleanly for now
+            if result == 'settings':
+                self.pingpong.finished = False
+                self.pingpong.reset()
+                self.state = GameState.PLAYING
+                self.ui.show_notification("Settings not yet available in-game.", NOTIF_INFO)
             # When a match result arrives, show end-screen and apply reputation changes
-            if result is not None and not getattr(self.pingpong, 'waiting_for_dismiss', False):
+            elif result is not None and not getattr(self.pingpong, 'waiting_for_dismiss', False):
                 if result == "win":
                     # add +20 reputation
                     self.reputation.reputation_score = min(100, self.reputation.reputation_score + 20)
-                    self.pingpong.end_message = "Win Match\n+20 Reputation"
+                    self.player.level += 1
+                    from settings import SKILL_POINT_PER_LEVEL
+                    self.player.skill_points += SKILL_POINT_PER_LEVEL
+                    self.pingpong.end_message = "Win Match\n+20 Reputation\nLevel Up!"
+                    if hasattr(self.ui, 'trigger_level_up'):
+                        self.ui.trigger_level_up()
+                    self._last_known_level = self.player.level
                 elif result == "lose":
                     if self.reputation.reputation_score > 0:
                         self.reputation.reputation_score = max(0, self.reputation.reputation_score - 10)
@@ -479,6 +612,7 @@ class Game:
                 self.pingpong.finished = False
                 self.pingpong.reset()
                 self.state = GameState.PLAYING
+
         elif self.state == GameState.HACKING:
             result = self.hacking_game.update(dt)
             if result is not None:
@@ -685,10 +819,11 @@ class Game:
             GameState.DIALOGUE:          lambda: (self._draw_world(), self.dialogue_system.draw(self.screen)),
             GameState.PINGPONG:          lambda: self.pingpong.draw(self.screen),
             GameState.TRADING:           lambda: (self._draw_world(), self.trade_system.draw(self.screen)),
-            GameState.PAUSED:            lambda: (self._draw_world(), self.ui.draw_pause_menu(self.screen)),
+            GameState.PAUSED:            lambda: (self._draw_world(), self.ui.draw_pause_menu(self.screen, getattr(self, 'pause_sel', 0))),
             GameState.INVENTORY_SCREEN:  lambda: self.ui.draw_inventory(self.screen, self.inventory),
             GameState.SKILL_TREE_SCREEN: lambda: self.ui.draw_skill_tree(self.screen, self.player.skill_tree, self.player),
             GameState.HELP:              lambda: self.ui.draw_help_screen(self.screen, self.character),
+            GameState.WALLET:            lambda: (self._draw_world(), self.ui.draw_wallet(self.screen, self.active_wallet_item, self.character)),
             GameState.GAME_OVER:         lambda: self.ui.draw_game_over(self.screen, self.reputation.calculate_ending()),
             GameState.MAP:               lambda: self._draw_map(),
         }

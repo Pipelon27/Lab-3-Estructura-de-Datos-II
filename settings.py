@@ -170,6 +170,7 @@ class GameState(Enum):
     GAME_OVER        = auto()
     VICTORY          = auto()
     MAP              = auto()
+    WALLET           = auto()
 
 
 class Character(Enum):

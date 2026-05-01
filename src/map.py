@@ -250,13 +250,23 @@ class Floor:
                                       r.centery - arr.get_height() // 2))
             elif r.width > 50:
                 lbl = font14.render(room.name, True, (200, 200, 210))
-                screen.blit(lbl, (r.x + 8, r.y + 8))
+                y_offset = 24 if room.id == "c_tennis" else 8
+                x_offset = 30 if room.id == "c_tennis" else 8
+                screen.blit(lbl, (r.x + x_offset, r.y + y_offset))
 
         for wall in self.walls:
             wr = camera.apply_rect(wall)
             if wr.right < 0 or wr.left > sw or wr.bottom < 0 or wr.top > sh:
                 continue
-            pygame.draw.rect(screen, self.WALL_COLOR, wr)
+            
+            # Special case for the ping pong table
+            if getattr(self, 'ping_pong_table', None) and wall == self.ping_pong_table:
+                pygame.draw.rect(screen, (30, 100, 40), wr)  # Ping pong green/blue
+                pygame.draw.rect(screen, WHITE, wr, 2)       # Outline
+                net = pygame.Rect(wr.centerx - 2, wr.y, 4, wr.height)
+                pygame.draw.rect(screen, WHITE, net)
+            else:
+                pygame.draw.rect(screen, self.WALL_COLOR, wr)
 
         font_sm = pygame.font.SysFont("arial", 13, bold=True)
         for tr in self.transitions:
@@ -393,8 +403,8 @@ class SchoolMap:
         f.add_room(Room("c_gardens", "English Gardens",
                         "Manicured gardens with hedge maze",
                         100, 150, 1200, 1000, (32, 58, 32)))
-        f.add_room(Room("c_tennis", "Tennis Courts",
-                        "Two courts for recreation",
+        f.add_room(Room("c_tennis", "Ping Pong Court",
+                        "One court for recreation",
                         3100, 2100, 780, 750, (48, 62, 48)))
         f.add_room(Room("c_coliseum", "Athletic Coliseum",
                         "Circular coliseum with basketball court",
@@ -428,6 +438,12 @@ class SchoolMap:
             _hw(300, 500, 500), _hw(550, 800, 550),
             _vw(750, 250, 450), _vw(450, 650, 350),
         ])
+        
+        # Ping pong table in the middle of Ping Pong Courts
+        # Court bounds: x=3100, y=2100, w=780, h=750
+        # Center = 3100 + 390 = 3490, 2100 + 375 = 2475
+        f.ping_pong_table = pygame.Rect(3400, 2420, 180, 110)
+        f.walls.append(f.ping_pong_table)
 
         # Portal: building entrance → 1F reception
         f.transitions.append(FloorTransition(
@@ -666,9 +682,10 @@ class SchoolMap:
         ])
         # Room cluster
         f.walls.extend([
-            _hw(300, 200, 2400), _hw(300, 1300 - WT, 2400),
             _vw(300, 200, 1100), _vw(2700 - WT, 200, 1100),
         ])
+        f.walls.extend(_hwall_gaps(200, 300, 2700, [(600, DW), (1450, DW), (2300, DW)]))
+        f.walls.extend(_hwall_gaps(1300 - WT, 300, 2700, [(600, DW), (1450, DW), (2300, DW)]))
         f.walls.extend(_vwall_gaps(1150, 200, 1300, [(400, DW), (950, DW)]))
         f.walls.extend(_vwall_gaps(2000, 200, 1300, [(400, DW), (950, DW)]))
         f.walls.extend(_hwall_gaps(750, 300, 2700, [(600, DW), (1450, DW)]))
