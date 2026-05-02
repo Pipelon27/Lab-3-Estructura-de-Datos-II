@@ -56,11 +56,18 @@ class WorldMap:
 
         # Hover state
         self._hovered_room   = None
+        self._tooltip_pos    = None
 
         # Player position (updated by Game each frame)
         self.player_floor    = FLOOR_1F
         self.player_x        = 0
         self.player_y        = 0
+
+        # Controller selection state
+        self._room_order: list = []
+        self._selected_room_index: int = -1
+        self.teleport_requested = False
+
 
         # Fonts
         self._font_tab    = pygame.font.SysFont("arial", 18, bold=True)
@@ -70,6 +77,7 @@ class WorldMap:
         self._font_header = pygame.font.SysFont("arial", 28, bold=True)
 
         self._centre_on_floor(self.current_tab)
+        self._refresh_room_selection()
         # Optional named markers (e.g., NPCs) to show on the map: {name: (floor, x, y, color)}
         self._markers = {}
 
@@ -115,6 +123,9 @@ class WorldMap:
                 if tab is not None:
                     self.current_tab = tab
                     self._centre_on_floor(tab)
+                    self._confirm_teleport = False
+                    self._teleport_target = None
+                    self._refresh_room_selection(reset_index=True)
                     return False
                 # Start drag
                 self._dragging     = True
@@ -135,6 +146,7 @@ class WorldMap:
                         wx, wy = self._screen_to_world(*event.pos)
                         self._teleport_target = (self.current_tab, wx, wy)
                         self._confirm_teleport = True
+                        self.teleport_requested = False
                         return False
 
         elif event.type == pygame.MOUSEMOTION:
@@ -152,9 +164,52 @@ class WorldMap:
 
         return False
 
+    def handle_controller(self, controller) -> bool:
+        """Process controller input. Return True if the map should close."""
+        if controller is None or not controller.connected:
+            return False
+
+        # Teleport confirmation prompt takes priority
+        if self._confirm_teleport:
+            if controller.is_confirm_pressed():
+                if self._teleport_target:
+                    self.teleport_requested = True
+                    self.teleport_floor = self._teleport_target[0]
+                    self.teleport_pos = (self._teleport_target[1], self._teleport_target[2])
+                    self._confirm_teleport = False
+                    return True
+            elif controller.is_cancel_pressed():
+                self._confirm_teleport = False
+                self.teleport_requested = False
+            return False
+
+        # Floor tab navigation with LB/RB
+        if controller.is_block_pressed():
+            self._change_tab(-1)
+        elif controller.is_attack_pressed():
+            self._change_tab(1)
+
+        # Room selection via D-pad
+        menu_dir = controller.get_menu_direction()
+        if menu_dir == -1:
+            self._move_room_selection(-1)
+        elif menu_dir == 1:
+            self._move_room_selection(1)
+
+        # Confirm selection
+        if controller.is_confirm_pressed() and self._teleport_target:
+            self._confirm_teleport = True
+            self.teleport_requested = False
+
+        if controller.is_cancel_pressed():
+            self.teleport_requested = False
+            return True
+
+        return False
+
     # ── drawing ───────────────────────────────────────────────
 
-    def draw(self, screen: pygame.Surface):
+    def draw(self, screen: pygame.Surface, controller_connected: bool = False):
         """Render the map viewer overlay."""
         screen.fill(UI_BG)
 
@@ -182,13 +237,15 @@ class WorldMap:
             self._draw_tooltip(screen)
 
         # Controls hint
-        hint = self._font_room.render(
-            "Click: Teleport   Drag: pan   Scroll: zoom   Click tabs to switch   M / ESC: close",
-            True, UI_TEXT_DIM)
+        if controller_connected:
+            hint_text = "LB/RB: floors   D-Pad: select room   A: teleport   B: cancel   View: close"
+        else:
+            hint_text = "Click: Teleport   Drag: pan   Scroll: zoom   Click tabs to switch   M / ESC: close"
+        hint = self._font_room.render(hint_text, True, UI_TEXT_DIM)
         screen.blit(hint, (12, SCREEN_HEIGHT - 20))
 
         if self._confirm_teleport:
-            self._draw_teleport_confirm(screen)
+            self._draw_teleport_confirm(screen, controller_connected)
 
     # ── internal ──────────────────────────────────────────────
 
@@ -199,6 +256,63 @@ class WorldMap:
         avail_h = SCREEN_HEIGHT - map_y0
         self.offset_x = (SCREEN_WIDTH - w * self.zoom) / 2
         self.offset_y = map_y0 + (avail_h - h * self.zoom) / 2
+
+    def _refresh_room_selection(self, reset_index: bool = False):
+        """Rebuild the list of rooms for controller navigation."""
+        floor = self.school_map.get_floor(self.current_tab)
+        if not floor:
+            self._room_order = []
+            self._selected_room_index = -1
+            if not self._confirm_teleport:
+                self._hovered_room = None
+            self._teleport_target = None
+            return
+
+        rooms = list(floor.rooms.values())
+        rooms.sort(key=lambda r: (r.rect.centery, r.rect.centerx))
+        self._room_order = rooms
+
+        if not rooms:
+            self._selected_room_index = -1
+            if not self._confirm_teleport:
+                self._hovered_room = None
+            self._teleport_target = None
+            return
+
+        if reset_index or not (0 <= self._selected_room_index < len(rooms)):
+            self._selected_room_index = 0
+
+        self._hovered_room = rooms[self._selected_room_index]
+        self._set_tooltip_to_room(self._hovered_room)
+        cx, cy = self._hovered_room.rect.center
+        self._teleport_target = (self.current_tab, cx, cy)
+
+    def _change_tab(self, delta: int):
+        n = len(FLOOR_NAMES)
+        self.current_tab = (self.current_tab + delta) % n
+        self._centre_on_floor(self.current_tab)
+        self._confirm_teleport = False
+        self._teleport_target = None
+        self.teleport_requested = False
+        self._refresh_room_selection(reset_index=True)
+
+    def _move_room_selection(self, step: int):
+        if not self._room_order:
+            return
+        self._selected_room_index = (self._selected_room_index + step) % len(self._room_order)
+        room = self._room_order[self._selected_room_index]
+        self._hovered_room = room
+        # Pre-select teleport target at room centre for quick confirm
+        cx, cy = room.rect.center
+        self._teleport_target = (self.current_tab, cx, cy)
+        self._set_tooltip_to_room(room)
+
+    def _set_tooltip_to_room(self, room):
+        if not room:
+            self._tooltip_pos = None
+            return
+        sx, sy = self._world_to_screen(room.rect.centerx, room.rect.centery)
+        self._tooltip_pos = (sx, sy)
 
     def _world_to_screen(self, wx, wy):
         sx = wx * self.zoom + self.offset_x
@@ -234,9 +348,11 @@ class WorldMap:
         floor = self.school_map.get_floor(self.current_tab)
         if not floor:
             self._hovered_room = None
+            self._tooltip_pos = None
             return
         wx, wy = self._screen_to_world(pos[0], pos[1])
         self._hovered_room = floor.get_room_at(wx, wy)
+        self._tooltip_pos = pos
 
     # ── tab drawing ───────────────────────────────────────────
 
@@ -336,7 +452,10 @@ class WorldMap:
         room = self._hovered_room
         if not room:
             return
-        mx, my = pygame.mouse.get_pos()
+        if self._tooltip_pos:
+            mx, my = self._tooltip_pos
+        else:
+            mx, my = pygame.mouse.get_pos()
 
         lines = [room.name]
         lines.append(room.description)
@@ -379,7 +498,7 @@ class WorldMap:
 
     # ── teleport confirm drawing ──────────────────────────────
 
-    def _draw_teleport_confirm(self, screen):
+    def _draw_teleport_confirm(self, screen, controller_connected: bool = False):
         box_w, box_h = 400, 160
         bx = (SCREEN_WIDTH - box_w) // 2
         by = (SCREEN_HEIGHT - box_h) // 2
@@ -394,8 +513,12 @@ class WorldMap:
         title = self._font_tip_t.render("Teleport to this zone?", True, WHITE)
         screen.blit(title, title.get_rect(center=(SCREEN_WIDTH // 2, by + 40)))
 
-        hint1 = self._font_tip.render("Press SPACE to confirm", True, (100, 200, 100))
-        hint2 = self._font_tip.render("Press ESC to cancel", True, (220, 100, 100))
-        
+        if controller_connected:
+            hint1 = self._font_tip.render("Press A to confirm", True, (100, 200, 100))
+            hint2 = self._font_tip.render("Press B to cancel", True, (220, 100, 100))
+        else:
+            hint1 = self._font_tip.render("Press SPACE to confirm", True, (100, 200, 100))
+            hint2 = self._font_tip.render("Press ESC to cancel", True, (220, 100, 100))
+
         screen.blit(hint1, hint1.get_rect(center=(SCREEN_WIDTH // 2, by + 90)))
         screen.blit(hint2, hint2.get_rect(center=(SCREEN_WIDTH // 2, by + 120)))

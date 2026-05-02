@@ -95,6 +95,9 @@ class UI:
         # Bill inside Right Slot 2 (visible area)
         self.wallet_bill_rect = pygame.Rect(cx + 30, cy - 140, 280, 50)
 
+        # Hover animation offsets for wallet items
+        self._wallet_hover_offsets = {"id": 0.0, "bill": 0.0}
+
     # ── notifications ─────────────────────────────────────────
 
     def show_notification(self, text: str, colour: tuple = NOTIF_INFO,
@@ -482,7 +485,7 @@ class UI:
 
     # ── wallet ui ─────────────────────────────────────────────
 
-    def draw_wallet(self, screen: pygame.Surface, active_item: str | None, character):
+    def draw_wallet(self, screen: pygame.Surface, active_item: str | None, character, controller_connected: bool = False, focus_item: str | None = None):
         """Draw the wallet interface. Semi-transparent background."""
         overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
         overlay.fill((0, 0, 0, 200))
@@ -503,16 +506,37 @@ class UI:
 
             # 3. Draw Left & Right Slots
             slot_ys = [cy - 180, cy - 90, cy, cy + 90]
+
+            highlight_item = focus_item
+            mx, my = pygame.mouse.get_pos()
+            mouse_item = None
+            if self.wallet_id_rect.collidepoint((mx, my)):
+                mouse_item = "id"
+            elif self.wallet_bill_rect.collidepoint((mx, my)):
+                mouse_item = "bill"
+            if mouse_item:
+                highlight_item = mouse_item
+
+            for key in ("id", "bill"):
+                target = -24 if highlight_item == key else 0
+                current = self._wallet_hover_offsets[key]
+                self._wallet_hover_offsets[key] = current + (target - current) * 0.25
+
+            id_offset = int(round(self._wallet_hover_offsets["id"]))
+            bill_offset = int(round(self._wallet_hover_offsets["bill"]))
             
             for i, sy in enumerate(slot_ys):
                 # --- Left Side ---
                 # Draw ID card before drawing its pocket cover (Slot 2 = index 1)
                 if i == 1:
-                    full_id = pygame.Rect(self.wallet_id_rect.x, self.wallet_id_rect.y, self.wallet_id_rect.width, 160)
+                    full_id_base = pygame.Rect(self.wallet_id_rect.x, self.wallet_id_rect.y, self.wallet_id_rect.width, 160)
+                    full_id = full_id_base.move(0, id_offset)
                     pygame.draw.rect(screen, (220, 220, 230), full_id, border_radius=8)
                     pygame.draw.rect(screen, (100, 100, 150), full_id, 2, border_radius=8)
                     id_title = self.font_hud_md.render("Ravenside High ID", True, BLACK)
                     screen.blit(id_title, (full_id.x + 10, full_id.y + 8))
+                    if highlight_item == "id":
+                        pygame.draw.rect(screen, UI_ACCENT, full_id.inflate(6, 6), 2, border_radius=10)
                 
                 # Draw Left Pocket Cover
                 pocket_h = self.wallet_bg_rect.bottom - sy - 10
@@ -524,11 +548,14 @@ class UI:
                 # --- Right Side ---
                 # Draw Bill before drawing its pocket cover (Slot 2 = index 1)
                 if i == 1:
-                    full_bill = pygame.Rect(self.wallet_bill_rect.x, self.wallet_bill_rect.y, self.wallet_bill_rect.width, 160)
+                    full_bill_base = pygame.Rect(self.wallet_bill_rect.x, self.wallet_bill_rect.y, self.wallet_bill_rect.width, 160)
+                    full_bill = full_bill_base.move(0, bill_offset)
                     pygame.draw.rect(screen, (100, 150, 100), full_bill, border_radius=4)
                     pygame.draw.rect(screen, (50, 100, 50), full_bill, 2, border_radius=4)
                     bill_title = self.font_hud_lg.render("$5", True, (20, 60, 20))
                     screen.blit(bill_title, (full_bill.x + 10, full_bill.y + 6))
+                    if highlight_item == "bill":
+                        pygame.draw.rect(screen, UI_ACCENT, full_bill.inflate(6, 6), 2, border_radius=8)
 
                 # Draw Right Pocket Cover
                 pocket_rect_right = pygame.Rect(cx + 20, sy, 300, pocket_h)
@@ -536,16 +563,24 @@ class UI:
                 pygame.draw.rect(screen, (35, 18, 10), pocket_rect_right, 2, border_radius=4)
                 pygame.draw.line(screen, (100, 50, 30), (pocket_rect_right.x + 5, pocket_rect_right.y + 4), (pocket_rect_right.right - 5, pocket_rect_right.y + 4), 1)
 
-            # Hint
-            hint = self.font_hint.render("Click an item to inspect. Press ESC or click outside to close.", True, UI_TEXT_DIM)
+            # Hint - Adaptive: Xbox or Keyboard
+            if controller_connected:
+                hint_text = "[A] Inspect item  |  [B] Close Wallet"
+            else:
+                hint_text = "Click an item to inspect. Press ESC or click outside to close."
+            hint = self.font_hint.render(hint_text, True, UI_TEXT_DIM)
             screen.blit(hint, hint.get_rect(center=(cx, self.wallet_bg_rect.bottom + 30)))
             
         else:
+            for key in self._wallet_hover_offsets:
+                self._wallet_hover_offsets[key] *= 0.6
+                if abs(self._wallet_hover_offsets[key]) < 0.1:
+                    self._wallet_hover_offsets[key] = 0.0
             # Draw active item zoomed in
             if active_item == "id":
                 big_id = pygame.Rect(cx - 250, cy - 150, 500, 300)
                 pygame.draw.rect(screen, (220, 220, 230), big_id, border_radius=12)
-                pygame.draw.rect(screen, (100, 100, 150), big_id, 4, border_radius=12)
+                pygame.draw.rect(screen, UI_ACCENT, big_id, 4, border_radius=12)
                 
                 # ID Header
                 header = self.font_menu.render("Ravenside High - Student ID", True, (50, 50, 100))
@@ -556,12 +591,17 @@ class UI:
                 y_off = big_id.y + 100
                 first_name = character.value.title() if character else "Aiden"
                 details = [
-                    f"Name: {first_name} Timbers",
+                    f"Name: {first_name} Parker",
                     "Student ID: 202467",
-                    "Grade: 10th grade"
+                    "Grade: 10th grade",
                 ]
                 for d in details:
-                    text = self.font_hud_lg.render(d, True, BLACK)
+                    if d:
+                        text = self.font_hud_lg.render(d, True, BLACK)
+                    else:
+                        # Add spacing line
+                        y_off += 20
+                        continue
                     screen.blit(text, (big_id.x + 40, y_off))
                     y_off += 50
                     
@@ -570,10 +610,29 @@ class UI:
                 pygame.draw.rect(screen, (180, 180, 190), photo_rect)
                 pygame.draw.rect(screen, (100, 100, 100), photo_rect, 2)
                 
+                # Description panel
+                desc_panel = pygame.Rect(big_id.x + 30, big_id.bottom + 20, big_id.width - 60, 130)
+                pygame.draw.rect(screen, (14, 14, 24), desc_panel, border_radius=18)
+                pygame.draw.rect(screen, UI_ACCENT, desc_panel, 3, border_radius=18)
+
+                title_bar = pygame.Rect(desc_panel.x + 18, desc_panel.y + 18, desc_panel.width - 36, 40)
+                pygame.draw.rect(screen, (40, 60, 80), title_bar, border_radius=12)
+                pygame.draw.rect(screen, UI_ACCENT, title_bar, 2, border_radius=12)
+                desc_title = self.font_hud_md.render("Description", True, UI_ACCENT)
+                screen.blit(desc_title, desc_title.get_rect(center=title_bar.center))
+
+                body_text = "Used for entering in some special rooms"
+                desc_body = self.font_hud_sm.render(body_text, True, UI_TEXT)
+                screen.blit(desc_body, desc_body.get_rect(center=(desc_panel.centerx, title_bar.bottom + 32)))
+
+                return_text = "[B] Return to wallet" if controller_connected else "Press ESC or click to return to wallet"
+                hint_surface = self.font_hint.render(return_text, True, UI_ACCENT)
+                screen.blit(hint_surface, hint_surface.get_rect(center=(cx, big_id.y - 40)))
+
             elif active_item == "bill":
                 big_bill = pygame.Rect(cx - 300, cy - 120, 600, 240)
                 pygame.draw.rect(screen, (100, 150, 100), big_bill, border_radius=8)
-                pygame.draw.rect(screen, (50, 100, 50), big_bill, 4, border_radius=8)
+                pygame.draw.rect(screen, UI_ACCENT, big_bill, 4, border_radius=8)
                 
                 # Bill details
                 tl = self.font_title.render("5", True, (20, 60, 20))
@@ -584,6 +643,24 @@ class UI:
                 
                 center_text = self.font_title.render("FIVE DOLLARS", True, (40, 90, 40))
                 screen.blit(center_text, center_text.get_rect(center=(cx, cy)))
+
+                return_text = "[B] Return to wallet" if controller_connected else "Press ESC or click to return to wallet"
+                hint_surface = self.font_hint.render(return_text, True, UI_ACCENT)
+                screen.blit(hint_surface, hint_surface.get_rect(center=(cx, big_bill.y - 40)))
                 
-            hint = self.font_hint.render("Click anywhere to return to wallet.", True, UI_TEXT)
-            screen.blit(hint, hint.get_rect(center=(cx, cy + 220)))
+                # Description panel
+                desc_panel = pygame.Rect(big_bill.x + 30, big_bill.bottom + 20, big_bill.width - 60, 130)
+                pygame.draw.rect(screen, (14, 14, 24), desc_panel, border_radius=18)
+                pygame.draw.rect(screen, UI_ACCENT, desc_panel, 3, border_radius=18)
+
+                title_bar = pygame.Rect(desc_panel.x + 18, desc_panel.y + 18, desc_panel.width - 36, 40)
+                pygame.draw.rect(screen, (40, 60, 80), title_bar, border_radius=12)
+                pygame.draw.rect(screen, UI_ACCENT, title_bar, 2, border_radius=12)
+                desc_title = self.font_hud_md.render("Description", True, UI_ACCENT)
+                screen.blit(desc_title, desc_title.get_rect(center=title_bar.center))
+
+                body_text = "For lunch at the cafeteria"
+                desc_body = self.font_hud_sm.render(body_text, True, UI_TEXT)
+                screen.blit(desc_body, desc_body.get_rect(center=(desc_panel.centerx, title_bar.bottom + 32)))
+
+            # Return hint rendered above the item (see blocks above)

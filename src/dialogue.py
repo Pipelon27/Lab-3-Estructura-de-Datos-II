@@ -306,6 +306,39 @@ class DialogueSystem:
                 if not self.active_tree.advance():
                     self._finish()
 
+    def handle_controller(self, controller):
+        """Handle Xbox controller input for dialogue navigation.
+
+        D-pad (cruzeta) up/down: Navigate choices up/down
+        A button: Confirm selection / Advance
+        B button: Cancel/Exit (if applicable)
+        """
+        if not self.active_tree:
+            return
+
+        choices = self.active_tree.get_choices()
+        if choices:
+            # D-pad vertical for navigation (cruzeta)
+            menu_dir = controller.get_menu_direction()
+            if menu_dir == -1:
+                self._choice_index = max(0, self._choice_index - 1)
+            elif menu_dir == 1:
+                self._choice_index = min(len(choices) - 1, self._choice_index + 1)
+
+            # A button to confirm
+            if controller.is_confirm_pressed():
+                cons = self.active_tree.make_choice(self._choice_index)
+                if cons:
+                    self._all_consequences.append(cons)
+                self._choice_index = 0
+                if not self.active_tree.advance():
+                    self._finish()
+        else:
+            # No choices — A button to advance
+            if controller.is_confirm_pressed():
+                if not self.active_tree.advance():
+                    self._finish()
+
     def _finish(self):
         """End the dialogue, merging all consequences."""
         self._finished = True

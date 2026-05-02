@@ -44,6 +44,7 @@ from src.dialogue   import DialogueSystem
 from src.ui         import UI
 from src.world_map  import WorldMap
 from src.pingpong   import PingPongGame
+from src.controller import get_controller, init_controller, update_controller
 
 
 class Game:
@@ -71,6 +72,7 @@ class Game:
         self.state          = GameState.PLAYING
         self.previous_state = GameState.PLAYING
         self.active_wallet_item = None
+        self.wallet_focus_item = None
         self.pause_sel      = 0
 
         # Transition cooldown (prevents rapid re-triggering)
@@ -89,6 +91,7 @@ class Game:
         self._init_npcs()
         self._init_systems()
         self._init_ui()
+        self._init_controller()
 
         # Network (optional)
         self.network = None
@@ -214,6 +217,11 @@ class Game:
         self.ui = UI(self.screen)
         self.world_map = WorldMap(self.school_map)
 
+    def _init_controller(self):
+        """Initialize controller input handling."""
+        init_controller()
+        self.controller = get_controller()
+
     def _init_network(self):
         try:
             if self.is_host:
@@ -237,6 +245,8 @@ class Game:
         """Block until the player quits."""
         while self.running:
             dt = self.clock.tick(FPS) / 1000.0
+            update_controller(dt)  # Update controller input
+            self._handle_controller_input()  # Process controller buttons
             self._handle_events()
             self._update(dt)
             self._draw()
@@ -276,17 +286,263 @@ class Game:
                         self.previous_state = self.state
                         self.state = GameState.WALLET
                         self.active_wallet_item = None
+                        self.wallet_focus_item = None
                 elif self.state == GameState.WALLET:
                     if self.active_wallet_item:
                         # Click anywhere to go back to wallet view
                         self.active_wallet_item = None
+                        self.wallet_focus_item = None
                     else:
                         if self.ui.wallet_id_rect.collidepoint(event.pos):
                             self.active_wallet_item = "id"
+                            self.wallet_focus_item = "id"
                         elif self.ui.wallet_bill_rect.collidepoint(event.pos):
                             self.active_wallet_item = "bill"
+                            self.wallet_focus_item = "bill"
                         elif not self.ui.wallet_bg_rect.collidepoint(event.pos) and not self.ui.wallet_bill_rect.collidepoint(event.pos):
                             self.state = GameState.PLAYING
+                            self.wallet_focus_item = None
+
+    def _handle_controller_input(self):
+        """Handle Xbox controller button input (called every frame)."""
+        if not self.controller or not self.controller.connected:
+            return
+
+        controller = self.controller
+
+        # During the ping pong minigame, delegate all controller input (including
+        # Start/pause) directly to the minigame so the pause menu works there.
+        if self.state == GameState.PINGPONG:
+            self._handle_controller_pingpong(controller)
+            return
+
+        # ── universal controller buttons ──
+        # Start = Pause
+        if controller.is_pause_pressed():
+            self._toggle_pause()
+            return
+
+        # Back/View = Map
+        if controller.is_map_pressed():
+            self._toggle_map()
+            return
+
+        # X = Wallet (inventory removed, only wallet remains)
+        if controller.is_inventory_pressed():
+            if self.state == GameState.PLAYING:
+                self.previous_state = self.state
+                self.state = GameState.WALLET
+                self.active_wallet_item = None
+                self.wallet_focus_item = None
+            elif self.state == GameState.WALLET:
+                self.state = GameState.PLAYING
+                self.wallet_focus_item = None
+            return
+
+        # Y = Skill Tree
+        if controller.is_skill_tree_pressed():
+            if self.state == GameState.PLAYING:
+                self.previous_state = self.state
+                self.state = GameState.SKILL_TREE_SCREEN
+            elif self.state == GameState.SKILL_TREE_SCREEN:
+                self.state = GameState.PLAYING
+            return
+
+        # B = Cancel / Back out of overlay screens
+        if controller.is_cancel_pressed():
+            if self.state in (
+                GameState.HELP,
+                GameState.SKILL_TREE_SCREEN,
+                GameState.INVENTORY_SCREEN,
+            ):
+                self.state = GameState.PLAYING
+                return
+
+        # ── state-specific controller input ──
+        if self.state == GameState.PLAYING:
+            self._handle_controller_playing(controller)
+        elif self.state == GameState.PAUSED:
+            self._handle_controller_paused(controller)
+        elif self.state == GameState.DIALOGUE:
+            # Dialogue is handled via the dialogue system's handle_controller method
+            self.dialogue_system.handle_controller(controller)
+        elif self.state == GameState.COMBAT:
+            self._handle_controller_combat(controller)
+        elif self.state == GameState.HACKING:
+            self._handle_controller_hacking(controller)
+        elif self.state == GameState.WALLET:
+            self._handle_controller_wallet(controller)
+        elif self.state == GameState.MAP:
+            self._handle_controller_map(controller)
+
+    def _toggle_pause(self):
+        """Toggle pause state."""
+        if self.state == GameState.PAUSED:
+            self.state = GameState.PLAYING
+        elif self.state == GameState.PLAYING:
+            self.state = GameState.PAUSED
+        elif self.state in (GameState.INVENTORY_SCREEN,
+                            GameState.SKILL_TREE_SCREEN,
+                            GameState.HELP,
+                            GameState.WALLET):
+            if self.state == GameState.WALLET and self.active_wallet_item:
+                # Close active item view but stay in wallet; retain focus on that item
+                self.wallet_focus_item = self.active_wallet_item
+                self.active_wallet_item = None
+            else:
+                self.state = GameState.PLAYING
+                self.wallet_focus_item = None
+
+    def _toggle_map(self):
+        """Toggle map state."""
+        if self.state == GameState.PLAYING:
+            self.previous_state = self.state
+            self.state = GameState.MAP
+            self.world_map.current_tab = self.current_floor
+            self.world_map._centre_on_floor(self.current_floor)
+            self.world_map._refresh_room_selection(reset_index=True)
+        elif self.state == GameState.MAP:
+            self.state = self.previous_state
+
+    def _handle_controller_playing(self, controller):
+        """Handle controller input during PLAYING state."""
+        # A = Interact or Dash
+        if controller.is_interact_pressed():
+            npc = self._nearest_npc(NPC_INTERACTION_RANGE)
+            if npc:
+                self._try_interact()
+            else:
+                self.player.start_dash()
+
+        # RT dash is handled in player.update() via controller.rt_value
+        # But we can also trigger dash on press for responsiveness
+        if controller.is_dash_triggered():
+            npc = self._nearest_npc(NPC_INTERACTION_RANGE)
+            if not npc:  # Only dash if not interacting
+                self.player.start_dash()
+
+        # RB = Light Attack (Aiden) or Hack (Lena)
+        if controller.is_attack_pressed():
+            if self.character == Character.AIDEN:
+                target = self._nearest_npc(ATTACK_RANGE)
+                if target:
+                    self.combat_system.start_combat(self.player, target)
+                    self.state = GameState.COMBAT
+            elif self.character == Character.LENA:
+                hackable = self._get_hackable()
+                if hackable:
+                    self.hacking_game.start(hackable, self.player)
+                    self.state = GameState.HACKING
+
+    def _handle_controller_paused(self, controller):
+        """Handle controller input during PAUSED state."""
+        menu_dir = controller.get_menu_direction()
+        if menu_dir == -1:
+            self.pause_sel = (getattr(self, 'pause_sel', 0) - 1) % 3
+        elif menu_dir == 1:
+            self.pause_sel = (getattr(self, 'pause_sel', 0) + 1) % 3
+
+        if controller.is_confirm_pressed():
+            sel = getattr(self, 'pause_sel', 0)
+            if sel == 0:
+                self.state = GameState.PLAYING
+            elif sel == 1:
+                # Character swap logic (same as keyboard)
+                from settings import Character, NOTIF_INFO
+                from src.player import Aiden, Lena
+
+                self.character = Character.LENA if self.character == Character.AIDEN else Character.AIDEN
+
+                old_level = self.player.level
+                old_xp = self.player.xp
+                old_sp = getattr(self.player, 'skill_points', 0)
+                old_hp = self.player.health
+                old_max_hp = self.player.max_health
+
+                old_x, old_y = self.player.rect.center
+                if self.character == Character.AIDEN:
+                    self.player = Aiden(old_x, old_y)
+                else:
+                    self.player = Lena(old_x, old_y)
+
+                self.player.level = old_level
+                self.player.xp = old_xp
+                self.player.skill_points = old_sp
+                self.player.max_health = old_max_hp
+                self.player.health = min(old_hp, self.player.max_health)
+                self._last_known_level = self.player.level
+
+                self.ui.show_notification(f"Swapped to {self.character.value.title()}", NOTIF_INFO)
+                self.state = GameState.PLAYING
+            else:
+                self.running = False
+
+        if controller.is_cancel_pressed():
+            self.state = GameState.PLAYING
+
+    def _handle_controller_wallet(self, controller):
+        """Handle controller input during WALLET state."""
+        focus_cycle = ["id", "bill"]
+
+        if controller.is_cancel_pressed():
+            if self.active_wallet_item:
+                # Close detail view but keep focus on the same item
+                self.wallet_focus_item = self.active_wallet_item
+                self.active_wallet_item = None
+            else:
+                self.wallet_focus_item = None
+                self.state = GameState.PLAYING
+            return
+
+        if controller.is_confirm_pressed():
+            if self.active_wallet_item:
+                # Return to wallet view from detail
+                self.wallet_focus_item = self.active_wallet_item
+                self.active_wallet_item = None
+            elif self.wallet_focus_item:
+                # Inspect the focused item
+                self.active_wallet_item = self.wallet_focus_item
+            else:
+                # No focus yet – highlight the first card
+                self.wallet_focus_item = focus_cycle[0]
+            return
+
+        if not self.active_wallet_item:
+            move = controller.get_menu_direction_horizontal()
+            if move != 0:
+                if self.wallet_focus_item not in focus_cycle:
+                    self.wallet_focus_item = focus_cycle[0] if move < 0 else focus_cycle[-1]
+                else:
+                    idx = focus_cycle.index(self.wallet_focus_item)
+                    idx = (idx + move) % len(focus_cycle)
+                    self.wallet_focus_item = focus_cycle[idx]
+
+    def _handle_controller_map(self, controller):
+        """Handle controller input during MAP state."""
+        close = self.world_map.handle_controller(controller)
+        if close:
+            self.state = self.previous_state
+            if getattr(self.world_map, 'teleport_requested', False):
+                self.world_map.teleport_requested = False
+                tfloor = self.world_map.teleport_floor
+                tx, ty = self.world_map.teleport_pos
+                self._go_to_floor(tfloor, int(tx), int(ty))
+
+    def _handle_controller_combat(self, controller):
+        """Handle controller input during COMBAT state."""
+        # Pass to combat system if it has controller support
+        if hasattr(self.combat_system, 'handle_controller'):
+            self.combat_system.handle_controller(controller, self.player)
+
+    def _handle_controller_hacking(self, controller):
+        """Handle controller input during HACKING state."""
+        if hasattr(self.hacking_game, 'handle_controller'):
+            self.hacking_game.handle_controller(controller)
+
+    def _handle_controller_pingpong(self, controller):
+        """Handle controller input during PINGPONG state."""
+        if hasattr(self.pingpong, 'handle_controller'):
+            self.pingpong.handle_controller(controller)
 
     def _on_key_down(self, event: pygame.event.Event):
         # ── universal keys ──
@@ -359,8 +615,11 @@ class Game:
             # alt dash keys still trigger dash
             self.player.start_dash()
         elif event.key == KEY_INVENTORY:
+            # Inventory removed - open wallet instead
             self.previous_state = self.state
-            self.state = GameState.INVENTORY_SCREEN
+            self.state = GameState.WALLET
+            self.active_wallet_item = None
+            self.wallet_focus_item = None
         elif event.key == KEY_SKILL_TREE:
             self.previous_state = self.state
             self.state = GameState.SKILL_TREE_SCREEN
@@ -823,7 +1082,16 @@ class Game:
             GameState.INVENTORY_SCREEN:  lambda: self.ui.draw_inventory(self.screen, self.inventory),
             GameState.SKILL_TREE_SCREEN: lambda: self.ui.draw_skill_tree(self.screen, self.player.skill_tree, self.player),
             GameState.HELP:              lambda: self.ui.draw_help_screen(self.screen, self.character),
-            GameState.WALLET:            lambda: (self._draw_world(), self.ui.draw_wallet(self.screen, self.active_wallet_item, self.character)),
+            GameState.WALLET:            lambda: (
+                self._draw_world(),
+                self.ui.draw_wallet(
+                    self.screen,
+                    self.active_wallet_item,
+                    self.character,
+                    self.controller.connected if self.controller else False,
+                    self.wallet_focus_item if (self.controller and self.controller.connected) else None,
+                ),
+            ),
             GameState.GAME_OVER:         lambda: self.ui.draw_game_over(self.screen, self.reputation.calculate_ending()),
             GameState.MAP:               lambda: self._draw_map(),
         }
@@ -868,4 +1136,5 @@ class Game:
                 self.world_map.set_marker("Oscar Jimenez", oscar.current_floor, oscar.rect.centerx, oscar.rect.centery, color=(200, 120, 40))
         except Exception:
             pass
-        self.world_map.draw(self.screen)
+        controller_connected = self.controller.connected if self.controller else False
+        self.world_map.draw(self.screen, controller_connected)

@@ -22,6 +22,7 @@ from settings import (
     WHITE, BLACK,
 )
 from src.skill_tree import SkillTree, build_aiden_tree, build_lena_tree
+from src.controller import get_controller, get_combined_movement
 
 
 # ══════════════════════════════════════════════════════════════
@@ -105,28 +106,33 @@ class Player:
     # ── movement & update ─────────────────────────────────────
 
     def update(self, keys, walls: list[pygame.Rect], dt: float):
-        """Process movement keys, apply velocity, handle collisions."""
+        """Process movement from controller and keyboard, apply velocity, handle collisions."""
         if self._dashing:
             self._update_dash(walls)
             return
 
-        dx, dy = 0, 0
-        if keys[KEY_UP]:
-            dy = -1; self.direction = Direction.UP
-        if keys[KEY_DOWN]:
-            dy = 1;  self.direction = Direction.DOWN
-        if keys[KEY_LEFT]:
-            dx = -1; self.direction = Direction.LEFT
-        if keys[KEY_RIGHT]:
-            dx = 1;  self.direction = Direction.RIGHT
+        # Get combined movement from controller (left stick) and keyboard
+        dx, dy = get_combined_movement(keys)
 
-        # Normalise diagonal movement
-        if dx != 0 and dy != 0:
-            dx *= 0.7071
-            dy *= 0.7071
+        # Update direction based on movement
+        if abs(dy) > abs(dx):
+            if dy < -0.1:
+                self.direction = Direction.UP
+            elif dy > 0.1:
+                self.direction = Direction.DOWN
+        else:
+            if dx < -0.1:
+                self.direction = Direction.LEFT
+            elif dx > 0.1:
+                self.direction = Direction.RIGHT
 
-        # Sprint
-        sprinting = (keys[KEY_DASH] or keys[KEY_DASH_ALT] or keys[KEY_DASH_ALT2]) and self.stamina > 0 and (dx != 0 or dy != 0)
+        # Check for dash trigger from controller (RT)
+        controller = get_controller()
+        dash_triggered = controller.is_dash_triggered()
+
+        # Sprint (keyboard dash keys OR controller RT)
+        sprinting = (keys[KEY_DASH] or keys[KEY_DASH_ALT] or keys[KEY_DASH_ALT2] or
+                    controller.rt_value > 0.3) and self.stamina > 0 and (dx != 0 or dy != 0)
         spd = self.sprint_speed if sprinting else self.speed
         if sprinting:
             self.stamina = max(0, self.stamina - STAMINA_SPRINT_COST)
@@ -153,6 +159,11 @@ class Player:
         """Initiate a quick dash in the current direction."""
         if self.stamina < DASH_STAMINA_COST or self._dashing:
             return
+        
+        # Controller rumble feedback
+        controller = get_controller()
+        if controller.connected:
+            controller.rumble(0.4, 0.6, 150)  # Light rumble on dash
         self.stamina -= DASH_STAMINA_COST
         self._dashing    = True
         self._dash_timer = DASH_DURATION

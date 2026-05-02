@@ -26,6 +26,7 @@ from settings import (
     DASH_SPEED,
     DASH_DURATION,
 )
+from src.controller import get_controller, XBOX_START
 
 
 class PingPongGame:
@@ -59,6 +60,7 @@ class PingPongGame:
         # dash state (SPACE triggers dash)
         self.dash_timer = 0
         self.dash_active = False
+        self._dash_pressed_controller = False  # Track A button dash for this frame
         # who last touched the ball: 'player' or 'opponent'
         self.last_touch = None
         # Oscar idle detection: track how long he stays near the same Y
@@ -304,6 +306,10 @@ class PingPongGame:
         self.oscar_spawn_lock_timer = 0.15
 
     def handle_input(self, event: pygame.event.Event):
+        # Also check controller for joystick.device_index event (hot-swap detection)
+        if event.type == pygame.JOYDEVICEADDED or event.type == pygame.JOYDEVICEREMOVED:
+            return  # Controller hot-swap handled by ControllerManager
+            
         if event.type == pygame.KEYDOWN:
             # ── Pause menu navigation ────────────────────────────
             if getattr(self, 'paused', False):
@@ -350,6 +356,87 @@ class PingPongGame:
                 self.countdown_active = True
                 self.countdown_timer = 3.0
                 self.countdown_go_shown = False
+
+    def handle_controller(self, controller):
+        """Handle Xbox controller input for ping pong.
+        
+        Left stick: Move player
+        RT (Right Trigger): Dash
+        A Button: Dash (alternative)
+        Menu (three lines / Start): Pause / Resume
+        D-pad: Navigate pause menu
+        A: Select / Confirm / Dash
+        """
+        # Reset controller dash flag at start of frame
+        self._dash_pressed_controller = False
+        
+        if not controller or not controller.connected:
+            return
+
+        # Menu button (three lines / hamburger / Start) toggles pause
+        if controller.is_pause_pressed():
+            if getattr(self, 'waiting_for_dismiss', False):
+                self.waiting_for_dismiss = False
+                self.finished = True
+                return
+            
+            if getattr(self, 'show_menu', False):
+                # Start game from menu
+                self.show_menu = False
+                self.countdown_active = True
+                self.countdown_timer = 3.0
+                self.countdown_go_shown = False
+                return
+            
+            # Toggle pause
+            if not getattr(self, 'waiting_for_dismiss', False):
+                self.paused = not self.paused
+                if self.paused:
+                    self._pause_sel = 0
+                    self._pause_action = None
+            return
+
+        # A button to confirm when waiting for dismiss
+        if getattr(self, 'waiting_for_dismiss', False):
+            if controller.is_confirm_pressed():
+                self.waiting_for_dismiss = False
+                self.finished = True
+            return
+
+        # Handle pause menu navigation with D-pad
+        if self.paused:
+            menu_dir = controller.get_menu_direction()
+            if menu_dir == -1:
+                self._pause_sel = (self._pause_sel - 1) % 3
+            elif menu_dir == 1:
+                self._pause_sel = (self._pause_sel + 1) % 3
+            
+            if controller.is_confirm_pressed():
+                sel = self._pause_sel
+                if sel == 0:                 # Resume
+                    self.paused = False
+                elif sel == 1:               # Settings
+                    self.paused = False
+                    self._pause_action = 'settings'
+                else:                        # Quit
+                    self.paused = False
+                    self.active = False
+                    self.finished = True
+            return
+
+        # A button to start game from menu
+        if getattr(self, 'show_menu', False):
+            if controller.is_confirm_pressed():
+                self.show_menu = False
+                self.countdown_active = True
+                self.countdown_timer = 3.0
+                self.countdown_go_shown = False
+            return
+        
+        # A button for dash during gameplay (when not paused, not in menu)
+        if not self.paused and not getattr(self, 'show_menu', False) and not getattr(self, 'waiting_for_dismiss', False):
+            if controller.is_confirm_pressed():
+                self._dash_pressed_controller = True
 
     def update(self, dt: float) -> str | None:
         # If paused, do nothing
@@ -421,10 +508,15 @@ class PingPongGame:
             self._enforce_min_speed(b["vel"], self.min_ball_speed * 0.95)
             self._update_ball_bounce(dt, court, b["rect"], b)
 
-        # player movement via WASD + dash (tuned a bit faster for arcade feel)
+        # player movement via WASD + controller left stick + dash (tuned a bit faster for arcade feel)
         keys = pygame.key.get_pressed()
+        controller = get_controller()
+        
         move_speed = 280.0
-        if keys[KEY_DASH] and self.dash_timer <= 0:
+        
+        # Dash: SPACE or RT (Right Trigger) or A button (controller)
+        dash_triggered = keys[KEY_DASH] or (controller.connected and controller.rt_value > 0.5) or self._dash_pressed_controller
+        if dash_triggered and self.dash_timer <= 0:
             self.dash_active = True
             self.dash_timer = DASH_DURATION / 60.0
         if self.dash_active:
@@ -433,8 +525,11 @@ class PingPongGame:
             if self.dash_timer <= 0:
                 self.dash_active = False
                 self.dash_timer = 0
-        dx = 0.0
-        dy = 0.0
+        
+        # Movement: Keyboard WASD + Controller left stick
+        dx, dy = 0.0, 0.0
+        
+        # Keyboard input
         if keys[KEY_LEFT]:
             dx -= 1.0
         if keys[KEY_RIGHT]:
@@ -443,10 +538,23 @@ class PingPongGame:
             dy -= 1.0
         if keys[KEY_DOWN]:
             dy += 1.0
+        
+        # Controller left stick input (combine with keyboard)
+        if controller.connected:
+            cx, cy = controller.get_movement_vector()
+            if abs(cx) > 0.01 or abs(cy) > 0.01:
+                dx += cx
+                dy += cy
+        
+        # Normalize combined movement
         if dx or dy:
             mag = math.hypot(dx, dy) or 1.0
-            self.player_x += (dx / mag) * move_speed * dt
-            self.player_y += (dy / mag) * move_speed * dt
+            # Clamp to max speed (don't exceed 1.0 normalized)
+            if mag > 1.0:
+                dx /= mag
+                dy /= mag
+            self.player_x += dx * move_speed * dt
+            self.player_y += dy * move_speed * dt
         # prevent player from entering the court: if player center is inside court, push to nearest outside edge
         if court.collidepoint(self.player_x, self.player_y):
             left_dist = abs(self.player_x - court.left)
@@ -516,6 +624,10 @@ class PingPongGame:
                         break
             if used:
                 self.super_points_spent += 6
+                # Controller rumble feedback for Super Shot
+                controller = get_controller()
+                if controller.connected:
+                    controller.rumble(0.7, 0.9, 300)  # Stronger rumble for Super Shot
 
         # opponent AI: choose behavior based on incoming balls
         # Prefer staying still; only move when a ball (non-purple) is clearly approaching
@@ -589,6 +701,10 @@ class PingPongGame:
             self._cap_speed(self.ball_vel)
             self._steer_for_first_bounce(self.ball, self.ball_vel, "oscar", court)
             self.last_touch = 'player'
+            # Light rumble for regular ball hit
+            controller = get_controller()
+            if controller.connected:
+                controller.rumble(0.3, 0.4, 100)
         if self.ball.colliderect(opp_rect) and self.ball_vel[0] > 0:
             # if main ball is purple, Oscar avoids it and does not return it
             if self.ball_color in ((160, 60, 200), (245, 220, 60)):
@@ -654,6 +770,10 @@ class PingPongGame:
                     b["dash_timer"] = 0.6
                     self._cap_speed(b["vel"], self.max_return_speed * 1.1)
                 self.last_touch = 'player'
+                # Light rumble for extra ball hit
+                controller = get_controller()
+                if controller.connected:
+                    controller.rumble(0.25, 0.35, 80)
             # collisions with opponent
             if b["rect"].colliderect(opp_rect) and b["vel"][0] > 0:
                 # if this extra ball is purple, Oscar avoids it and won't return it
@@ -795,6 +915,9 @@ class PingPongGame:
             fog.fill((10, 10, 18, 130))
             screen.blit(fog, (0, 0))
 
+            controller = get_controller()
+            using_controller = controller.connected if controller else False
+
             panel_w = 560
             panel_h = 220
             panel_x = (SCREEN_WIDTH - panel_w) // 2
@@ -806,14 +929,20 @@ class PingPongGame:
             title = "Ping Pong - Controls"
             screen.blit(title_font.render(title, True, UI_ACCENT), (SCREEN_WIDTH // 2 - title_font.size(title)[0] // 2, panel_y + 18))
 
-            # prompt to start
+            # prompt to start / controls hint
             hint_font = pygame.font.SysFont("arial", 28, bold=True)
-            hint = "Press Enter to Start"
-            screen.blit(hint_font.render(hint, True, UI_ACCENT), (SCREEN_WIDTH // 2 - hint_font.size(hint)[0] // 2, panel_y + 148))
-            # small controls hint
             small = pygame.font.SysFont("arial", 18)
-            ctrl = "WASD - Move    SPACE - Dash"
+
+            if using_controller:
+                hint = "Press A to Start"
+                ctrl = "Left Stick - Move    A - Dash"
+            else:
+                hint = "Press Enter to Start"
+                ctrl = "WASD - Move    SPACE - Dash"
+
+            screen.blit(hint_font.render(hint, True, UI_ACCENT), (SCREEN_WIDTH // 2 - hint_font.size(hint)[0] // 2, panel_y + 148))
             screen.blit(small.render(ctrl, True, WHITE), (SCREEN_WIDTH // 2 - small.size(ctrl)[0] // 2, panel_y + 90))
+
             ctrl2 = "Super Shot auto-triggers every 6 points on hit"
             screen.blit(small.render(ctrl2, True, WHITE), (SCREEN_WIDTH // 2 - small.size(ctrl2)[0] // 2, panel_y + 116))
             return
