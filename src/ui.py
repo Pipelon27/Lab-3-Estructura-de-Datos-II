@@ -79,6 +79,7 @@ class UI:
         self.font_hud_sm  = pygame.font.SysFont("arial", 16)
         self.font_hud_md  = pygame.font.SysFont("arial", 20)
         self.font_hud_lg  = pygame.font.SysFont("arial", 26, bold=True)
+        self.font_hud_time = pygame.font.SysFont("arial", 24, bold=True)
         self.font_title   = pygame.font.SysFont("arial", 48, bold=True)
         self.font_menu    = pygame.font.SysFont("arial", 30)
         self.font_hint    = pygame.font.SysFont("arial", 16)
@@ -98,6 +99,18 @@ class UI:
         # Hover animation offsets for wallet items
         self._wallet_hover_offsets = {"id": 0.0, "bill": 0.0}
 
+        # Announcement state
+        self._announcement_timer = 0.0
+        self._announcement_title = ""
+        self._announcement_sub = ""
+        self._bell_icon = None
+        try:
+            # Note: Path is specific to the generated asset
+            self._bell_icon = pygame.image.load(r"C:\Users\boths\.gemini\antigravity\brain\ee9cae87-ae12-4b5e-b64b-2404224d3d3c\school_bell_icon_1777762071293.png")
+            self._bell_icon = pygame.transform.smoothscale(self._bell_icon, (80, 80))
+        except:
+            pass
+
     # ── notifications ─────────────────────────────────────────
 
     def show_notification(self, text: str, colour: tuple = NOTIF_INFO,
@@ -110,6 +123,11 @@ class UI:
     def trigger_level_up(self):
         self._level_up_timer = 4.0
 
+    def trigger_announcement(self, title: str, sub: str):
+        self._announcement_title = title
+        self._announcement_sub = sub
+        self._announcement_timer = 5.0
+
     def update(self, dt: float):
         """Tick notification timers."""
         for n in self._notifs:
@@ -117,6 +135,8 @@ class UI:
         self._notifs = [n for n in self._notifs if not n.expired]
         if getattr(self, '_level_up_timer', 0) > 0:
             self._level_up_timer -= dt
+        if getattr(self, '_announcement_timer', 0) > 0:
+            self._announcement_timer -= dt
 
     def draw_notifications(self, screen: pygame.Surface):
         """Render active notifications (top-right corner)."""
@@ -140,35 +160,70 @@ class UI:
             text_str = "LEVEL UP!"
             text = font.render(text_str, True, (255, 215, 0))
             outline = font.render(text_str, True, (0, 0, 0))
-            
             cx, cy = SCREEN_WIDTH // 2, SCREEN_HEIGHT // 4
-            
             alpha = 255
-            if timer < 1.0:
-                alpha = int(255 * timer)
-                
+            if timer < 1.0: alpha = int(255 * timer)
             w, h = text.get_size()
             surf = pygame.Surface((w + 6, h + 6), pygame.SRCALPHA)
-            
             for dx, dy in [(-3,-3), (3,-3), (-3,3), (3,3), (0,-3), (0,3), (-3,0), (3,0)]:
                 surf.blit(outline, (3 + dx, 3 + dy))
             surf.blit(text, (3, 3))
-            
             surf.set_alpha(alpha)
-            
-            # pulsing effect
             scale = 1.0 + 0.08 * math.sin(timer * 8)
-            if scale != 1.0:
-                new_size = (int(surf.get_width() * scale), int(surf.get_height() * scale))
-                scaled_surf = pygame.transform.smoothscale(surf, new_size)
-                screen.blit(scaled_surf, scaled_surf.get_rect(center=(cx, cy)))
-            else:
-                screen.blit(surf, surf.get_rect(center=(cx, cy)))
+            new_size = (int(surf.get_width() * scale), int(surf.get_height() * scale))
+            scaled_surf = pygame.transform.smoothscale(surf, new_size)
+            screen.blit(scaled_surf, scaled_surf.get_rect(center=(cx, cy)))
+
+        self.draw_announcement(screen)
+
+    def draw_announcement(self, screen: pygame.Surface):
+        """Render a large centered announcement for school events."""
+        timer = getattr(self, '_announcement_timer', 0)
+        if timer <= 0:
+            return
+
+        cx, cy = SCREEN_WIDTH // 2, SCREEN_HEIGHT // 3
+        alpha = 255
+        if timer < 1.0: alpha = int(255 * timer)
+        elif timer > 4.5: alpha = int(255 * (5.0 - timer) / 0.5)
+
+        # Draw panel
+        panel_w, panel_h = 600, 120
+        panel_rect = pygame.Rect(cx - panel_w//2, cy - panel_h//2, panel_w, panel_h)
+        s = pygame.Surface((panel_w, panel_h), pygame.SRCALPHA)
+        s.fill((20, 20, 35, min(alpha, 220)))
+        pygame.draw.rect(s, UI_ACCENT, (0, 0, panel_w, panel_h), 2, border_radius=10)
+        screen.blit(s, panel_rect)
+
+        # Pulse effect
+        pulse = 1.0 + 0.05 * math.sin(timer * 6)
+        
+        # Icon
+        if self._bell_icon:
+            icon_surf = self._bell_icon.copy()
+            if pulse != 1.0:
+                isize = (int(80 * pulse), int(80 * pulse))
+                icon_surf = pygame.transform.smoothscale(icon_surf, isize)
+            icon_rect = icon_surf.get_rect(midleft=(panel_rect.x + 30, cy))
+            icon_surf.set_alpha(alpha)
+            screen.blit(icon_surf, icon_rect)
+
+        # Title
+        title_font = pygame.font.SysFont("arial", 54, bold=True)
+        title_surf = title_font.render(self._announcement_title, True, UI_ACCENT)
+        title_surf.set_alpha(alpha)
+        screen.blit(title_surf, (panel_rect.x + 130, cy - 35))
+
+        # Subtext
+        sub_surf = self.font_hud_md.render(self._announcement_sub, True, WHITE)
+        sub_surf.set_alpha(alpha)
+        screen.blit(sub_surf, (panel_rect.x + 132, cy + 15))
 
     # ── HUD ───────────────────────────────────────────────────
 
     def draw_hud(self, screen: pygame.Surface, player, current_phase,
-                 day_number: int, floor=None, room=None, reputation=None):
+                 day_number: int, floor=None, room=None, reputation=None,
+                 time_text: str | None = None, hud_focus: str | None = None):
         """Draw the in-game heads-up display."""
         # ── health bar ──
         self._bar(screen, 16, 16, 180, 14,
@@ -199,7 +254,8 @@ class UI:
         if room_name:
             loc_text += f"  —  {room_name}"
         zn = self.font_hud_lg.render(loc_text, True, UI_ACCENT)
-        screen.blit(zn, zn.get_rect(topright=(SCREEN_WIDTH - 16, 12)))
+        loc_rect = zn.get_rect(topright=(SCREEN_WIDTH - 16, 12))
+        screen.blit(zn, loc_rect)
 
         # ── circular minimap (bottom-right) ──
         self._draw_minimap_circle(screen, floor, player)
@@ -214,6 +270,33 @@ class UI:
         rep_y = SCREEN_HEIGHT - 36
         self._bar(screen, rep_x, rep_y, 220, 14, rep_val, 100, UI_ACCENT, UI_PANEL, "Rep")
 
+        if time_text:
+            time_surf = self.font_hud_time.render(time_text, True, UI_TEXT_DIM)
+            time_rect = time_surf.get_rect(midleft=(rep_x + 220 + 24, rep_y + 7))
+            screen.blit(time_surf, time_rect)
+            
+            # ── Fast Forward Button ──
+            self.ff_button_rect = pygame.Rect(time_rect.right + 12, time_rect.y - 4, 40, 32)
+            
+            mouse_pos = pygame.mouse.get_pos()
+            hover = self.ff_button_rect.collidepoint(mouse_pos)
+            is_pressed = pygame.mouse.get_pressed()[0] and hover
+            highlight_ff = hover or hud_focus == "ff"
+            
+            btn_col = (120, 210, 255) if is_pressed else ((100, 150, 255) if hover else (40, 40, 60))
+            pygame.draw.rect(screen, btn_col, self.ff_button_rect, border_radius=6)
+            pygame.draw.rect(screen, WHITE, self.ff_button_rect, 1, border_radius=6)
+            if highlight_ff:
+                pygame.draw.rect(screen, (255, 220, 80), self.ff_button_rect.inflate(8, 8), 2, border_radius=8)
+            
+            # Double arrow icon >>
+            arw = WHITE
+            x, y, w, h = self.ff_button_rect.x, self.ff_button_rect.y, 40, 32
+            # Tip 1
+            pygame.draw.polygon(screen, arw, [(x+10, y+8), (x+20, y+16), (x+10, y+24)])
+            # Tip 2
+            pygame.draw.polygon(screen, arw, [(x+22, y+8), (x+32, y+16), (x+22, y+24)])
+
         # ── wallet icon (left of minimap) ──
         # Draw the wallet shape
         pygame.draw.rect(screen, (110, 70, 40), self.wallet_icon_rect, border_radius=4)
@@ -226,6 +309,11 @@ class UI:
         # Label above icon
         w_lbl = self.font_hint.render("Wallet", True, UI_TEXT_DIM)
         screen.blit(w_lbl, w_lbl.get_rect(center=(self.wallet_icon_rect.centerx, self.wallet_icon_rect.top - 12)))
+
+        # Wallet highlight (mouse hover or controller focus)
+        wallet_hover = self.wallet_icon_rect.collidepoint(pygame.mouse.get_pos())
+        if wallet_hover or hud_focus == "wallet":
+            pygame.draw.rect(screen, (255, 220, 80), self.wallet_icon_rect.inflate(8, 8), 2, border_radius=6)
 
     def _bar(self, screen, x, y, w, h, cur, mx, fg, bg, label=""):
         """Utility: draw a filled bar with a label."""
@@ -320,7 +408,7 @@ class UI:
 
     # ── pause menu ────────────────────────────────────────────
 
-    def draw_pause_menu(self, screen: pygame.Surface, sel: int = 0):
+    def draw_pause_menu(self, screen: pygame.Surface, sel: int = 0, options: list[str] | None = None):
         """Semi-transparent pause overlay."""
         overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
         overlay.fill((0, 0, 0, 140))
@@ -332,7 +420,7 @@ class UI:
             self.font_title.render("PAUSED", True, UI_ACCENT).get_rect(center=(cx, 250)),
         )
         
-        options = ["Resume", "Change Character", "Quit"]
+        options = options or ["Resume", "Change Character", "Main Menu", "Quit"]
         for i, opt in enumerate(options):
             col = UI_ACCENT if i == sel else UI_TEXT_DIM
             prefix = "► " if i == sel else "  "

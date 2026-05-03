@@ -383,8 +383,8 @@ class WorldMap:
         fh = int(floor.height * z)
         pygame.draw.rect(screen, (25, 25, 32), (fx, fy, fw, fh))
 
-        # Room fills
-        for room in floor.rooms.values():
+        # Room fills (staircases last so they draw on top)
+        for room in sorted(floor.rooms.values(), key=lambda r: r.is_staircase):
             rx, ry = self._world_to_screen(room.rect.x, room.rect.y)
             rw = int(room.rect.width * z)
             rh = int(room.rect.height * z)
@@ -402,7 +402,20 @@ class WorldMap:
             # Room label (only when zoomed in enough)
             if rw > 60 and rh > 24:
                 lbl = self._font_room.render(room.name, True, (200, 200, 210))
-                screen.blit(lbl, (rx + 4, ry + 4))
+                lx, ly = rx + 4, ry + 4
+                if not room.is_staircase:
+                    for other in floor.rooms.values():
+                        if other.is_staircase and other.rect.collidepoint(
+                                room.rect.x + 8, room.rect.y + 8):
+                            _, sbot = self._world_to_screen(0, other.rect.bottom + 4)
+                            ly = sbot
+                            break
+                if room.id == "f1_women_bath":
+                    stair = floor.rooms.get("f1_stairs_2f")
+                    if stair:
+                        lx, ly = self._world_to_screen(stair.rect.right + 12,
+                                                       room.rect.y + 12)
+                screen.blit(lbl, (lx, ly))
                 if room.locked:
                     lock = self._font_room.render("🔒", True, (220, 60, 60))
                     screen.blit(lock, (rx + 4, ry + 18))
@@ -414,6 +427,19 @@ class WorldMap:
             ww = max(1, int(wall.width * z))
             wh = max(1, int(wall.height * z))
             pygame.draw.rect(screen, wall_col, (wx, wy, ww, wh))
+
+        door_col = (200, 200, 230)
+        for door in getattr(floor, "doors", []):
+            dx, dy = self._world_to_screen(door.rect.x, door.rect.y)
+            dw = max(1, int(door.rect.width * z))
+            dh = max(1, int(door.rect.height * z))
+            colour = door.color or door_col
+            pygame.draw.rect(screen, colour, (dx, dy, dw, dh))
+            pygame.draw.rect(screen, (50, 50, 60), (dx, dy, dw, dh), 1)
+            # Locked door indicator on world map
+            if door.locked:
+                pygame.draw.line(screen, (200, 50, 50), (dx, dy), (dx + dw, dy + dh), 1)
+                pygame.draw.line(screen, (200, 50, 50), (dx + dw, dy), (dx, dy + dh), 1)
 
         # Transitions
         for tr in floor.transitions:

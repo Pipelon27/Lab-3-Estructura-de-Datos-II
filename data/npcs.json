@@ -229,6 +229,21 @@
       "private_personality": "",
       "schedule": { "arrival": 0, "class_1": 0, "break_1": 0, "class_2": 0, "lunch": 0, "activities": 0, "departure": 0, "night": 0 },
       "dialogue_ids": {}
+    },
+    {
+      "id": "npc_noah_carter",
+      "name": "Noah Carter",
+      "group": "faculty",
+      "public_personality": "Warm and welcoming student guide who shows newcomers around",
+      "private_personality": "Genuinely kind — one of the few who sees through the Smile Club facade",
+      "schedule": {
+        "arrival": 0, "class_1": 0, "break_1": 0, "class_2": 0,
+        "lunch": 0, "activities": 0, "departure": 0, "night": 0
+      },
+      "dialogue_ids": {
+        "aiden": "dlg_noah_carter_aiden",
+        "lena": "dlg_noah_carter_lena"
+      }
     }
   ],
   "relationships": [

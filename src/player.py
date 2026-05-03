@@ -105,7 +105,7 @@ class Player:
 
     # ── movement & update ─────────────────────────────────────
 
-    def update(self, keys, walls: list[pygame.Rect], dt: float):
+    def update(self, keys, walls: list[pygame.Rect], dt: float, trail_decay: int = 1, speed_multiplier: float = 1.0):
         """Process movement from controller and keyboard, apply velocity, handle collisions."""
         if self._dashing:
             self._update_dash(walls)
@@ -133,7 +133,7 @@ class Player:
         # Sprint (keyboard dash keys OR controller RT)
         sprinting = (keys[KEY_DASH] or keys[KEY_DASH_ALT] or keys[KEY_DASH_ALT2] or
                     controller.rt_value > 0.3) and self.stamina > 0 and (dx != 0 or dy != 0)
-        spd = self.sprint_speed if sprinting else self.speed
+        spd = (self.sprint_speed if sprinting else self.speed) * speed_multiplier
         if sprinting:
             self.stamina = max(0, self.stamina - STAMINA_SPRINT_COST)
 
@@ -152,7 +152,7 @@ class Player:
         new_trail = []
         for r, t in self._dash_trail:
             if t > 0:
-                new_trail.append((r, t - 1))
+                new_trail.append((r, t - trail_decay))
         self._dash_trail = new_trail
 
     def start_dash(self):
@@ -230,7 +230,8 @@ class Player:
         """Draw the player as a coloured rectangle with a direction arrow."""
         # Draw dash trail
         for r, t in self._dash_trail:
-            alpha = int(255 * (t / 15.0) * 0.4)
+            # Clamp alpha to [0, 255] to avoid ValueError
+            alpha = max(0, min(255, int(255 * (t / 15.0) * 0.4)))
             trail_surf = pygame.Surface(r.size, pygame.SRCALPHA)
             trail_surf.fill((*self.color[:3], alpha))
             screen.blit(trail_surf, camera.apply_rect(r))

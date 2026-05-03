@@ -171,6 +171,8 @@ class GameState(Enum):
     VICTORY          = auto()
     MAP              = auto()
     WALLET           = auto()
+    DAY_OVER         = auto()
+    INTRO_CINEMATIC  = auto()
 
 
 class Character(Enum):
@@ -187,6 +189,7 @@ class SocialGroup(Enum):
     ACADEMICS = "academics"
     REBELS    = "rebels"
     OUTSIDERS = "outsiders"
+    FACULTY   = "faculty"
 
 
 class Direction(Enum):

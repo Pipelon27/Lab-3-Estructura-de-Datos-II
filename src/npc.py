@@ -21,6 +21,7 @@ from settings import (
     GROUP_COLORS, ZONE_NAMES,
     MEDIUM_GRAY, WHITE, UI_TEXT_DIM, BLACK,
     Character, SocialGroup, DayPhase, Direction,
+    FLOOR_1F,
     DATA_DIR,
 )
 
@@ -149,7 +150,8 @@ class NPC:
     def __init__(self, npc_id: str, name: str, group: SocialGroup,
                  public_personality: str, private_personality: str,
                  schedule: dict | None = None,
-                 dialogue_ids: dict | None = None):
+                 dialogue_ids: dict | None = None,
+                 gender: str = "unspecified"):
         self.id                  = npc_id
         self.name                = name
         self.group               = group
@@ -159,6 +161,7 @@ class NPC:
         self.dialogue_ids        = dialogue_ids or {}  # character_value → dialogue_id
         self.having_bad_day      = False
         self.mask_revealed       = False               # True when private face shown
+        self.gender              = (gender or "unspecified").lower()
 
         # Current zone & position
         self.current_zone = 0
@@ -171,13 +174,18 @@ class NPC:
         self.direction = random.choice(list(Direction))
         self.color = GROUP_COLORS.get(group.value, MEDIUM_GRAY)
 
-        # Simple wander AI
+        self.ignore_schedule = False
+
+        # Movement / AI state
+        self.target_pos: tuple[int, int] | None = None
+        self.target_queue: list[tuple[int, int]] = []
+        self.start_delay = 0.0 # Staggered start delay
+        self.stop_at_target = False # Disable AI upon reaching final target
         self._wander_timer = random.uniform(1, 4)
         self._wander_dx    = 0
         self._wander_dy    = 0
-        # Controls for AI and name display (can hide name for observers)
-        self.ai_enabled = True
-        self.show_name = True
+        self.ai_enabled    = True
+        self.show_name     = True
 
     # ── schedule ──────────────────────────────────────────────
 
@@ -218,21 +226,61 @@ class NPC:
     # ── AI wander ─────────────────────────────────────────────
 
     def update(self, dt: float, walls: list[pygame.Rect] | None = None):
-        """Simple random wander behaviour."""
-        # If AI disabled, don't change wander behaviour or move
-        if not getattr(self, "ai_enabled", True):
-            # still ensure NPC stays within the floor bounds
-            bound_rect = getattr(self, 'bound_rect', None)
-            if bound_rect:
-                self.rect.clamp_ip(bound_rect)
-            else:
-                max_x = getattr(self, '_floor_w', 3200) - NPC_SIZE - 30
-                max_y = getattr(self, '_floor_h', 2400) - NPC_SIZE - 30
-                self.rect.clamp_ip(pygame.Rect(30, 30, max_x, max_y))
+        """Update AI and movement."""
+        if not self.ai_enabled:
+            return
+            
+        if self.start_delay > 0:
+            self.start_delay -= dt
             return
 
-        self._wander_timer -= dt
-        if self._wander_timer <= 0:
+        # Handle guided movement (towards target_pos)
+        if getattr(self, "target_pos", None):
+            tx, ty = self.target_pos
+            dx_raw = tx - self.rect.centerx
+            dy_raw = ty - self.rect.centery
+            dist = (dx_raw**2 + dy_raw**2)**0.5
+            
+            if dist > 15:
+                speed = NPC_SPEED * getattr(self, 'speed_multiplier', 1.0) * 1.5
+                self._wander_dx = (dx_raw / dist) * speed
+                self._wander_dy = (dy_raw / dist) * speed
+                self._wander_timer = 0.5 # keep targeting
+                # Update visual direction
+                if abs(self._wander_dx) > abs(self._wander_dy):
+                    self.direction = Direction.RIGHT if self._wander_dx > 0 else Direction.LEFT
+                else:
+                    self.direction = Direction.DOWN if self._wander_dy > 0 else Direction.UP
+            else:
+                if getattr(self, "target_queue", None) and len(self.target_queue) > 0:
+                    next_target = self.target_queue.pop(0)
+                    
+                    if isinstance(next_target, str):
+                        # Handle floor transitions
+                        if next_target == "SWITCH_TO_F1":
+                            self.current_floor = 1
+                            # Spawn at Floor 1 stairs
+                            self.rect.center = (2150 + 40, 1720 + 140)
+                        elif next_target == "SWITCH_TO_F2":
+                            self.current_floor = 2
+                            # Spawn at Floor 2 stairs
+                            self.rect.center = (2150 + 40, 1720 + 140)
+                        
+                        # Get the next coordinate target if it exists
+                        if self.target_queue:
+                            nt = self.target_queue.pop(0)
+                            if not isinstance(nt, str):
+                                self.target_pos = nt
+                    else:
+                        self.target_pos = next_target
+                else:
+                    self.target_pos = None # Reached final target!
+                    if getattr(self, "stop_at_target", False):
+                        self.ai_enabled = False
+                        self.stop_at_target = False
+                    self._wander_timer = 0 # Resume normal wandering
+        
+        elif self._wander_timer <= 0:
             self._wander_timer = random.uniform(2, 5)
             speed = NPC_SPEED * getattr(self, 'speed_multiplier', 1.0)
             self._wander_dx = random.choice([-1, 0, 0, 1]) * speed
@@ -245,6 +293,8 @@ class NPC:
                 self.direction = Direction.DOWN
             elif self._wander_dy < 0:
                 self.direction = Direction.UP
+        else:
+            self._wander_timer -= dt
 
         dx = int(self._wander_dx * dt * 30)
         dy = int(self._wander_dy * dt * 30)
@@ -268,13 +318,14 @@ class NPC:
             self.rect.clamp_ip(pygame.Rect(30, 30, max_x, max_y))
 
     def _collide(self, walls: list[pygame.Rect], dx: float, dy: float):
-        """Push the NPC out of any wall it overlaps."""
+        """Push the NPC out of any wall it overlaps, based on movement direction."""
         for wall in walls:
             if self.rect.colliderect(wall):
                 if dx > 0:
                     self.rect.right = wall.left
                 elif dx < 0:
                     self.rect.left = wall.right
+                
                 if dy > 0:
                     self.rect.bottom = wall.top
                 elif dy < 0:
@@ -323,6 +374,7 @@ class NPC:
             private_personality=data.get("private_personality", ""),
             schedule=data.get("schedule", {}),
             dialogue_ids=data.get("dialogue_ids", {}),
+            gender=data.get("gender", "unspecified"),
         )
 
     def __repr__(self):
@@ -350,6 +402,8 @@ class NPCManager:
                 data = json.load(fp)
             for entry in data.get("npcs", []):
                 npc = NPC.from_dict(entry)
+                if npc.gender == "unspecified":
+                    npc.gender = entry.get("gender") or random.choice(["male", "female"])
                 self.npcs[npc.id] = npc
                 self.relationships.add_node(npc.id)
             # Load relationship edges
@@ -378,65 +432,65 @@ class NPCManager:
              "Friendly team captain", "Secretly pressured by Smile Club",
              {"arrival": 0, "class_1": 0, "break_1": 1, "lunch": 3,
               "activities": 1, "departure": 0, "night": 5},
-             {"aiden": "dlg_marcus_aiden", "lena": "dlg_marcus_lena"}),
+             {"aiden": "dlg_marcus_aiden", "lena": "dlg_marcus_lena"}, "male"),
             ("npc_sophie",  "Sophie Chen", SocialGroup.TECH_CLUB,
              "Quiet coder", "Runs an anonymous anti-bullying blog",
              {"arrival": 0, "class_1": 2, "break_1": 4, "lunch": 3,
               "activities": 2, "departure": 0, "night": 2},
-             {"aiden": "dlg_sophie_aiden", "lena": "dlg_sophie_lena"}),
+             {"aiden": "dlg_sophie_aiden", "lena": "dlg_sophie_lena"}, "female"),
             ("npc_dylan",   "Dylan Brooks", SocialGroup.POPULARS,
              "Charming influencer", "Core member of the Smile Club",
              {"arrival": 0, "class_1": 0, "break_1": 3, "lunch": 3,
               "activities": 5, "departure": 0, "night": 5},
-             {"aiden": "dlg_dylan_aiden", "lena": "dlg_dylan_lena"}),
+             {"aiden": "dlg_dylan_aiden", "lena": "dlg_dylan_lena"}, "male"),
             ("npc_emma",    "Emma Torres", SocialGroup.ACADEMICS,
              "Studious valedictorian", "Being blackmailed for grades",
              {"arrival": 0, "class_1": 4, "break_1": 4, "lunch": 3,
               "activities": 4, "departure": 0, "night": 4},
-             {"aiden": "dlg_emma_aiden", "lena": "dlg_emma_lena"}),
+             {"aiden": "dlg_emma_aiden", "lena": "dlg_emma_lena"}, "female"),
             ("npc_jake",    "Jake Morrison", SocialGroup.REBELS,
              "Troublemaker", "Has evidence against Smile Club",
              {"arrival": 0, "class_1": 0, "break_1": 5, "lunch": 3,
               "activities": 5, "departure": 0, "night": 5},
-             {"aiden": "dlg_jake_aiden", "lena": "dlg_jake_lena"}),
+             {"aiden": "dlg_jake_aiden", "lena": "dlg_jake_lena"}, "male"),
             ("npc_mia",     "Mia Nakamura", SocialGroup.OUTSIDERS,
              "Transfer student", "Victim of cyberbullying campaign",
              {"arrival": 0, "class_1": 0, "break_1": 4, "lunch": 3,
               "activities": 4, "departure": 0, "night": 0},
-             {"aiden": "dlg_mia_aiden", "lena": "dlg_mia_lena"}),
+             {"aiden": "dlg_mia_aiden", "lena": "dlg_mia_lena"}, "female"),
             ("npc_director","Director Walsh", SocialGroup.ACADEMICS,
              "Respected principal", "Created Smile Club for social control",
              {"arrival": 0, "class_1": 0, "break_1": 0, "lunch": 0,
               "activities": 0, "departure": 0, "night": 6},
-             {"aiden": "dlg_walsh_aiden", "lena": "dlg_walsh_lena"}),
+             {"aiden": "dlg_walsh_aiden", "lena": "dlg_walsh_lena"}, "male"),
             ("npc_tyler",   "Tyler Dunn", SocialGroup.ATHLETES,
              "Star quarterback", "Bullies others to maintain status",
              {"arrival": 0, "class_1": 0, "break_1": 1, "lunch": 3,
               "activities": 1, "departure": 0, "night": 5},
-             {"aiden": "dlg_tyler_aiden", "lena": "dlg_tyler_lena"}),
+             {"aiden": "dlg_tyler_aiden", "lena": "dlg_tyler_lena"}, "male"),
             ("npc_ava",     "Ava Patel", SocialGroup.POPULARS,
              "Social media queen", "Runs the cyber-harassment accounts",
              {"arrival": 0, "class_1": 0, "break_1": 3, "lunch": 3,
               "activities": 2, "departure": 0, "night": 5},
-             {"aiden": "dlg_ava_aiden", "lena": "dlg_ava_lena"}),
+             {"aiden": "dlg_ava_aiden", "lena": "dlg_ava_lena"}, "female"),
             ("npc_lucas",   "Lucas Kim", SocialGroup.TECH_CLUB,
              "Hardware enthusiast", "Unknowingly maintains Smile servers",
              {"arrival": 0, "class_1": 2, "break_1": 2, "lunch": 3,
               "activities": 2, "departure": 0, "night": 2},
-             {"aiden": "dlg_lucas_aiden", "lena": "dlg_lucas_lena"}),
+             {"aiden": "dlg_lucas_aiden", "lena": "dlg_lucas_lena"}, "male"),
             ("npc_zoe",     "Zoe Martin", SocialGroup.REBELS,
              "Graffiti artist", "Leaves coded messages about Smile Club",
              {"arrival": 0, "class_1": 0, "break_1": 5, "lunch": 3,
               "activities": 5, "departure": 0, "night": 5},
-             {"aiden": "dlg_zoe_aiden", "lena": "dlg_zoe_lena"}),
+             {"aiden": "dlg_zoe_aiden", "lena": "dlg_zoe_lena"}, "female"),
             ("npc_noah",    "Noah Harris", SocialGroup.OUTSIDERS,
              "Shy bookworm", "Knows history of the original anti-bully system",
              {"arrival": 0, "class_1": 4, "break_1": 4, "lunch": 3,
               "activities": 4, "departure": 0, "night": 4},
-             {"aiden": "dlg_noah_aiden", "lena": "dlg_noah_lena"}),
+             {"aiden": "dlg_noah_aiden", "lena": "dlg_noah_lena"}, "male"),
         ]
-        for npc_id, name, group, pub, priv, sched, dlg in defaults:
-            npc = NPC(npc_id, name, group, pub, priv, sched, dlg)
+        for npc_id, name, group, pub, priv, sched, dlg, gender in defaults:
+            npc = NPC(npc_id, name, group, pub, priv, sched, dlg, gender)
             self.npcs[npc_id] = npc
             self.relationships.add_node(npc_id)
 
@@ -469,6 +523,8 @@ class NPCManager:
     def update_schedules(self, phase: DayPhase):
         """Move every NPC to the zone their schedule dictates."""
         for npc in self.npcs.values():
+            if getattr(npc, "ignore_schedule", False):
+                continue
             target_zone = npc.get_zone_for_phase(phase)
             if npc.current_zone != target_zone:
                 npc.move_to_zone(target_zone)
@@ -481,21 +537,64 @@ class NPCManager:
         for npc in self.get_npcs_in_zone(current_zone):
             npc.update(dt)
 
-    def update_on_floor(self, dt: float, floor_id: int, floor=None, walls: list[pygame.Rect] | None = None):
+    def update_on_floor(self, dt: float, floor_id: int, floor=None, walls: list[pygame.Rect] | None = None,
+                        classrooms_restricted: bool = False, restricted_rooms: list[str] | None = None):
         """Tick AI for NPCs on the given floor."""
         npcs = self.get_npcs_on_floor(floor_id)
         for npc in npcs:
             if floor:
                 npc._floor_w = floor.width
                 npc._floor_h = floor.height
-            # Build wall list including static walls + other NPCs (avoid self)
+            
+            # 1. Door avoidance for generic NPCs to keep exits clear
+            if npc.id.startswith("npc_rnd_") and npc.target_pos is None:
+                # Door locations on 2F
+                doors = [(1080, 496), (1080, 1146), (1080, 1566), (1560, 1900), (2120, 200), (2120, 640)]
+                for dx, dy in doors:
+                    dist_sq = (npc.rect.centerx - dx)**2 + (npc.rect.centery - dy)**2
+                    if dist_sq < 60**2: # Within 60 pixels
+                        # Gentle push away
+                        if npc.rect.centerx < dx: npc.rect.x -= 2
+                        else: npc.rect.x += 2
+                        if npc.rect.centery < dy: npc.rect.y -= 2
+                        else: npc.rect.y += 2
+
+            # 2. Build wall list including static walls + other NPCs (avoid self)
             combined_walls: list[pygame.Rect] = list(walls) if walls else []
+            previous_rect = npc.rect.copy()
             for other in npcs:
                 if other is npc:
                     continue
-                # Use a copy of the rect to avoid accidental aliasing
+                # If NPC is seeking a target (e.g., exiting a room), 
+                # ignore other NPCs to avoid bottlenecks at narrow doors
+                if npc.target_pos is not None:
+                    continue
                 combined_walls.append(other.rect.copy())
+            
             npc.update(dt, combined_walls)
+            
+            # Classroom restriction for generic wanderers
+            if classrooms_restricted and restricted_rooms and npc.id.startswith("npc_rnd_"):
+                room = floor.get_room_at(npc.rect.centerx, npc.rect.centery)
+                if room and room.id in restricted_rooms:
+                    # If already inside, move to corridor; otherwise block entry
+                    if room.rect.collidepoint(previous_rect.center):
+                        # Teleport to a safe corridor spot on 2F
+                        if room.id == "f2_classrooms":
+                            npc.rect.centery = 1900 # Central corridor above classrooms
+                        else:
+                            npc.rect.centerx = 1080 # Central corridor right of art/music/science
+                    else:
+                        npc.rect.update(previous_rect)
+
+            if floor and floor.id == FLOOR_1F:
+                room = floor.get_room_at(npc.rect.centerx, npc.rect.centery)
+                gender = getattr(npc, "gender", "unspecified")
+                if room:
+                    if room.id == "f1_men_bath" and gender != "male":
+                        npc.rect.update(previous_rect)
+                    elif room.id == "f1_women_bath" and gender != "female":
+                        npc.rect.update(previous_rect)
 
     def __repr__(self):
         return f"NPCManager({len(self.npcs)} npcs, {self.relationships})"

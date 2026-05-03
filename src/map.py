@@ -119,6 +119,10 @@ def _vwall_gaps(x, y0, y1, gaps):
         walls.append(pygame.Rect(x, cy, WT, y1 - cy))
     return walls
 
+
+def _door(rect, color=None):
+    return (pygame.Rect(rect), color)
+
 def _hwall_gaps(y, x0, x1, gaps):
     walls = []
     cx = x0
@@ -174,6 +178,19 @@ class FloorTransition:
 
 
 # ══════════════════════════════════════════════════════════════
+#  DOOR
+# ══════════════════════════════════════════════════════════════
+
+class Door:
+    def __init__(self, door_id, x, y, w, h, is_vertical=False, locked=False, color=None):
+        self.id = door_id
+        self.rect = pygame.Rect(x, y, w, h)
+        self.is_vertical = is_vertical
+        self.locked = locked
+        self.color = color or (180, 180, 205)
+
+
+# ══════════════════════════════════════════════════════════════
 #  SEAMLESS STAIRCASE
 # ══════════════════════════════════════════════════════════════
 
@@ -216,9 +233,16 @@ class Floor:
         self.walls:       list[pygame.Rect]     = []
         self.transitions: list[FloorTransition] = []
         self.hackable_objects: list[dict]        = []
+        self.doors:       list[Door]             = []
+        self.furniture:   list[dict]             = []  # {"rect": Rect, "color": tuple, "outline": tuple|None}
 
     def add_room(self, room):
         self.rooms[room.id] = room
+
+    def add_door(self, door: Door):
+        self.doors.append(door)
+        # If the door is locked, it should also act as a wall
+        # We handle this in the Game class collision logic
 
     def get_room_at(self, x, y):
         for r in self.rooms.values():
@@ -232,7 +256,7 @@ class Floor:
         pygame.draw.rect(screen, self.bg_color, bg)
         font14 = pygame.font.SysFont("arial", 14)
 
-        for room in self.rooms.values():
+        for room in sorted(self.rooms.values(), key=lambda r: r.is_staircase):
             r = camera.apply_rect(room.rect)
             if r.right < 0 or r.left > sw or r.bottom < 0 or r.top > sh:
                 continue
@@ -252,7 +276,39 @@ class Floor:
                 lbl = font14.render(room.name, True, (200, 200, 210))
                 y_offset = 24 if room.id == "c_tennis" else 8
                 x_offset = 30 if room.id == "c_tennis" else 8
-                screen.blit(lbl, (r.x + x_offset, r.y + y_offset))
+                lx, ly = r.x + x_offset, r.y + y_offset
+                for other in self.rooms.values():
+                    if other.is_staircase and other.rect.collidepoint(
+                            room.rect.x + 8, room.rect.y + 8):
+                        ly = camera.apply_rect(other.rect).bottom + 4
+                        break
+                if room.id == "f1_women_bath":
+                    stair = self.rooms.get("f1_stairs_2f")
+                    if stair:
+                        lx, ly = camera.apply_pos(stair.rect.right + 12,
+                                                   room.rect.y + 12)
+                screen.blit(lbl, (lx, ly))
+
+        door_color = (180, 180, 205)
+        for door in self.doors:
+            dr = camera.apply_rect(door.rect)
+            if dr.right < 0 or dr.left > sw or dr.bottom < 0 or dr.top > sh:
+                continue
+            pygame.draw.rect(screen, door.color or door_color, dr)
+            pygame.draw.rect(screen, (40, 40, 50), dr, 1)
+            # Visual indicator for locked doors
+            if door.locked:
+                pygame.draw.line(screen, (200, 50, 50), (dr.x, dr.y), (dr.right, dr.bottom), 2)
+                pygame.draw.line(screen, (200, 50, 50), (dr.right, dr.y), (dr.left, dr.bottom), 2)
+
+        for furn in self.furniture:
+            fr = camera.apply_rect(furn["rect"])
+            if fr.right < 0 or fr.left > sw or fr.bottom < 0 or fr.top > sh:
+                continue
+            pygame.draw.rect(screen, furn["color"], fr)
+            outline = furn.get("outline")
+            if outline:
+                pygame.draw.rect(screen, outline, fr, 2)
 
         for wall in self.walls:
             wr = camera.apply_rect(wall)
@@ -293,22 +349,26 @@ STAIR_GAP = 80      # U-turn gap width
 
 
 def _add_stair_walls(floor, rx, ry, rw, rh, gap_side):
-    """Add horizontal centre wall + enclosure for a compact staircase.
-
-    gap_side = 'right' → gap on right, wall starts from left
-    gap_side = 'left'  → gap on left,  wall starts from right end
-    """
+    """Add horizontal centre wall + full enclosure for a staircase."""
     cy = ry + rh // 2
     wall_len = rw - STAIR_GAP
+    
+    # Top and bottom are always solid
+    floor.walls.append(_hw(rx, ry, rw))
+    floor.walls.append(_hw(rx, ry + rh - WT, rw))
 
+    # Side enclosure (leave the other side open for the door)
     if gap_side == 'right':
-        floor.walls.append(_hw(rx, cy, wall_len))
-        floor.walls.append(_vw(rx + rw - WT, ry, rh))   # right enclosure
+        # Gap on right (inner), wall on right (outer)? 
+        # Actually, for the right staircase, the door is on the LEFT.
+        floor.walls.append(_vw(rx + rw - WT, ry, rh)) # Right wall
+        short_len = rw // 2                            # ~half width, leaving larger gap
+        floor.walls.append(_hw(rx, cy, short_len))    # Divider from left (shortened)
     else:
-        floor.walls.append(_hw(rx + STAIR_GAP, cy, wall_len))
-        floor.walls.append(_vw(rx, ry, rh))              # left enclosure
-
-    floor.walls.append(_hw(rx, ry + rh - WT, rw))        # bottom enclosure
+        # Gap on left (inner), wall on left (outer)?
+        # For the left staircase, the door is on the RIGHT.
+        floor.walls.append(_vw(rx, ry, rh))           # Left wall
+        floor.walls.append(_hw(rx + STAIR_GAP, cy, wall_len)) # Divider from right
 
 
 def _upper_door_y(ry):
@@ -478,6 +538,13 @@ class SchoolMap:
                         "Staircase down to the Basement",
                         bx, by, bw, bh, (40, 38, 42),
                         is_staircase=True))
+        men_bath_y = by + bh
+        men_bath_h = max(180, 2400 - 16 - men_bath_y)
+        f.add_room(Room("f1_men_bath", "Man Bathroom",
+                        "Men's restroom tucked beside the stairwell",
+                        16, by, 1034, 2400 - 16 - by, (36, 52, 70)))
+        men_door_rect = (1050 - WT + 17, men_bath_y + 140, WT, DW)
+        f.add_door(Door("f1_men_bath_door", *men_door_rect, color=(120, 160, 200)))
 
         # CENTRAL
         f.add_room(Room("f1_main_hall", "Main Hall",
@@ -502,6 +569,13 @@ class SchoolMap:
                         "Staircase up to the 2nd Floor",
                         sx, sy, sw, sh, (52, 55, 62),
                         is_staircase=True))
+        women_bath_y = sy + sh
+        women_bath_h = max(160, 2400 - 16 - women_bath_y)
+        f.add_room(Room("f1_women_bath", "Woman Bathroom",
+                        "Women's restroom beside the stairwell",
+                        2150, sy, 1034, 2400 - 16 - sy, (58, 48, 68)))
+        women_door_rect = (2150, women_bath_y + 139, WT, DW)
+        f.add_door(Door("f1_women_bath_door", *women_door_rect, color=(200, 140, 200)))
 
         # Outer boundary
         f.walls.extend([
@@ -516,19 +590,64 @@ class SchoolMap:
         ]))
         # Right divider (x=2150) — 2F stair door in LOWER corridor
         f.walls.extend(_vwall_gaps(2150, 16, sy + sh, [
-            (250, DW), (780, DW), (1250, DW),
+            (250, DW), (780 - DW, 3 * DW), (1250, DW),
             (_lower_door_y(sy, sh), DW),
         ]))
+        # Cafeteria door object (Triple size)
+        f.add_door(Door("door_cafeteria", 2150, 780 - DW, 16, 3 * DW, is_vertical=True))
+
+        # ── Cafeteria furniture ──────────────────────────────
+        TABLE_COL  = (100, 70, 45)
+        TABLE_OUTL = (80, 55, 35)
+        COUNTER_COL  = (110, 80, 50)
+        COUNTER_OUTL = (90, 65, 40)
+
+        # L-shaped serving counter (top-right corner of cafeteria)
+        counter_h = pygame.Rect(2900, 620, 260, 16)
+        counter_v = pygame.Rect(3144, 620, 16, 180)
+        f.furniture.append({"rect": counter_h, "color": COUNTER_COL, "outline": COUNTER_OUTL})
+        f.furniture.append({"rect": counter_v, "color": COUNTER_COL, "outline": COUNTER_OUTL})
+        f.walls.extend([counter_h, counter_v])
+
+        # 3 dining tables (vertical rectangles spread across the cafeteria)
+        caf_tables = [
+            pygame.Rect(2300, 720, 130, 300),  # left table
+            pygame.Rect(2560, 720, 130, 300),  # centre table
+            pygame.Rect(2860, 720, 130, 300),  # right table
+        ]
+        for tbl in caf_tables:
+            f.furniture.append({"rect": tbl, "color": TABLE_COL, "outline": TABLE_OUTL})
+            f.walls.append(tbl)
+
+        # Store seat positions around each table for NPC seating
+        f.cafeteria_seats = []
+        seat_offset = 30  # distance from table edge
+        for tbl in caf_tables:
+            # 2 seats on left side, 2 on right side, 1 top, 1 bottom
+            f.cafeteria_seats.extend([
+                (tbl.left - seat_offset, tbl.top + tbl.height // 3),
+                (tbl.left - seat_offset, tbl.top + 2 * tbl.height // 3),
+                (tbl.right + seat_offset, tbl.top + tbl.height // 3),
+                (tbl.right + seat_offset, tbl.top + 2 * tbl.height // 3),
+                (tbl.centerx, tbl.top - seat_offset),
+                (tbl.centerx, tbl.bottom + seat_offset),
+            ])
 
         # Left horizontal dividers
         f.walls.extend([_hw(16, 510, 1034), _hw(16, 880, 1034)])
         f.walls.append(_hw(16, by, 1034))               # top of basement stairs
-        f.walls.append(_hw(16, by + bh - WT, 1034))      # bottom
 
         # Right horizontal dividers
         f.walls.extend([_hw(2150, 600, 1034), _hw(2150, 1100, 1034)])
         f.walls.append(_hw(2150, sy, 1034))              # top of 2F stairs
-        f.walls.append(_hw(2150, sy + sh - WT, 1034))    # bottom
+
+        # Bathroom partitions vs reception (doorway shifted away from stairs)
+        f.walls.extend(_vwall_gaps(1050, men_bath_y, men_bath_y + men_bath_h, [
+            (men_bath_y + 140, DW),
+        ]))
+        f.walls.extend(_vwall_gaps(2150, women_bath_y, women_bath_y + women_bath_h, [
+            (women_bath_y + 140, DW),
+        ]))
 
         # Reception divider
         rdx = 1050 + (1100 - DW) // 2
@@ -613,27 +732,30 @@ class SchoolMap:
         # Left divider — rooftop stair door in LOWER corridor
         f.walls.extend(_vwall_gaps(1050, 16, 1950, [
             (_lower_door_y(ry, rh), DW),
-            (art_y + 200, DW), (mus_y + 200, DW), (sci_y + 200, DW),
+            (art_y + 200 - DW//2, 2 * DW), (mus_y + 200 - DW//2, 2 * DW), (sci_y + 200 - DW//2, 2 * DW),
         ]))
         # Right divider — 1F stair door in UPPER corridor
         f.walls.extend(_vwall_gaps(2150, 16, sy + sh, [
-            (200, DW), (640, DW), (1100, DW),
+            (200 - DW//2, 2 * DW), (640 - DW//2, 2 * DW), (1100 - DW//2, 2 * DW),
             (_upper_door_y(sy), DW),
         ]))
 
         # Left horizontal dividers
         f.walls.append(_hw(16, art_y, 1034))             # below rooftop stairs
         f.walls.append(_hw(16, ry + rh - WT, 1034))      # bottom of stair area
-        f.walls.extend([_hw(16, mus_y, 1034), _hw(16, sci_y, 1034)])
+        f.walls.extend([_hw(16, mus_y, 1034), _hw(16, sci_y, 1034), _hw(16, 1950, 1034)])
 
         # Right horizontal dividers
         f.walls.extend([_hw(2150, 516, 1034), _hw(2150, 950, 1034)])
         f.walls.append(_hw(2150, sy, 1034))
         f.walls.append(_hw(2150, sy + sh - WT, 1034))
 
-        # Classrooms divider
-        cdx = 1050 + (1100 - DW) // 2
-        f.walls.extend(_hwall_gaps(1950, 1050, 2150, [(cdx, DW)]))
+        # Classrooms divider (Triple door)
+        cdx = 1050 + (1100 - 3 * DW) // 2
+        f.walls.extend(_hwall_gaps(1950, 1050, 2150, [(cdx, 3 * DW)]))
+        # Side walls for Classrooms
+        f.walls.append(_vw(1050, 1950, 2400 - 1950))
+        f.walls.append(_vw(2150 - WT, 1950, 2400 - 1950))
 
         # Staircase interior walls
         _add_stair_walls(f, sx, sy, sw, sh, 'right')
@@ -749,9 +871,12 @@ class SchoolMap:
         f.walls.extend(_vwall_gaps(1200, 500, 1700, [(900, DW)]))
         f.walls.append(_vw(2400 - WT, 500, 1200))
         # Antenna enclosure
+        # Antenna enclosure
         f.walls.extend([
             _hw(1500, 100, 400), _hw(1500, 450 - WT, 400),
-            _vw(1500, 100, 350), _vw(1900 - WT, 100, 350),
         ])
+        f.walls.extend(_vwall_gaps(1500, 100, 450, [(235, DW)]))
+        f.walls.append(_vw(1900 - WT, 100, 350))
+        f.add_door(Door("rt_antenna_door", 1500, 235, WT, DW, is_vertical=True, color=(100, 100, 120)))
 
         return f

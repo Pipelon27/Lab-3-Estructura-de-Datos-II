@@ -820,6 +820,9 @@ class PingPongGame:
             # send ball away from Oscar (to player)
             self.ball_vel[0] = -abs(self.base_vx)
             self.ball_vel[1] = 0.0
+            self.ball_color = (255, 140, 0)
+            self.ball_trail_color = (255, 140, 0)
+            self.ball_dash_timer = 0.0
             self._arm_ball_bounce(first_bounce_side="player")
             self._steer_for_first_bounce(self.ball, self.ball_vel, "player", court)
             self._enforce_min_speed(self.ball_vel)

@@ -236,26 +236,42 @@ def main():
     screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
     pygame.display.set_caption(TITLE)
 
-    menu   = MainMenu(screen)
-    choice = menu.run()
-
-    # Quit requested
-    if choice is None or choice == 4:
-        pygame.quit()
-        sys.exit()
-
-    # Import Game here (lazy) to avoid circular-import issues
-    from src.game import Game
-
     mode_map = {
         0: dict(character=Character.AIDEN, multiplayer=False),
         1: dict(character=Character.LENA,  multiplayer=False),
         2: dict(character=Character.AIDEN, multiplayer=True,  is_host=True),
         3: dict(character=Character.LENA,  multiplayer=True,  is_host=False),
     }
-    params = mode_map[choice]
-    game = Game(screen, **params)
-    game.run()
+
+    # Import Game lazily to avoid circular import at module load
+    from src.game import Game
+
+    while True:
+        # Flush leftover input so button presses from the game don't carry over
+        pygame.event.clear()
+        pygame.time.wait(150)  # brief delay to let buttons release
+        pygame.event.clear()
+
+        menu = MainMenu(screen)
+        choice = menu.run()
+
+        # Quit requested
+        if choice is None or choice == 4:
+            break
+
+        params = mode_map[choice]
+
+        while True:
+            game = Game(screen, **params)
+            game.run()
+
+            if game.return_to_menu:
+                # Go back to the main menu loop
+                break
+
+            # Game finished normally or player chose Quit
+            pygame.quit()
+            sys.exit()
 
     pygame.quit()
     sys.exit()
