@@ -84,7 +84,14 @@ class UI:
         self.font_menu    = pygame.font.SysFont("arial", 30)
         self.font_hint    = pygame.font.SysFont("arial", 16)
         
-        self.wallet_icon_rect = pygame.Rect(SCREEN_WIDTH - 200, SCREEN_HEIGHT - 60, 40, 40)
+        # HUD icons: wallet + phone, right-anchored, same row
+        # Wallet: rightmost; Phone: 8px to the left of wallet
+        _icon_h    = 44
+        _icon_w    = 40
+        _icon_bot  = SCREEN_HEIGHT - 16          # bottom edge
+        _wallet_x  = SCREEN_WIDTH  - 16 - _icon_w  # right margin 16px
+        self.wallet_icon_rect = pygame.Rect(_wallet_x,  _icon_bot - _icon_h, _icon_w, _icon_h)
+        self.phone_icon_rect  = pygame.Rect(_wallet_x - _icon_w - 8, _icon_bot - _icon_h, _icon_w, _icon_h)
         
         # New Wallet UI constants
         cx, cy = SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2
@@ -297,23 +304,34 @@ class UI:
             # Tip 2
             pygame.draw.polygon(screen, arw, [(x+22, y+8), (x+32, y+16), (x+22, y+24)])
 
-        # ── wallet icon (left of minimap) ──
-        # Draw the wallet shape
-        pygame.draw.rect(screen, (110, 70, 40), self.wallet_icon_rect, border_radius=4)
-        pygame.draw.rect(screen, (150, 100, 60), self.wallet_icon_rect, 2, border_radius=4)
-        # Draw wallet flap/strap
-        strap_rect = pygame.Rect(self.wallet_icon_rect.centerx - 6, self.wallet_icon_rect.y, 12, 25)
-        pygame.draw.rect(screen, (70, 40, 20), strap_rect, border_radius=2)
-        # Draw wallet clasp
-        pygame.draw.rect(screen, (220, 180, 50), (self.wallet_icon_rect.centerx - 4, self.wallet_icon_rect.y + 18, 8, 8), border_radius=1)
-        # Label above icon
+        # ── wallet icon ──
+        wr = self.wallet_icon_rect
+        pygame.draw.rect(screen, (95, 60, 30), wr, border_radius=6)
+        pygame.draw.rect(screen, (150, 105, 55), wr, border_radius=6, width=2)
+        # Flap
+        flap = pygame.Rect(wr.centerx - 7, wr.y + 2, 14, 18)
+        pygame.draw.rect(screen, (65, 38, 18), flap, border_radius=3)
+        # Clasp
+        pygame.draw.rect(screen, (220, 185, 55),
+                         (wr.centerx - 4, wr.y + 14, 8, 7), border_radius=2)
+        # Label
         w_lbl = self.font_hint.render("Wallet", True, UI_TEXT_DIM)
-        screen.blit(w_lbl, w_lbl.get_rect(center=(self.wallet_icon_rect.centerx, self.wallet_icon_rect.top - 12)))
-
-        # Wallet highlight (mouse hover or controller focus)
-        wallet_hover = self.wallet_icon_rect.collidepoint(pygame.mouse.get_pos())
+        screen.blit(w_lbl, w_lbl.get_rect(center=(wr.centerx, wr.top - 10)))
+        # Key hint
+        k_lbl = self.font_hint.render("[I]", True, UI_TEXT_DIM)
+        screen.blit(k_lbl, k_lbl.get_rect(center=(wr.centerx, wr.bottom + 10)))
+        wallet_hover = wr.collidepoint(pygame.mouse.get_pos())
         if wallet_hover or hud_focus == "wallet":
-            pygame.draw.rect(screen, (255, 220, 80), self.wallet_icon_rect.inflate(8, 8), 2, border_radius=6)
+            pygame.draw.rect(screen, (255, 220, 80), wr.inflate(6, 6), 2, border_radius=8)
+
+        # ── phone icon (delegated to Phone.draw_hud_icon) ──
+        # Drawn by game.py via self.phone.draw_hud_icon(screen, self.ui.phone_icon_rect, unread)
+        # But we still draw the label + key-hint here for consistency
+        pr = self.phone_icon_rect
+        ph_lbl = self.font_hint.render("Phone", True, UI_TEXT_DIM)
+        screen.blit(ph_lbl, ph_lbl.get_rect(center=(pr.centerx, pr.top - 10)))
+        ph_key = self.font_hint.render("[P]", True, UI_TEXT_DIM)
+        screen.blit(ph_key, ph_key.get_rect(center=(pr.centerx, pr.bottom + 10)))
 
     def _bar(self, screen, x, y, w, h, cur, mx, fg, bg, label=""):
         """Utility: draw a filled bar with a label."""

@@ -16,6 +16,7 @@ from settings import (
     Character, GameState,
 )
 from src.controller import ControllerManager, init_controller
+from src.phone import Phone
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -223,7 +224,6 @@ class MainMenu:
             hint_y = panel_rect.bottom - 30
         hint_rect = hint.get_rect(midleft=(base_x, hint_y))
         self.screen.blit(hint, hint_rect)
-
         pygame.display.flip()
 
 

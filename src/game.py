@@ -27,9 +27,10 @@ from settings import (
     KEY_INTERACT, KEY_USE, KEY_INVENTORY, KEY_SKILL_TREE,
     KEY_HELP, KEY_PAUSE, KEY_MAP,
     KEY_LIGHT_ATTACK, KEY_HEAVY_ATTACK, KEY_BLOCK, KEY_DASH, KEY_DASH_ALT, KEY_DASH_ALT2,
-    KEY_HACK,
+    KEY_HACK, KEY_PHONE,
     MOTIVATIONAL_MESSAGES,
 )
+from src.phone      import Phone
 from src.map        import SchoolMap
 from src.player     import Aiden, Lena
 from src.npc        import NPCManager, NPC
@@ -391,6 +392,9 @@ class Game:
         self.camera = Camera(self._floor_w, self._floor_h)
         # Ping-pong minigame
         self.pingpong = PingPongGame()
+        self.phone = Phone(self.screen,
+                          time_source=lambda: self.time_of_day_minutes,
+                          player_name=self.character.value)
 
     def _initialize_director_office(self):
         director = self.npc_manager.get_npc_by_id("npc_director")
@@ -562,6 +566,9 @@ class Game:
             if event.type == pygame.QUIT:
                 self.running = False
                 return
+            if getattr(self, 'phone', None) and self.phone.is_visible:
+                if self.phone.handle_input(event):
+                    continue
             # MAP state delegates to WorldMap
             if self.state == GameState.MAP:
                 close = self.world_map.handle_event(event)
@@ -582,7 +589,9 @@ class Game:
                 if self.state == GameState.TRADING:
                     self.trade_system.handle_click(event.pos)
                 elif self.state == GameState.PLAYING:
-                    if self.ui.wallet_icon_rect.collidepoint(event.pos):
+                    if getattr(self.ui, 'phone_icon_rect', None) and self.ui.phone_icon_rect.collidepoint(event.pos):
+                        self.phone.toggle_phone()
+                    elif self.ui.wallet_icon_rect.collidepoint(event.pos):
                         self.previous_state = self.state
                         self.state = GameState.WALLET
                         self.active_wallet_item = None
@@ -720,7 +729,7 @@ class Game:
         # HUD focus navigation (D-pad left/right)
         menu_h = controller.get_menu_direction_horizontal()
         if menu_h != 0:
-            hud_options = ["ff", "wallet"]
+            hud_options = ["ff", "phone", "wallet"]
             if self._hud_focus not in hud_options:
                 self._hud_focus = hud_options[0] if menu_h > 0 else hud_options[-1]
             else:
@@ -740,6 +749,10 @@ class Game:
             elif self._hud_focus == "ff":
                 self._ff_controller_active = True
                 handled_confirm = True
+            elif self._hud_focus == "phone":
+                self.phone.toggle_phone()
+                self._hud_focus = None
+                handled_confirm = True
 
         # Maintain controller-based fast-forward while A is held
         if self._hud_focus == "ff" and controller.is_button_held(XBOX_A):
@@ -747,7 +760,7 @@ class Game:
         elif not controller.is_button_held(XBOX_A):
             self._ff_controller_active = False
 
-        if not handled_confirm and self._hud_focus not in ("ff", "wallet"):
+        if not handled_confirm and self._hud_focus not in ("ff", "wallet", "phone"):
             # A = Interact or Dash when no HUD focus
             if controller.is_interact_pressed():
                 npc = self._nearest_npc(NPC_INTERACTION_RANGE)
@@ -979,6 +992,8 @@ class Game:
         elif event.key == KEY_SKILL_TREE:
             self.previous_state = self.state
             self.state = GameState.SKILL_TREE_SCREEN
+        elif event.key == KEY_PHONE:
+            self.phone.toggle_phone()
         elif event.key == KEY_LIGHT_ATTACK and self.character == Character.AIDEN:
             target = self._nearest_npc(ATTACK_RANGE)
             if target:
@@ -1247,6 +1262,7 @@ class Game:
     # ──────────────────────────────────────────────────────────
 
     def _update(self, dt: float):
+        self.phone.update(dt)
         # Always tick UI (notifications)
         self.ui.update(dt)
         if self._bathroom_block_timer > 0:
@@ -1944,9 +1960,17 @@ class Game:
                              self._get_time_string(),
                              hud_focus=self._hud_focus,
                              )
+            # Phone HUD icon with unread badge (delegated to Phone)
+            self.phone.draw_hud_icon(
+                self.screen,
+                self.ui.phone_icon_rect,
+                unread=self.phone.get_unread_messages_count(),
+            )
 
         # Notifications always on top
         self.ui.draw_notifications(self.screen)
+
+        self.phone.draw()
 
         pygame.display.flip()
 
