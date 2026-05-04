@@ -264,6 +264,7 @@ KEY_DASH_ALT2    = KEY_DASH
 # Hacking (Lena)
 KEY_HACK         = pygame.K_v
 KEY_MAP          = pygame.K_m
+KEY_PHONE        = pygame.K_p
 
 # ──────────────────────────────────────────────────────────────
 #  FLOOR / MAP SYSTEM

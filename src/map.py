@@ -680,9 +680,9 @@ class SchoolMap:
         COUNTER_COL  = (110, 80, 50)
         COUNTER_OUTL = (90, 65, 40)
 
-        # L-shaped serving counter (top-right corner of cafeteria)
-        counter_h = pygame.Rect(2900, 620, 260, 16)
-        counter_v = pygame.Rect(3144, 620, 16, 180)
+        # L-shaped serving counter (top-right corner of cafeteria) — large
+        counter_h = pygame.Rect(2800, 620, 360, 40)
+        counter_v = pygame.Rect(3120, 620, 40, 260)
         f.furniture.append({"rect": counter_h, "color": COUNTER_COL, "outline": COUNTER_OUTL})
         f.furniture.append({"rect": counter_v, "color": COUNTER_COL, "outline": COUNTER_OUTL})
         f.walls.extend([counter_h, counter_v])
