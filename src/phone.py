@@ -1,9 +1,9 @@
 """
 src/phone.py  —  GTA-style phone: HUD compact + map fullscreen
 ===============================================================
-Modo HUD: esquina inferior derecha, ≤25% ancho, 9:16, márgenes ~2.5%.
-Modo mapa: transición única 300 ms — ease-in-out quint + rotación ease-out-back
-ligera; zoom, desplazo al centro y crossfade con el mapa al final. Cierre simétrico.
+HUD mode: bottom right corner, ≤25% width, 9:16, margins ~2.5%.
+Map mode: single 300ms transition — ease-in-out quint + ease-out-back
+light rotation; zoom, center shift and crossfade with map at end. Symmetric close.
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ from settings import SCREEN_WIDTH, SCREEN_HEIGHT, WHITE, BLACK, KEY_MAP
 
 
 # ═══════════════════════════════════════════════════════════════
-#  LAYOUT  — HUD inferior derecho (≈25% ancho, 9:16, márgenes 2–3%)
+#  LAYOUT  — HUD bottom right (≈25% width, 9:16, margins 2–3%)
 # ═══════════════════════════════════════════════════════════════
 
 _MARGIN_X = max(8, int(SCREEN_WIDTH * 0.025))
@@ -50,17 +50,18 @@ _CY = _BZ + _STAT_H
 _CW = PHONE_W - _BZ * 2
 _CH = PHONE_H - _BZ * 2 - _STAT_H
 
-# animation (250–350 ms map transition)
+# animation (GTA-style transitions)
 _DUR_OPEN  = 0.26   # s
 _DUR_CLOSE = 0.26   # s
-_DUR_MAP_EXPAND = 0.30
-_DUR_MAP_CONTRACT = 0.30
-# último tramo: mapa bajo el marco + fade del teléfono (un solo gesto)
+_DUR_MAP_EXPAND = 0.50   # Step 1: Initial animation (400-550ms)
+_DUR_MAP_LOADING = 0.35  # Step 2: Static loading screen (300-400ms)
+_DUR_MAP_CONTRACT = 0.50  # Step 3: Inverse exit
+# final stretch: map under frame + phone fade (single gesture)
 _MAP_BLEND_FRAC = 0.22
 _SPLASH_MIN = 1.0
 _SPLASH_MAX = 3.0
 
-# overlay: HUD ligero; mapa / transición más oscuro
+# overlay: light HUD; darker map / transition
 _OVERLAY_ALPHA_HUD = 72
 _OVERLAY_ALPHA_MAP_T = 200
 
@@ -190,11 +191,11 @@ class Phone:
     """Smartphone overlay: home grid, optional fullscreen map."""
 
     _HOME_APPS = [
-        (PhoneApp.ACADEMIC, "Académico"),
+        (PhoneApp.ACADEMIC, "Academic"),
         (PhoneApp.SOCIAL,   "Social"),
-        (PhoneApp.MESSAGES, "Mensajes"),
-        (PhoneApp.SCHEDULE, "Horario"),
-        (PhoneApp.MAP,      "Mapa"),
+        (PhoneApp.MESSAGES, "Messages"),
+        (PhoneApp.SCHEDULE, "Schedule"),
+        (PhoneApp.MAP,      "Map"),
     ]
 
     # ------------------------------------------------------------------
@@ -209,13 +210,15 @@ class Phone:
         self._anim_t    = 0.0
         self.is_visible = False
 
-        self._view = "closed"   # home | splash | app | map_expand | map
+        self._view = "closed"   # home | splash | app | map_loading | map_expand | map | map_contract
         self.current_app   = PhoneApp.ACADEMIC
         self._pending_splash_app: Optional[PhoneApp] = None
         self._splash_t = 0.0
         self._splash_duration = 1.5
+        self._map_loading_t = 0.0  # pantalla de carga
         self._map_expand_t = 0.0
         self._map_contract_t = 0.0
+        self._map_direct_access = False  # acceso directo por M/View
 
         self._map_ref = None   # WorldMap — injected from Game after UI init
 
@@ -277,11 +280,32 @@ class Phone:
             self._view = "home"
             self.active_task = None
             self.active_chat = None
+            self._map_direct_access = False
             for app in PhoneApp:
                 self._scroll[app] = 0
         else:
             self.state = PhoneState.CLOSING
             self._anim_t = 1.0
+    
+    def open_map_direct(self):
+        """Direct map access (M key / View button) without passing through home.
+        
+        Correct flow:
+        Step 1: map_expand (400-550ms): Phone rotates 0° → 90°, exits HUD to fullscreen
+        Step 2: map_loading (300-400ms): Static loading screen in fullscreen
+        Step 3: map: Active map without rotation
+        """
+        if self.state in (PhoneState.CLOSED, PhoneState.CLOSING):
+            self.state = PhoneState.OPENING
+            self._anim_t = 0.0
+            self.is_visible = True
+            self._view = "map_expand"  # STEP 1: transition with rotation
+            self._map_expand_t = 0.0
+            self._map_direct_access = True
+            self.active_task = None
+            self.active_chat = None
+            for app in PhoneApp:
+                self._scroll[app] = 0
 
     def close(self):
         if self.state in (PhoneState.OPEN, PhoneState.OPENING):
@@ -299,8 +323,10 @@ class Phone:
         self.active_chat = None
         self._map_expand_t = 0.0
         self._map_contract_t = 0.0
+        self._map_loading_t = 0.0
         self._pending_splash_app = None
         self._splash_t = 0.0
+        self._map_direct_access = False
         if self._map_ref:
             self._map_ref._confirm_teleport = False
             self._map_ref._teleport_target = None
@@ -312,7 +338,7 @@ class Phone:
 
     def hides_game_hud(self) -> bool:
         """Oculta HUD del juego solo en mapa fullscreen y transiciones del mapa."""
-        return self._view in ("map", "map_expand", "map_contract")
+        return self._view in ("map", "map_expand", "map_loading", "map_contract")
 
     def is_fullscreen(self) -> bool:
         """Compat: mismo criterio que hides_game_hud."""
@@ -324,7 +350,7 @@ class Phone:
 
     def shows_embedded_world_map(self) -> bool:
         """Dibuja WorldMap detrás (mapa estable o mientras contrae el marco)."""
-        return self._view in ("map", "map_contract")
+        return self._view in ("map", "map_loading", "map_contract")
 
     def consume_pending_teleport(self) -> Optional[tuple]:
         t = self._pending_teleport
@@ -332,6 +358,11 @@ class Phone:
         return t
 
     def _start_app_splash(self, app: PhoneApp):
+        # Map app → skip splash entirely, go straight to map_expand transition
+        if app == PhoneApp.MAP:
+            self._view = "map_expand"
+            self._map_expand_t = 0.0
+            return
         self._pending_splash_app = app
         self._splash_t = 0.0
         self._splash_duration = random.uniform(_SPLASH_MIN, _SPLASH_MAX)
@@ -376,6 +407,8 @@ class Phone:
             if self._splash_t >= self._splash_duration:
                 app = self._pending_splash_app
                 self._pending_splash_app = None
+                # Map app should never reach here (bypassed in _start_app_splash),
+                # but keep as safety net with immediate transition (no extra delay).
                 if app == PhoneApp.MAP:
                     self._view = "map_expand"
                     self._map_expand_t = 0.0
@@ -383,12 +416,23 @@ class Phone:
                     self.current_app = app or PhoneApp.ACADEMIC
                     self._view = "app"
 
+        # STEP 1: Transition with clockwise rotation (0° → 90°, 400-550ms)
         if self._view == "map_expand":
             self._map_expand_t = min(1.0, self._map_expand_t + dt / _DUR_MAP_EXPAND)
             if self._map_expand_t >= 1.0:
+                # Transition completed → show loading screen
+                self._view = "map_loading"
+                self._map_loading_t = 0.0
+
+        # STEP 2: Loading screen (static centered icon, 300-400ms)
+        if self._view == "map_loading":
+            self._map_loading_t += dt
+            if self._map_loading_t >= _DUR_MAP_LOADING:
+                # Loading completed → show map
                 self._view = "map"
                 self._embedded_map_need_sync = True
 
+        # STEP 3: Contraction (inverse of map_expand, 400-550ms)
         if self._view == "map_contract":
             self._map_contract_t = min(1.0, self._map_contract_t + dt / _DUR_MAP_CONTRACT)
             if self._map_contract_t >= 1.0:
@@ -443,6 +487,10 @@ class Phone:
         if self._view == "map":
             self._draw_map_back_button()
             return
+        
+        if self._view == "map_loading":
+            self._draw_map_loading_screen()
+            return
 
         if self._view == "map_expand":
             self._draw_map_expand_transition()
@@ -483,9 +531,14 @@ class Phone:
         return self._map_transition_buf
 
     def _draw_unified_map_transition(self, t_lin: float, *, forward: bool):
-        """t_lin lineal 0→1; forward expande, False contrae (misma geometría invertida)."""
+        """t_lin linear 0→1; forward expands (clockwise), False contracts (counter-clockwise).
+        
+        CLOCKWISE ROTATION CORRECTED:
+        - Forward: 0° → 90° (clockwise)
+        - Everything rotates: phone, UI, text, icons - NOTHING stays vertical
+        """
         t_lin = min(1.0, max(0.0, t_lin))
-        # Reloj espacial único (ease-in-out quint) para posición + escala
+        # Single spatial clock (ease-in-out quint) for position + scale
         if forward:
             w = self._ease_in_out_quint(t_lin)
             u_rot = t_lin
@@ -506,9 +559,11 @@ class Phone:
         nw = max(2, int(PHONE_W * sc))
         nh = max(2, int(PHONE_H * sc))
 
-        # Rotación con micro rebasamiento (ease-out-back suave sobre reloj lineal)
+        # CLOCKWISE ROTATION CORRECTED
+        # Forward: 0° → 90° (clockwise)
+        # Reverse: 90° → 0° (counter-clockwise)
         ang_prog = self._ease_out_back_light(u_rot)
-        angle = -90.0 * ang_prog
+        angle = 90.0 * ang_prog if forward else 90.0 * (1.0 - ang_prog)
 
         bf = _MAP_BLEND_FRAC
         if forward:
@@ -529,7 +584,7 @@ class Phone:
         ov.fill((0, 0, 0, min(235, dim)))
         self.screen.blit(ov, (0, 0))
 
-        # Mapa bajo el marco (último tramo): escala desde “ventana” a pantalla
+        # Map under frame (final stretch): scale from "window" to screen
         if self._map_ref and blend > 0.02:
             buf = self._ensure_map_transition_buffer()
             self._map_ref.draw(buf, False)
@@ -543,6 +598,7 @@ class Phone:
                 map_s.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2)),
             )
 
+        # ALL PHONE CONTENT ROTATES TOGETHER - NOTHING stays vertical
         scaled = pygame.transform.smoothscale(self._surf, (nw, nh))
         rot = pygame.transform.rotate(scaled, angle)
         phone_alpha = int(255 * (1.0 - 0.96 * blend))
@@ -625,7 +681,7 @@ class Phone:
             pygame.draw.line(s, c, (r.x, r.y + y), (r.right - 1, r.y + y))
 
         cols = 4
-        labels = ["Académico", "Social", "Msgs", "Horario", "Mapa"]
+        labels = ["Academic", "Social", "Msgs", "Schedule", "Map"]
         apps_order = [
             PhoneApp.ACADEMIC,
             PhoneApp.SOCIAL,
@@ -721,7 +777,7 @@ class Phone:
         inset = int(40 * (1.0 - p))
         inner = r.inflate(-inset * 2, -inset * 2)
         pygame.draw.rect(s, (12, 28, 32), inner, border_radius=12)
-        te = self._f_sec.render("Abriendo mapa…", True, PH_CYAN)
+        te = self._f_sec.render("Opening map…", True, PH_CYAN)
         s.blit(te, te.get_rect(center=inner.center))
 
     def _draw_home_chrome(self, s):
@@ -732,9 +788,44 @@ class Phone:
 
         btn = pygame.Rect(_CX + 8, _CY + 4, 72, _APP_HOME_H - 8)
         self._rrect(s, PH_CARD2, btn, 6)
-        ht = self._f_sub.render("⌂ Inicio", True, PH_CYAN)
+        ht = self._f_sub.render("⌂ Home", True, PH_CYAN)
         s.blit(ht, ht.get_rect(center=btn.center))
         self._home_btn_rect = btn
+
+    def _draw_map_loading_screen(self):
+        """Loading screen: large centered STATIC icon. No spinner, no animation.
+        
+        Step 2 of sequence: appears after rotation (map_expand),
+        disappears when map is ready. Duration: 300-400ms.
+        """
+        # Total black background
+        self.screen.fill((0, 0, 0))
+        
+        cx = SCREEN_WIDTH // 2
+        cy = SCREEN_HEIGHT // 2
+        
+        # STATIC and large map icon — perfectly centered, NO rotation
+        icon_size = 160  # large, occupies significant screen portion
+        icon_surf = pygame.Surface((icon_size, icon_size), pygame.SRCALPHA)
+        half = icon_size // 2
+        
+        # Outer circle (compass)
+        pygame.draw.circle(icon_surf, PH_CYAN, (half, half), half - 6, 4)
+        # Inner cross
+        pygame.draw.line(icon_surf, PH_CYAN, (half, 12), (half, half + 16), 4)
+        pygame.draw.line(icon_surf, PH_CYAN, (12, half), (icon_size - 12, half), 3)
+        # North triangle (compass tip) — points up
+        pygame.draw.polygon(icon_surf, PH_CYAN, [
+            (half, 4),
+            (half - 10, 26),
+            (half + 10, 26),
+        ])
+        # Center dot
+        pygame.draw.circle(icon_surf, PH_CYAN, (half, half), 6)
+        
+        # Draw icon perfectly centered on screen
+        icon_rect = icon_surf.get_rect(center=(cx, cy))
+        self.screen.blit(icon_surf, icon_rect.topleft)
 
     def _draw_map_back_button(self):
         bw, bh = 160, 44
@@ -743,7 +834,7 @@ class Phone:
         self._map_back_rect = pygame.Rect(bx, by, bw, bh)
         pygame.draw.rect(self.screen, PH_CARD2, self._map_back_rect, border_radius=10)
         pygame.draw.rect(self.screen, PH_CYAN, self._map_back_rect, border_radius=10, width=2)
-        t = self._f_sec.render("⌂ Volver al inicio", True, PH_TEXT)
+        t = self._f_sec.render("⌂ Back to Home", True, PH_TEXT)
         self.screen.blit(t, t.get_rect(center=self._map_back_rect.center))
 
     def _draw_content(self, s, cy: int, ch: int):
@@ -1242,7 +1333,7 @@ class Phone:
                 self._map_close_to_home()
             return True
 
-        if self._view in ("map_expand", "map_contract"):
+        if self._view in ("map_expand", "map_loading", "map_contract"):
             return True
 
         if event.type == pygame.MOUSEWHEEL:
@@ -1260,8 +1351,22 @@ class Phone:
                 self.close()
                 return True
             if event.key == KEY_MAP:
-                self.go_home()
-                return True
+                # Acceso directo al mapa (M)
+                if self.state == PhoneState.CLOSED:
+                    # Teléfono cerrado → abrirlo con acceso directo al mapa
+                    self.open_map_direct()
+                    return True
+                elif self._view in ("home", "app", "splash"):
+                    # Teléfono abierto en HUD → iniciar transición a mapa
+                    self._view = "map_expand"
+                    self._map_expand_t = 0.0
+                    self.active_task = None
+                    self.active_chat = None
+                    return True
+                elif self._view == "map":
+                    # Mapa abierto → cerrar
+                    self._map_close_to_home()
+                    return True
             if self._view == "app":
                 if event.key == pygame.K_UP:
                     self._scroll[self.current_app] = max(
@@ -1279,7 +1384,7 @@ class Phone:
         if self.state != PhoneState.OPEN:
             return False
 
-        if self._view in ("splash", "map_expand", "map_contract"):
+        if self._view in ("splash", "map_loading", "map_expand", "map_contract"):
             return True
 
         p = self._ease_out(self._anim_t)
