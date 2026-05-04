@@ -1,51 +1,77 @@
 """
-src/phone.py  —  In-game smartphone (GTA V style)
-==================================================
-22% screen width · 9:16 aspect ratio · bottom-right
-Slide-from-below + scale animation (0.9→1.0, 200 ms)
-4 apps:  Academic | Social | Messages | Schedule
-12-px grid · click-outside to close · no game pause
+src/phone.py  —  GTA-style phone: HUD compact + map fullscreen
+===============================================================
+Modo HUD: esquina inferior derecha, ≤25% ancho, 9:16, márgenes ~2.5%.
+Modo mapa: transición única 300 ms — ease-in-out quint + rotación ease-out-back
+ligera; zoom, desplazo al centro y crossfade con el mapa al final. Cierre simétrico.
 """
 
 from __future__ import annotations
 
 import math
+import random
 import pygame
 from enum import Enum
 from dataclasses import dataclass, field
 from typing import Optional, Callable
 
-from settings import SCREEN_WIDTH, SCREEN_HEIGHT, WHITE, BLACK
+from settings import SCREEN_WIDTH, SCREEN_HEIGHT, WHITE, BLACK, KEY_MAP
 
 
 # ═══════════════════════════════════════════════════════════════
-#  LAYOUT  (8-px grid)
+#  LAYOUT  — HUD inferior derecho (≈25% ancho, 9:16, márgenes 2–3%)
 # ═══════════════════════════════════════════════════════════════
 
-_MR = max(24, int(SCREEN_WIDTH  * 0.025))   # right margin  ≈ 32 px
-_MB = max(16, int(SCREEN_HEIGHT * 0.028))   # bottom margin ≈ 20 px
+_MARGIN_X = max(8, int(SCREEN_WIDTH * 0.025))
+_MARGIN_Y = max(8, int(SCREEN_HEIGHT * 0.025))
 
-PHONE_W = int(SCREEN_WIDTH * 0.22)          # ≈ 281 px
-PHONE_H = int(PHONE_W * 16 / 9)            # 9:16  ≈ 498 px
-PHONE_X = SCREEN_WIDTH  - PHONE_W - _MR
-PHONE_Y = SCREEN_HEIGHT - PHONE_H - _MB
+_PH_MAX_W = int(SCREEN_WIDTH * 0.25)
+_PH_H = int(_PH_MAX_W * 16 / 9)
+_MAX_H = SCREEN_HEIGHT - 2 * _MARGIN_Y
+if _PH_H > _MAX_H:
+    _PH_H = _MAX_H
+    _PH_MAX_W = int(_PH_H * 9 / 16)
+
+PHONE_W = _PH_MAX_W
+PHONE_H = _PH_H
+
+HUD_PHONE_X = SCREEN_WIDTH - PHONE_W - _MARGIN_X
+HUD_PHONE_Y = SCREEN_HEIGHT - PHONE_H - _MARGIN_Y
 
 _BZ     = 8    # bezel
 _STAT_H = 28   # status-bar height
-_NAV_H  = 48   # nav-bar height
+_APP_HOME_H = 28  # in-app home chrome row
 _PAD    = 12   # content padding
 _GAP    = 8    # gap between cards
 
-# content rect inside phone surface
+# content rect inside phone surface (no bottom nav — space for wallpaper / apps)
 _CX = _BZ
 _CY = _BZ + _STAT_H
 _CW = PHONE_W - _BZ * 2
-_CH = PHONE_H - _BZ * 2 - _STAT_H - _NAV_H
+_CH = PHONE_H - _BZ * 2 - _STAT_H
 
-# animation
-_DUR_OPEN  = 0.20   # s
-_DUR_CLOSE = 0.15   # s
-_SLIDE_PX  = 80     # px from below
+# animation (250–350 ms map transition)
+_DUR_OPEN  = 0.26   # s
+_DUR_CLOSE = 0.26   # s
+_DUR_MAP_EXPAND = 0.30
+_DUR_MAP_CONTRACT = 0.30
+# último tramo: mapa bajo el marco + fade del teléfono (un solo gesto)
+_MAP_BLEND_FRAC = 0.22
+_SPLASH_MIN = 1.0
+_SPLASH_MAX = 3.0
+
+# overlay: HUD ligero; mapa / transición más oscuro
+_OVERLAY_ALPHA_HUD = 72
+_OVERLAY_ALPHA_MAP_T = 200
+
+# icon colours (home grid)
+_ICON_COL = {
+    "academic": (80, 140, 255),
+    "social": (255, 80, 150),
+    "messages": (50, 210, 120),
+    "schedule": (255, 180, 40),
+    "map": (100, 200, 180),
+}
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -153,6 +179,7 @@ class PhoneApp(Enum):
     SOCIAL   = "social"
     MESSAGES = "messages"
     SCHEDULE = "schedule"
+    MAP      = "map"
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -160,13 +187,14 @@ class PhoneApp(Enum):
 # ═══════════════════════════════════════════════════════════════
 
 class Phone:
-    """GTA V-style smartphone overlay."""
+    """Smartphone overlay: home grid, optional fullscreen map."""
 
-    _APPS = [
-        (PhoneApp.ACADEMIC, "📚", "Académico"),
-        (PhoneApp.SOCIAL,   "📢", "Social"),
-        (PhoneApp.MESSAGES, "💬", "Mensajes"),
-        (PhoneApp.SCHEDULE, "🕐", "Horario"),
+    _HOME_APPS = [
+        (PhoneApp.ACADEMIC, "Académico"),
+        (PhoneApp.SOCIAL,   "Social"),
+        (PhoneApp.MESSAGES, "Mensajes"),
+        (PhoneApp.SCHEDULE, "Horario"),
+        (PhoneApp.MAP,      "Mapa"),
     ]
 
     # ------------------------------------------------------------------
@@ -181,11 +209,24 @@ class Phone:
         self._anim_t    = 0.0
         self.is_visible = False
 
+        self._view = "closed"   # home | splash | app | map_expand | map
         self.current_app   = PhoneApp.ACADEMIC
+        self._pending_splash_app: Optional[PhoneApp] = None
+        self._splash_t = 0.0
+        self._splash_duration = 1.5
+        self._map_expand_t = 0.0
+        self._map_contract_t = 0.0
+
+        self._map_ref = None   # WorldMap — injected from Game after UI init
+
         self._scroll       = {app: 0 for app in PhoneApp}
         self.social_filter = "all"           # "all" | "anonymous" | "mentions"
         self.active_chat: Optional[str]    = None   # npc_id
         self.active_task: Optional[object] = None
+
+        self._hud_anchor: Optional[pygame.Rect] = None
+        self._pending_teleport: Optional[tuple] = None
+        self._embedded_map_need_sync = False
 
         # Data
         self.social_posts:    list[SocialPost]              = []
@@ -211,7 +252,9 @@ class Phone:
             self._f_ico = self._f_sec
 
         # Click rects (phone-surface local coords, set each frame)
-        self._nav_rects:    list[tuple[pygame.Rect, PhoneApp]] = []
+        self._home_icon_rects: list[tuple[pygame.Rect, PhoneApp]] = []
+        self._home_btn_rect: Optional[pygame.Rect] = None
+        self._map_back_rect: Optional[pygame.Rect] = None
         self._task_rects:   list[tuple[pygame.Rect, object]]   = []
         self._post_rects:   list[tuple[pygame.Rect, object]]   = []
         self._like_rects:   list[tuple[pygame.Rect, object]]   = []
@@ -219,6 +262,8 @@ class Phone:
         self._filter_rects: list[tuple[pygame.Rect, str]]      = []
         self._reply_rects:  list[tuple[pygame.Rect, str]]      = []
         self._back_rect: Optional[pygame.Rect]                 = None
+
+        self._map_transition_buf: Optional[pygame.Surface] = None
 
     # ──────────────────────────────────────────────────────────
     #  PUBLIC API
@@ -229,6 +274,11 @@ class Phone:
             self.state = PhoneState.OPENING
             self._anim_t = 0.0
             self.is_visible = True
+            self._view = "home"
+            self.active_task = None
+            self.active_chat = None
+            for app in PhoneApp:
+                self._scroll[app] = 0
         else:
             self.state = PhoneState.CLOSING
             self._anim_t = 1.0
@@ -237,6 +287,76 @@ class Phone:
         if self.state in (PhoneState.OPEN, PhoneState.OPENING):
             self.state = PhoneState.CLOSING
             self._anim_t = 1.0
+
+    def set_hud_anchor(self, rect: pygame.Rect):
+        """Screen-space HUD phone icon — used for open/close animation."""
+        self._hud_anchor = pygame.Rect(rect)
+
+    def go_home(self):
+        """Leave map / app chrome and show home grid; keeps phone open."""
+        self._view = "home"
+        self.active_task = None
+        self.active_chat = None
+        self._map_expand_t = 0.0
+        self._map_contract_t = 0.0
+        self._pending_splash_app = None
+        self._splash_t = 0.0
+        if self._map_ref:
+            self._map_ref._confirm_teleport = False
+            self._map_ref._teleport_target = None
+            self._map_ref.teleport_requested = False
+
+    def push_island_event(self, text: str, duration: float = 3.0):
+        """Visual-only hook (optional expansion later)."""
+        del text, duration
+
+    def hides_game_hud(self) -> bool:
+        """Oculta HUD del juego solo en mapa fullscreen y transiciones del mapa."""
+        return self._view in ("map", "map_expand", "map_contract")
+
+    def is_fullscreen(self) -> bool:
+        """Compat: mismo criterio que hides_game_hud."""
+        return self.hides_game_hud()
+
+    def is_map_fullscreen(self) -> bool:
+        """Mapa interactivo a pantalla completa (WorldMap activo)."""
+        return self._view == "map"
+
+    def shows_embedded_world_map(self) -> bool:
+        """Dibuja WorldMap detrás (mapa estable o mientras contrae el marco)."""
+        return self._view in ("map", "map_contract")
+
+    def consume_pending_teleport(self) -> Optional[tuple]:
+        t = self._pending_teleport
+        self._pending_teleport = None
+        return t
+
+    def _start_app_splash(self, app: PhoneApp):
+        self._pending_splash_app = app
+        self._splash_t = 0.0
+        self._splash_duration = random.uniform(_SPLASH_MIN, _SPLASH_MAX)
+        self._view = "splash"
+
+    def _map_close_to_home(self):
+        wm = self._map_ref
+        if wm and getattr(wm, "teleport_requested", False):
+            self._pending_teleport = (
+                wm.teleport_floor,
+                int(wm.teleport_pos[0]),
+                int(wm.teleport_pos[1]),
+            )
+            wm.teleport_requested = False
+        self._view = "map_contract"
+        self._map_contract_t = 0.0
+
+    def _screen_to_local(self, screen_pos: tuple[int, int]) -> tuple[int, int]:
+        p = self._ease_out(self._anim_t)
+        sx, sy, sw, sh = self._screen_phone_rect(p)
+        if sw <= 0 or sh <= 0:
+            return 0, 0
+        lx = int((screen_pos[0] - sx) * PHONE_W / sw)
+        ly = int((screen_pos[1] - sy) * PHONE_H / sh)
+        return lx, ly
 
     def update(self, dt: float):
         if self.state == PhoneState.OPENING:
@@ -248,6 +368,37 @@ class Phone:
             if self._anim_t <= 0.0:
                 self.state = PhoneState.CLOSED
                 self.is_visible = False
+                self._view = "closed"
+                self._map_expand_t = 0.0
+
+        if self.state == PhoneState.OPEN and self._view == "splash":
+            self._splash_t += dt
+            if self._splash_t >= self._splash_duration:
+                app = self._pending_splash_app
+                self._pending_splash_app = None
+                if app == PhoneApp.MAP:
+                    self._view = "map_expand"
+                    self._map_expand_t = 0.0
+                else:
+                    self.current_app = app or PhoneApp.ACADEMIC
+                    self._view = "app"
+
+        if self._view == "map_expand":
+            self._map_expand_t = min(1.0, self._map_expand_t + dt / _DUR_MAP_EXPAND)
+            if self._map_expand_t >= 1.0:
+                self._view = "map"
+                self._embedded_map_need_sync = True
+
+        if self._view == "map_contract":
+            self._map_contract_t = min(1.0, self._map_contract_t + dt / _DUR_MAP_CONTRACT)
+            if self._map_contract_t >= 1.0:
+                self.go_home()
+
+    def consume_embedded_map_initial_sync(self) -> bool:
+        if self._embedded_map_need_sync:
+            self._embedded_map_need_sync = False
+            return True
+        return False
 
     # Data helpers
     def add_social_post(self, post: SocialPost):
@@ -289,19 +440,135 @@ class Phone:
         if not self.is_visible and self.state == PhoneState.CLOSED:
             return
 
-        p     = self._ease_out(self._anim_t)
-        slide  = int((1.0 - p) * _SLIDE_PX)
-        scale  = 0.90 + 0.10 * p
+        if self._view == "map":
+            self._draw_map_back_button()
+            return
+
+        if self._view == "map_expand":
+            self._draw_map_expand_transition()
+            return
+
+        if self._view == "map_contract":
+            self._draw_map_contract_transition()
+            return
+
+        p = self._ease_out(self._anim_t)
+
+        ov = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+        ov.fill((0, 0, 0, int(_OVERLAY_ALPHA_HUD * p)))
+        self.screen.blit(ov, (0, 0))
 
         self._render_to_surface()
 
-        sw = int(PHONE_W * scale)
-        sh = int(PHONE_H * scale)
+        sx, sy, sw, sh = self._screen_phone_rect(p)
         if sw > 0 and sh > 0:
             scaled = pygame.transform.smoothscale(self._surf, (sw, sh))
-            bx = PHONE_X + (PHONE_W - sw) // 2
-            by = PHONE_Y + (PHONE_H - sh) // 2 + slide
-            self.screen.blit(scaled, (bx, by))
+            self.screen.blit(scaled, (sx, sy))
+
+    def _draw_map_expand_transition(self):
+        """HUD vertical → fullscreen mapa: un solo gesto (quint + back + crossfade)."""
+        self._render_to_surface()
+        self._draw_unified_map_transition(self._map_expand_t, forward=True)
+
+    def _draw_map_contract_transition(self):
+        """Inversa exacta: mapa → marco reaparece, rotación horaria, vuelta al HUD."""
+        self._render_to_surface()
+        self._draw_unified_map_transition(self._map_contract_t, forward=False)
+
+    def _ensure_map_transition_buffer(self) -> pygame.Surface:
+        if self._map_transition_buf is None:
+            self._map_transition_buf = pygame.Surface(
+                (SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA
+            )
+        return self._map_transition_buf
+
+    def _draw_unified_map_transition(self, t_lin: float, *, forward: bool):
+        """t_lin lineal 0→1; forward expande, False contrae (misma geometría invertida)."""
+        t_lin = min(1.0, max(0.0, t_lin))
+        # Reloj espacial único (ease-in-out quint) para posición + escala
+        if forward:
+            w = self._ease_in_out_quint(t_lin)
+            u_rot = t_lin
+        else:
+            w = self._ease_in_out_quint(1.0 - t_lin)
+            u_rot = 1.0 - t_lin
+
+        hx, hy, hw, hh = HUD_PHONE_X, HUD_PHONE_Y, PHONE_W, PHONE_H
+        cx0 = hx + hw // 2
+        cy0 = hy + hh // 2
+        cx = int(cx0 + (SCREEN_WIDTH // 2 - cx0) * w)
+        cy = int(cy0 + (SCREEN_HEIGHT // 2 - cy0) * w)
+        scale_end = max(
+            SCREEN_WIDTH / max(1, PHONE_W),
+            SCREEN_HEIGHT / max(1, PHONE_H),
+        ) * 1.015
+        sc = 1.0 + (scale_end - 1.0) * w
+        nw = max(2, int(PHONE_W * sc))
+        nh = max(2, int(PHONE_H * sc))
+
+        # Rotación con micro rebasamiento (ease-out-back suave sobre reloj lineal)
+        ang_prog = self._ease_out_back_light(u_rot)
+        angle = -90.0 * ang_prog
+
+        bf = _MAP_BLEND_FRAC
+        if forward:
+            if t_lin <= 1.0 - bf:
+                blend = 0.0
+            else:
+                blend = self._smoothstep(
+                    (t_lin - (1.0 - bf)) / max(1e-6, bf)
+                )
+        else:
+            if t_lin >= bf:
+                blend = 0.0
+            else:
+                blend = 1.0 - self._smoothstep(t_lin / max(1e-6, bf))
+
+        ov = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+        dim = int(40 + 160 * w)
+        ov.fill((0, 0, 0, min(235, dim)))
+        self.screen.blit(ov, (0, 0))
+
+        # Mapa bajo el marco (último tramo): escala desde “ventana” a pantalla
+        if self._map_ref and blend > 0.02:
+            buf = self._ensure_map_transition_buffer()
+            self._map_ref.draw(buf, False)
+            map_scale = 0.42 + 0.58 * blend
+            mw = max(2, int(SCREEN_WIDTH * map_scale))
+            mh = max(2, int(SCREEN_HEIGHT * map_scale))
+            map_s = pygame.transform.smoothscale(buf, (mw, mh))
+            map_s.set_alpha(int(255 * blend))
+            self.screen.blit(
+                map_s,
+                map_s.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2)),
+            )
+
+        scaled = pygame.transform.smoothscale(self._surf, (nw, nh))
+        rot = pygame.transform.rotate(scaled, angle)
+        phone_alpha = int(255 * (1.0 - 0.96 * blend))
+        if phone_alpha < 255:
+            rot = rot.convert_alpha()
+            rot.set_alpha(phone_alpha)
+        rect = rot.get_rect(center=(cx, cy))
+        self.screen.blit(rot, rect.topleft)
+
+    def _screen_phone_rect(self, p_anim: float):
+        """Del icono HUD → rectángulo final esquina inferior derecha."""
+        tx, ty, tw, th = HUD_PHONE_X, HUD_PHONE_Y, PHONE_W, PHONE_H
+        if self._hud_anchor and self._hud_anchor.width > 2:
+            hx, hy, hw, hh = (
+                self._hud_anchor.x,
+                self._hud_anchor.y,
+                self._hud_anchor.w,
+                self._hud_anchor.h,
+            )
+            tx = int(hx + (HUD_PHONE_X - hx) * p_anim)
+            ty = int(hy + (HUD_PHONE_Y - hy) * p_anim)
+            tw = int(hw + (PHONE_W - hw) * p_anim)
+            th = int(hh + (PHONE_H - hh) * p_anim)
+        tw = max(24, tw)
+        th = max(42, th)
+        return tx, ty, tw, th
 
     def _render_to_surface(self):
         s = self._surf
@@ -311,18 +578,181 @@ class Phone:
         self._rrect(s, PH_BODY, pygame.Rect(0, 0, PHONE_W, PHONE_H), 16, PH_BD, 1)
         # screen glass
         self._rrect(s, PH_SCREEN, pygame.Rect(_BZ, _BZ, _CW, PHONE_H - _BZ * 2), 12)
-        # notch
-        nw = PHONE_W // 3
-        pygame.draw.rect(s, PH_BODY, ((PHONE_W - nw) // 2, _BZ, nw, 10), border_radius=5)
 
         self._draw_status_bar(s)
+        self._draw_dynamic_island(s)
 
         old = s.get_clip()
         s.set_clip((_CX, _CY, _CW, _CH))
-        self._draw_content(s)
+
+        if self._view == "home":
+            self._draw_home_screen(s)
+        elif self._view == "splash":
+            self._draw_app_splash(s)
+        elif self._view == "map_expand":
+            self._draw_map_expand_preview(s)
+        elif self._view == "map_contract":
+            self._draw_map_expand_preview(s)
+        elif self._view == "app":
+            cy_eff = _CY + _APP_HOME_H
+            ch_eff = _CH - _APP_HOME_H
+            self._draw_home_chrome(s)
+            s.set_clip((_CX, cy_eff, _CW, ch_eff))
+            self._draw_content(s, cy_eff, ch_eff)
+
         s.set_clip(old)
 
-        self._draw_nav_bar(s)
+    def _draw_dynamic_island(self, s):
+        """Purely decorative pill (no gameplay coupling)."""
+        pw = min(_CW - 24, 120)
+        ph = 22
+        px = _BZ + (_CW - pw) // 2
+        py = _BZ + 4
+        pill = pygame.Rect(px, py, pw, ph)
+        pygame.draw.rect(s, (6, 6, 10), pill, border_radius=ph // 2)
+        pygame.draw.rect(s, PH_BD, pill, border_radius=ph // 2, width=1)
+
+    def _draw_home_screen(self, s):
+        """Wallpaper + app icon grid."""
+        r = pygame.Rect(_CX, _CY, _CW, _CH)
+        for y in range(r.h):
+            t = y / max(1, r.h)
+            c = (
+                int(18 + t * 40),
+                int(22 + t * 30),
+                int(48 + t * 25),
+            )
+            pygame.draw.line(s, c, (r.x, r.y + y), (r.right - 1, r.y + y))
+
+        cols = 4
+        labels = ["Académico", "Social", "Msgs", "Horario", "Mapa"]
+        apps_order = [
+            PhoneApp.ACADEMIC,
+            PhoneApp.SOCIAL,
+            PhoneApp.MESSAGES,
+            PhoneApp.SCHEDULE,
+            PhoneApp.MAP,
+        ]
+        pad_x = 14
+        pad_y = 28
+        cell_w = (_CW - pad_x * 2) // cols
+        cell_h = 88
+        self._home_icon_rects = []
+
+        for idx, app in enumerate(apps_order):
+            row, col = divmod(idx, cols)
+            ix = _CX + pad_x + col * cell_w
+            iy = _CY + pad_y + row * (cell_h + 18)
+            ir = pygame.Rect(ix + 8, iy, cell_w - 16, 62)
+            col_rgb = _ICON_COL.get(app.value, PH_CYAN)
+            pygame.draw.rect(s, col_rgb, ir, border_radius=14)
+            pygame.draw.rect(s, PH_BD, ir, border_radius=14, width=1)
+            self._draw_app_glyph(s, app, ir)
+            lb = self._f_sub.render(labels[idx], True, PH_TEXT)
+            s.blit(lb, lb.get_rect(midtop=(ir.centerx, ir.bottom + 4)))
+
+            hit = pygame.Rect(ir.x - 4, iy - 4, ir.w + 8, ir.height + 22)
+            self._home_icon_rects.append((hit, app))
+
+            if app == PhoneApp.MESSAGES:
+                u = self.get_unread_messages_count()
+                if u > 0:
+                    self._badge(s, str(min(u, 9)), ir.right - 4, ir.y + 4)
+            if app == PhoneApp.SOCIAL:
+                mc = self._mention_post_count()
+                if mc > 0:
+                    self._badge(s, str(min(mc, 9)), ir.right - 4, ir.y + 4)
+
+    def _mention_post_count(self) -> int:
+        player = self.player_name
+        return sum(
+            1
+            for p in self.social_posts
+            if player in [m.lower() for m in p.mentions]
+        )
+
+    def _draw_app_glyph(self, s, app: PhoneApp, ir: pygame.Rect):
+        cx, cy = ir.center
+        if app == PhoneApp.ACADEMIC:
+            pygame.draw.rect(s, WHITE, (cx - 14, cy - 10, 28, 18), border_radius=3)
+            pygame.draw.line(s, _ICON_COL["academic"], (cx - 8, cy + 2), (cx + 8, cy + 2), 2)
+        elif app == PhoneApp.SOCIAL:
+            pygame.draw.circle(s, WHITE, (cx - 6, cy), 7)
+            pygame.draw.circle(s, WHITE, (cx + 8, cy), 9)
+        elif app == PhoneApp.MESSAGES:
+            env = pygame.Rect(cx - 14, cy - 8, 28, 20)
+            pygame.draw.rect(s, WHITE, env, border_radius=3)
+            pygame.draw.polygon(s, _ICON_COL["messages"], [(cx, cy - 2), (cx - 6, cy + 6), (cx + 6, cy + 6)])
+        elif app == PhoneApp.SCHEDULE:
+            for i in range(3):
+                for j in range(3):
+                    pygame.draw.rect(
+                        s,
+                        WHITE,
+                        (cx - 12 + j * 8, cy - 10 + i * 7, 6, 5),
+                        border_radius=1,
+                    )
+        elif app == PhoneApp.MAP:
+            pygame.draw.circle(s, WHITE, (cx, cy + 4), 12, 2)
+            pygame.draw.polygon(s, WHITE, [(cx, cy - 10), (cx - 5, cy - 4), (cx + 5, cy - 4)])
+
+    def _draw_app_splash(self, s):
+        """Full glass-area splash before app content."""
+        app = self._pending_splash_app or self.current_app
+        r = pygame.Rect(_CX, _CY, _CW, _CH)
+        col = _ICON_COL.get(app.value, PH_CARD)
+        for y in range(r.h):
+            t = y / max(1, r.h)
+            c = (int(col[0] * t), int(col[1] * t), int(col[2] * t))
+            pygame.draw.line(s, c, (r.x, r.y + y), (r.right - 1, r.y + y))
+
+        ir = r.inflate(-80, -120)
+        ir.center = r.center
+        pygame.draw.rect(s, WHITE, ir, border_radius=20)
+        self._draw_app_glyph(s, app, ir)
+        name = next((lb for a, lb in self._HOME_APPS if a == app), "App")
+        tt = self._f_sec.render(name, True, PH_TEXT)
+        s.blit(tt, tt.get_rect(midbottom=(r.centerx, r.bottom - 40)))
+
+    def _draw_map_expand_preview(self, s):
+        """Visual held inside phone while map prepares fullscreen."""
+        r = pygame.Rect(_CX, _CY, _CW, _CH)
+        p = self._ease_out(self._map_expand_t)
+        inset = int(40 * (1.0 - p))
+        inner = r.inflate(-inset * 2, -inset * 2)
+        pygame.draw.rect(s, (12, 28, 32), inner, border_radius=12)
+        te = self._f_sec.render("Abriendo mapa…", True, PH_CYAN)
+        s.blit(te, te.get_rect(center=inner.center))
+
+    def _draw_home_chrome(self, s):
+        """Top row with Home — returns to grid."""
+        bar = pygame.Rect(_CX, _CY, _CW, _APP_HOME_H)
+        pygame.draw.rect(s, PH_STAT_BG, bar)
+        pygame.draw.line(s, PH_BD, bar.bottomleft, bar.bottomright)
+
+        btn = pygame.Rect(_CX + 8, _CY + 4, 72, _APP_HOME_H - 8)
+        self._rrect(s, PH_CARD2, btn, 6)
+        ht = self._f_sub.render("⌂ Inicio", True, PH_CYAN)
+        s.blit(ht, ht.get_rect(center=btn.center))
+        self._home_btn_rect = btn
+
+    def _draw_map_back_button(self):
+        bw, bh = 160, 44
+        bx = (SCREEN_WIDTH - bw) // 2
+        by = SCREEN_HEIGHT - bh - 28
+        self._map_back_rect = pygame.Rect(bx, by, bw, bh)
+        pygame.draw.rect(self.screen, PH_CARD2, self._map_back_rect, border_radius=10)
+        pygame.draw.rect(self.screen, PH_CYAN, self._map_back_rect, border_radius=10, width=2)
+        t = self._f_sec.render("⌂ Volver al inicio", True, PH_TEXT)
+        self.screen.blit(t, t.get_rect(center=self._map_back_rect.center))
+
+    def _draw_content(self, s, cy: int, ch: int):
+        {
+            PhoneApp.ACADEMIC: self._app_academic,
+            PhoneApp.SOCIAL:   self._app_social,
+            PhoneApp.MESSAGES: self._app_messages,
+            PhoneApp.SCHEDULE: self._app_schedule,
+        }.get(self.current_app, lambda *_: None)(s, _CX, cy, _CW, ch)
 
     # ── Status bar ─────────────────────────────────────────────────
 
@@ -343,50 +773,6 @@ class Phone:
 
         sig = self._f_stat.render("●●●  ▓", True, PH_TEXT_S)
         s.blit(sig, sig.get_rect(midright=(_BZ + _CW - 4, _BZ + _STAT_H // 2)))
-
-    # ── Nav bar ────────────────────────────────────────────────────
-
-    def _draw_nav_bar(self, s):
-        ny = PHONE_H - _BZ - _NAV_H
-        pygame.draw.rect(s, PH_NAV_BG, (_BZ, ny, _CW, _NAV_H))
-        pygame.draw.line(s, PH_BD, (_BZ, ny), (_BZ + _CW, ny))
-
-        self._nav_rects = []
-        iw = _CW // len(self._APPS)
-        for i, (app, icon, label) in enumerate(self._APPS):
-            ix = _BZ + i * iw
-            active = (app == self.current_app)
-            if active:
-                pygame.draw.rect(s, PH_CYAN, (ix + 4, ny + 2, iw - 8, 2), border_radius=1)
-
-            col_ico = PH_CYAN if active else PH_TEXT_D
-            col_lbl = PH_CYAN if active else PH_TEXT_S
-
-            try:
-                ico = self._f_ico.render(icon, True, col_ico)
-            except Exception:
-                ico = self._f_title.render(label[:2], True, col_ico)
-            s.blit(ico, ico.get_rect(center=(ix + iw // 2, ny + _NAV_H // 2 - 7)))
-
-            lbl = self._f_sub.render(label, True, col_lbl)
-            s.blit(lbl, lbl.get_rect(center=(ix + iw // 2, ny + _NAV_H - 10)))
-
-            if app == PhoneApp.MESSAGES:
-                u = self.get_unread_messages_count()
-                if u > 0:
-                    self._badge(s, str(min(u, 9)), ix + iw - 14, ny + 6)
-
-            self._nav_rects.append((pygame.Rect(ix, ny, iw, _NAV_H), app))
-
-    # ── Content dispatch ───────────────────────────────────────────
-
-    def _draw_content(self, s):
-        {
-            PhoneApp.ACADEMIC: self._app_academic,
-            PhoneApp.SOCIAL:   self._app_social,
-            PhoneApp.MESSAGES: self._app_messages,
-            PhoneApp.SCHEDULE: self._app_schedule,
-        }.get(self.current_app, lambda *_: None)(s, _CX, _CY, _CW, _CH)
 
     # ══════════════════════════════════════════════════════════
     #  APP — ACADEMIC
@@ -843,9 +1229,27 @@ class Phone:
         if not self.is_visible:
             return False
 
+        if self._view == "map" and self._map_ref:
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+                self._map_close_to_home()
+                return True
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                if self._map_back_rect and self._map_back_rect.collidepoint(event.pos):
+                    self._map_close_to_home()
+                    return True
+            close = self._map_ref.handle_event(event)
+            if close:
+                self._map_close_to_home()
+            return True
+
+        if self._view in ("map_expand", "map_contract"):
+            return True
+
         if event.type == pygame.MOUSEWHEEL:
-            self._scroll[self.current_app] = max(
-                0, self._scroll[self.current_app] - event.y * 20)
+            if self._view == "app":
+                self._scroll[self.current_app] = max(
+                    0, self._scroll[self.current_app] - event.y * 20
+                )
             return True
 
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
@@ -855,13 +1259,18 @@ class Phone:
             if event.key == pygame.K_ESCAPE:
                 self.close()
                 return True
-            if event.key == pygame.K_UP:
-                self._scroll[self.current_app] = max(
-                    0, self._scroll[self.current_app] - 30)
+            if event.key == KEY_MAP:
+                self.go_home()
                 return True
-            if event.key == pygame.K_DOWN:
-                self._scroll[self.current_app] += 30
-                return True
+            if self._view == "app":
+                if event.key == pygame.K_UP:
+                    self._scroll[self.current_app] = max(
+                        0, self._scroll[self.current_app] - 30
+                    )
+                    return True
+                if event.key == pygame.K_DOWN:
+                    self._scroll[self.current_app] += 30
+                    return True
 
         return False
 
@@ -870,69 +1279,68 @@ class Phone:
         if self.state != PhoneState.OPEN:
             return False
 
-        p = self._ease_out(self._anim_t)
-        scale = 0.90 + 0.10 * p
-        sw = int(PHONE_W * scale)
-        sh = int(PHONE_H * scale)
-        bx = PHONE_X + (PHONE_W - sw) // 2
-        by = PHONE_Y + (PHONE_H - sh) // 2
+        if self._view in ("splash", "map_expand", "map_contract"):
+            return True
 
-        phone_rect = pygame.Rect(bx, by, sw, sh)
+        p = self._ease_out(self._anim_t)
+        sx, sy, sw, sh = self._screen_phone_rect(p)
+        phone_rect = pygame.Rect(sx, sy, sw, sh)
         if not phone_rect.collidepoint(screen_pos):
             self.close()
             return True
 
-        # Convert to local coords
-        lx = int((screen_pos[0] - bx) / scale)
-        ly = int((screen_pos[1] - by) / scale)
-        local = (lx, ly)
+        lx, ly = self._screen_to_local(screen_pos)
 
-        # Back button
-        if self._back_rect and self._back_rect.collidepoint(local):
-            self.active_task = None
-            self.active_chat = None
+        if self._view == "home":
+            for rect, app in self._home_icon_rects:
+                if rect.collidepoint((lx, ly)):
+                    self._scroll[app] = 0
+                    self._start_app_splash(app)
+                    return True
             return True
 
-        # Nav bar
-        for rect, app in self._nav_rects:
-            if rect.collidepoint(local):
-                self.current_app = app
-                self._scroll[app] = 0
+        if self._view == "app":
+            if self._home_btn_rect and self._home_btn_rect.collidepoint((lx, ly)):
+                self.go_home()
                 return True
 
-        # App-specific
-        if self.current_app == PhoneApp.ACADEMIC:
-            for rect, task in self._task_rects:
-                if rect.collidepoint(local):
-                    self.active_task = task
-                    return True
+            if self._back_rect and self._back_rect.collidepoint((lx, ly)):
+                self.active_task = None
+                self.active_chat = None
+                return True
 
-        elif self.current_app == PhoneApp.SOCIAL:
-            for rect, fid in self._filter_rects:
-                if rect.collidepoint(local):
-                    self.social_filter = fid
-                    self._scroll[PhoneApp.SOCIAL] = 0
-                    return True
-            for rect, post in self._like_rects:
-                if rect.collidepoint(local):
-                    if not post._liked:
-                        post._liked = True
-                        post.likes += 1
-                    return True
+            if self.current_app == PhoneApp.ACADEMIC:
+                for rect, task in self._task_rects:
+                    if rect.collidepoint((lx, ly)):
+                        self.active_task = task
+                        return True
 
-        elif self.current_app == PhoneApp.MESSAGES:
-            for rect, npc_id in self._chat_rects:
-                if rect.collidepoint(local):
-                    self.active_chat = npc_id
-                    self.mark_messages_read(npc_id)
-                    self._scroll[PhoneApp.MESSAGES] = 0
-                    return True
-            for rect, opt in self._reply_rects:
-                if rect.collidepoint(local):
-                    self._send_reply(opt)
-                    return True
+            elif self.current_app == PhoneApp.SOCIAL:
+                for rect, fid in self._filter_rects:
+                    if rect.collidepoint((lx, ly)):
+                        self.social_filter = fid
+                        self._scroll[PhoneApp.SOCIAL] = 0
+                        return True
+                for rect, post in self._like_rects:
+                    if rect.collidepoint((lx, ly)):
+                        if not post._liked:
+                            post._liked = True
+                            post.likes += 1
+                        return True
 
-        return True   # consumed (anywhere on phone)
+            elif self.current_app == PhoneApp.MESSAGES:
+                for rect, npc_id in self._chat_rects:
+                    if rect.collidepoint((lx, ly)):
+                        self.active_chat = npc_id
+                        self.mark_messages_read(npc_id)
+                        self._scroll[PhoneApp.MESSAGES] = 0
+                        return True
+                for rect, opt in self._reply_rects:
+                    if rect.collidepoint((lx, ly)):
+                        self._send_reply(opt)
+                        return True
+
+        return True
 
     def _send_reply(self, text: str):
         """Record a player reply in the active chat."""
@@ -958,6 +1366,28 @@ class Phone:
     @staticmethod
     def _ease_out(t: float) -> float:
         return 1.0 - (1.0 - t) ** 3
+
+    @staticmethod
+    def _ease_in_out_quint(t: float) -> float:
+        """Ease-in-out cúbica/quintica — arranque y aterrizaje suaves."""
+        t = min(1.0, max(0.0, t))
+        if t < 0.5:
+            return 16.0 * t * t * t * t * t
+        p = -2.0 * t + 2.0
+        return 1.0 - 0.5 * p * p * p * p * p
+
+    @staticmethod
+    def _ease_out_back_light(t: float) -> float:
+        """Ease-out-back leve: micro pasada de inercia y retorno a 1 (≈ -93° → -90°)."""
+        t = min(1.0, max(0.0, t))
+        c1 = 1.45
+        u = t - 1.0
+        return 1.0 + u * u * ((c1 + 1.0) * u + c1)
+
+    @staticmethod
+    def _smoothstep(t: float) -> float:
+        t = min(1.0, max(0.0, t))
+        return t * t * (3.0 - 2.0 * t)
 
     def _rrect(self, surf, color, rect, radius, border_color=None, bw=0):
         pygame.draw.rect(surf, color, rect, border_radius=radius)

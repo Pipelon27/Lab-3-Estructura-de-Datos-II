@@ -6,8 +6,22 @@ selected game mode (solo / co-op host / co-op join).
 Run from the project root:  ``python main.py``
 """
 
-import pygame
 import sys
+
+try:
+    import pygame
+except ModuleNotFoundError as e:
+    if e.name and e.name != "pygame":
+        raise
+    print(
+        "No se encontró el módulo 'pygame'.\n"
+        "En la carpeta del proyecto ejecuta:\n"
+        "  python -m pip install -r requirements.txt\n"
+        "Si usas varias versiones de Python, instala con el mismo "
+        "comando con el que corres el juego (por ejemplo: py -3.12 -m pip ...).",
+        file=sys.stderr,
+    )
+    sys.exit(1)
 
 from settings import (
     SCREEN_WIDTH, SCREEN_HEIGHT, FPS, TITLE,

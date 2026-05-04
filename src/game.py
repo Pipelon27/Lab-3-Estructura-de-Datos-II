@@ -518,6 +518,7 @@ class Game:
     def _init_ui(self):
         self.ui = UI(self.screen)
         self.world_map = WorldMap(self.school_map)
+        self.phone._map_ref = self.world_map
 
     def _init_controller(self):
         """Initialize controller input handling."""
@@ -631,13 +632,20 @@ class Game:
             self._toggle_pause()
             return
 
+        if getattr(self, "phone", None) and self.phone.is_visible and self.phone.is_map_fullscreen():
+            close = self.world_map.handle_controller(controller)
+            if close:
+                self.phone._map_close_to_home()
+            return
+
         if self.state == GameState.INTRO_CINEMATIC:
             # Block map/inventory/skill tree during cinematic
             pass
         else:
-            # Back/View = Map
+            # Back/View: abre/cierra teléfono en partida (mapa solo desde la app)
             if controller.is_map_pressed():
-                self._toggle_map()
+                if self.state == GameState.PLAYING and getattr(self, "phone", None):
+                    self.phone.toggle_phone()
                 return
 
         # X = Wallet (inventory removed, only wallet remains)
@@ -944,12 +952,9 @@ class Game:
                 return
 
         if event.key == KEY_MAP:
+            # Mapa solo desde la app del teléfono — M abre/cierra el teléfono
             if self.state == GameState.PLAYING:
-                self.previous_state = self.state
-                self.state = GameState.MAP
-                # Sync map viewer to current floor
-                self.world_map.current_tab = self.current_floor
-                self.world_map._centre_on_floor(self.current_floor)
+                self.phone.toggle_phone()
             return
 
         # ── state-specific dispatch ──
@@ -1263,6 +1268,9 @@ class Game:
 
     def _update(self, dt: float):
         self.phone.update(dt)
+        pt = self.phone.consume_pending_teleport()
+        if pt:
+            self._try_teleport_to(pt[0], pt[1], pt[2])
         # Always tick UI (notifications)
         self.ui.update(dt)
         if self._bathroom_block_timer > 0:
@@ -1947,8 +1955,14 @@ class Game:
         fn = draw_table.get(self.state, self._draw_world)
         fn()
 
+        if getattr(self, "phone", None) and self.phone.is_visible and self.phone.shows_embedded_world_map():
+            self._draw_phone_world_map_layer()
+
         # HUD overlay
-        if self.state in (GameState.PLAYING, GameState.COMBAT, GameState.DIALOGUE):
+        if (
+            self.state in (GameState.PLAYING, GameState.COMBAT, GameState.DIALOGUE)
+            and not self.phone.is_fullscreen()
+        ):
             floor = self.school_map.get_floor(self.current_floor)
             room = floor.get_room_at(
                 self.player.rect.centerx,
@@ -1970,6 +1984,7 @@ class Game:
         # Notifications always on top
         self.ui.draw_notifications(self.screen)
 
+        self.phone.set_hud_anchor(self.ui.phone_icon_rect)
         self.phone.draw()
 
         pygame.display.flip()
@@ -1995,6 +2010,32 @@ class Game:
             oscar = self.npc_manager.get_npc_by_id("npc_oscar")
             if oscar:
                 self.world_map.set_marker("Oscar Jimenez", oscar.current_floor, oscar.rect.centerx, oscar.rect.centery, color=(200, 120, 40))
+        except Exception:
+            pass
+        controller_connected = self.controller.connected if self.controller else False
+        self.world_map.draw(self.screen, controller_connected)
+
+    def _draw_phone_world_map_layer(self):
+        """WorldMap fullscreen while keeping PLAYING state (opened from phone app)."""
+        if self.phone.consume_embedded_map_initial_sync():
+            self.world_map.current_tab = self.current_floor
+            self.world_map._centre_on_floor(self.current_floor)
+            self.world_map._refresh_room_selection(reset_index=True)
+        self.world_map.set_player_pos(
+            self.current_floor,
+            self.player.rect.centerx,
+            self.player.rect.centery,
+        )
+        try:
+            oscar = self.npc_manager.get_npc_by_id("npc_oscar")
+            if oscar:
+                self.world_map.set_marker(
+                    "Oscar Jimenez",
+                    oscar.current_floor,
+                    oscar.rect.centerx,
+                    oscar.rect.centery,
+                    color=(200, 120, 40),
+                )
         except Exception:
             pass
         controller_connected = self.controller.connected if self.controller else False
