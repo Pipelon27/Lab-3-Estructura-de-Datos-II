@@ -352,8 +352,116 @@ class Floor:
                 pygame.draw.rect(screen, WHITE, wr, 2)       # Outline
                 net = pygame.Rect(wr.centerx - 2, wr.y, 4, wr.height)
                 pygame.draw.rect(screen, WHITE, net)
+            # Skip drawing fountain collision rect (it's invisible, only for collision)
+            elif getattr(self, 'fountain_rect', None) and wall == self.fountain_rect:
+                continue
             else:
                 pygame.draw.rect(screen, self.WALL_COLOR, wr)
+
+        # Draw realistic fountain for Central Fountain room
+        if self.id == 0:  # Campus floor
+            fountain_room = self.rooms.get("c_fountain")
+            if fountain_room:
+                import math, time
+                cx = fountain_room.rect.centerx
+                cy = fountain_room.rect.centery
+                t = time.time()
+                fx, fy = camera.apply_pos(cx, cy)
+
+                # STONE BASE - multiple tiers for realistic look
+                # Bottom tier (outer rim)
+                base_r1 = 80
+                pygame.draw.circle(screen, (100, 105, 110), (fx, fy), base_r1)
+                pygame.draw.circle(screen, (70, 75, 80), (fx, fy), base_r1, 3)
+                # Shadow/depth ring
+                pygame.draw.circle(screen, (80, 85, 90), (fx, fy), base_r1 - 5)
+                # Middle tier
+                base_r2 = 55
+                pygame.draw.circle(screen, (120, 125, 130), (fx, fy), base_r2)
+                pygame.draw.circle(screen, (90, 95, 100), (fx, fy), base_r2, 2)
+                # Top tier (inner basin edge)
+                base_r3 = 35
+                pygame.draw.circle(screen, (140, 145, 150), (fx, fy), base_r3)
+                pygame.draw.circle(screen, (110, 115, 120), (fx, fy), base_r3, 2)
+
+                # WATER BASIN (inside the stone rim)
+                water_r = 30
+                # Dark water base
+                pygame.draw.circle(screen, (40, 70, 90), (fx, fy), water_r)
+                # Water shimmer/reflections
+                shimmer_alpha = int(60 + math.sin(t * 2) * 20)
+                shimmer_surf = pygame.Surface((water_r*2, water_r*2), pygame.SRCALPHA)
+                pygame.draw.circle(shimmer_surf, (100, 160, 200, shimmer_alpha), (water_r, water_r), water_r)
+                screen.blit(shimmer_surf, (fx - water_r, fy - water_r))
+
+                # CENTRAL PILLAR/STATUE BASE
+                pillar_r = 12
+                pillar_h = 35
+                # Pillar shadow
+                pygame.draw.ellipse(screen, (50, 55, 60), (fx - pillar_r - 3, fy + pillar_r - 3, pillar_r*2 + 6, pillar_r))
+                # Pillar body (stone cylinder)
+                pygame.draw.rect(screen, (130, 135, 140), (fx - pillar_r, fy - pillar_h, pillar_r*2, pillar_h))
+                # Pillar highlight
+                pygame.draw.rect(screen, (150, 155, 160), (fx - pillar_r + 2, fy - pillar_h + 2, pillar_r, pillar_h - 4))
+                # Pillar top cap
+                pygame.draw.ellipse(screen, (140, 145, 150), (fx - pillar_r - 2, fy - pillar_h - 4, pillar_r*2 + 4, 8))
+                pygame.draw.ellipse(screen, (160, 165, 170), (fx - pillar_r, fy - pillar_h - 2, pillar_r*2, 6))
+
+                # WATER SPOUT from top of pillar
+                spout_h = int(25 + math.sin(t * 3) * 5)
+                spout_r = 8
+                # Water column (tapering)
+                for i in range(spout_h):
+                    progress = i / max(spout_h, 1)
+                    w = int(spout_r * (1 - progress * 0.5))
+                    alpha = int(200 - progress * 80)
+                    col_surf = pygame.Surface((w*2, 2), pygame.SRCALPHA)
+                    col_surf.fill((180, 220, 255, alpha))
+                    screen.blit(col_surf, (fx - w, fy - pillar_h - 2 - i))
+
+                # TOP WATER BURST/BOWL
+                bowl_y = fy - pillar_h - spout_h - 5
+                # Bowl base
+                pygame.draw.ellipse(screen, (160, 200, 240), (fx - 18, bowl_y, 36, 12))
+                pygame.draw.ellipse(screen, (140, 180, 220), (fx - 15, bowl_y + 2, 30, 8))
+                # Overflow streams
+                for angle in [math.pi/2, math.pi*0.8, math.pi*1.2]:
+                    stream_len = 15 + math.sin(t * 4 + angle) * 3
+                    sx1 = fx + int(math.cos(angle) * 12)
+                    sy1 = bowl_y + 6
+                    sx2 = fx + int(math.cos(angle) * (12 + stream_len))
+                    sy2 = bowl_y + 6 + int(stream_len * 0.3)
+                    pygame.draw.line(screen, (200, 230, 255), (sx1, sy1), (sx2, sy2), 3)
+
+                # RIPPLES in basin water
+                for i, (r_base, speed, offset) in enumerate([(20, 2, 0), (25, 1.5, 1), (15, 2.5, 2)]):
+                    ripple_r = r_base + math.sin(t * speed + offset) * 3
+                    ripple_alpha = int(100 - i * 20 + math.sin(t * 3 + offset) * 30)
+                    ripple_surf = pygame.Surface((int(ripple_r)*2, int(ripple_r)*2), pygame.SRCALPHA)
+                    pygame.draw.circle(ripple_surf, (150, 200, 230, ripple_alpha),
+                                      (int(ripple_r), int(ripple_r)), int(ripple_r), 2)
+                    screen.blit(ripple_surf, (fx - int(ripple_r), fy - int(ripple_r)))
+
+                # SPLASH DROPLETS falling from bowl
+                for i in range(12):
+                    drop_t = (t * 3 + i * 0.5) % 2  # cycle time for each drop
+                    if drop_t < 0.3:  # only show during part of cycle
+                        continue
+                    angle = (i / 12) * math.pi * 2 + math.sin(t) * 0.2
+                    # Parabolic arc for falling drops
+                    fall_progress = (drop_t - 0.3) / 1.7
+                    drop_dist = 10 + fall_progress * 35
+                    drop_height = 40 * (1 - (fall_progress - 0.5)**2 * 4)  # arc
+                    if drop_height < 0:
+                        drop_height = 0
+                    dfx = fx + int(math.cos(angle) * drop_dist)
+                    dfy = bowl_y + 10 + int(drop_height)
+                    drop_size = int(3 + math.sin(drop_t * 10) * 2)
+                    # Fade out near bottom
+                    alpha = int(255 * (1 - fall_progress * 0.7))
+                    drop_surf = pygame.Surface((drop_size*2, drop_size*2), pygame.SRCALPHA)
+                    pygame.draw.circle(drop_surf, (220, 240, 255, alpha), (drop_size, drop_size), drop_size)
+                    screen.blit(drop_surf, (dfx - drop_size, dfy - drop_size))
 
         font_sm = pygame.font.SysFont("arial", 13, bold=True)
         for tr in self.transitions:
@@ -536,6 +644,19 @@ class SchoolMap:
         f.ping_pong_table = pygame.Rect(3400, 2420, 180, 110)
         f.walls.append(f.ping_pong_table)
 
+        # Fountain collision - circular base at center of c_fountain room
+        # Room center: 1700+300=2000, 2050+175=2225
+        fountain_cx, fountain_cy = 2000, 2225
+        fountain_base_r = 85
+        # Approximate circle with a square collision (slightly larger than visual)
+        f.fountain_rect = pygame.Rect(
+            fountain_cx - fountain_base_r,
+            fountain_cy - fountain_base_r,
+            fountain_base_r * 2,
+            fountain_base_r * 2
+        )
+        f.walls.append(f.fountain_rect)
+
         # Portal: building entrance → 1F reception
         f.transitions.append(FloorTransition(
             (bdx, by + bh - WT - 40, DW, 30),
@@ -634,8 +755,9 @@ class SchoolMap:
         COUNTER_OUTL = (90, 65, 40)
 
         # L-shaped serving counter (top-right corner of cafeteria)
-        counter_h = pygame.Rect(2900, 620, 260, 16)
-        counter_v = pygame.Rect(3144, 620, 16, 180)
+        # It sticks to the top wall (y=616) and right wall (x=3184)
+        counter_h = pygame.Rect(2700, 616, 484, 40)
+        counter_v = pygame.Rect(3144, 616, 40, 350)
         f.furniture.append({"rect": counter_h, "color": COUNTER_COL, "outline": COUNTER_OUTL})
         f.furniture.append({"rect": counter_v, "color": COUNTER_COL, "outline": COUNTER_OUTL})
         f.walls.extend([counter_h, counter_v])

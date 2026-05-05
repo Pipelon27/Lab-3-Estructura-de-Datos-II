@@ -938,7 +938,7 @@ class PingPongGame:
 
             if using_controller:
                 hint = "Press A to Start"
-                ctrl = "Left Stick - Move    A - Dash"
+                ctrl = "Left Stick - Move    RT - Dash"
             else:
                 hint = "Press Enter to Start"
                 ctrl = "WASD - Move    SPACE - Dash"

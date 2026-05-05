@@ -149,7 +149,7 @@ class Game:
         self._cine_timer: float = 0.0
         self._car_x: float = float(SCREEN_WIDTH + 200)
         self._car_target_x: float = float(SCREEN_WIDTH // 2 - 100)
-        self._car_y: float = float(SCREEN_HEIGHT - 120)
+        self._car_y: float = float(SCREEN_HEIGHT - 170)
         self._car_speed: float = 400.0      # px / sec
         self._cine_dlg_lines: list[str] = [
             "Hey\u2026 you're new, right? Ravenside can be\u2026 a lot at first. Just\u2014 don't trust every smile you see here.",
@@ -188,7 +188,14 @@ class Game:
         self._day_transition_target_day: int = 2
 
         # ── Parked car (parking lot) ──
-        self._parked_car_rect = pygame.Rect(900, 2400, 200, 70)
+        self._parked_car_rect = pygame.Rect(900, 2400, 300, 105)
+        self._extra_parked_cars = [
+            (pygame.Rect(350, 2600, 200, 90), (180, 50, 50), 180),    # Red, faces LEFT
+            (pygame.Rect(700, 2100, 200, 90), (50, 100, 180), 0),     # Blue, faces RIGHT
+            (pygame.Rect(600, 2750, 200, 90), (50, 180, 80), 180),    # Green, faces LEFT
+            (pygame.Rect(350, 2150, 200, 90), (150, 150, 160), 0),    # Silver, faces RIGHT
+            (pygame.Rect(1000, 2600, 200, 90), (45, 45, 50), 180),    # Soft black, faces LEFT
+        ]
         self._car_panel_active: bool = False  # "End day?" confirmation panel
         self._car_panel_input_delay: float = 0.0  # delay before accepting input
         self._car_panel_cooldown: float = 0.0     # cooldown before re-triggering
@@ -1267,8 +1274,11 @@ class Game:
                     return # Already showed notification
 
         room = floor.get_room_at(self.player.rect.centerx, self.player.rect.centery)
+        prev_room = floor.get_room_at(previous_rect.centerx, previous_rect.centery)
         if room and room.id == "f1_cafeteria":
             if not self._is_cafeteria_open():
+                if prev_room and prev_room.id == "f1_cafeteria":
+                    return # Already inside, don't push out or show message
                 # Push player back
                 self.player.rect.update(previous_rect)
                 if self._cafeteria_block_timer <= 0:
@@ -1425,8 +1435,8 @@ class Game:
                 class _FakeTarget:
                     rect = pygame.Rect(2000 - 10, 2700 - 10, 20, 20)
                 self.camera.update(_FakeTarget())
-            elif self._cine_phase == "guide":
-                # Allow player movement during the guide phase
+            elif self._cine_phase in ("guide", "mission"):
+                # Allow player movement during the guide and mission phases
                 keys = pygame.key.get_pressed()
                 p_walls = list(floor.walls) if floor else []
                 npcs_on_floor = self.npc_manager.get_npcs_on_floor(self.current_floor)
@@ -1582,6 +1592,8 @@ class Game:
         # Parked car is solid on campus
         if self.current_floor == FLOOR_CAMPUS:
             walls.append(self._parked_car_rect)
+            for rect, _, _ in self._extra_parked_cars:
+                walls.append(rect)
                     
         # Apply floor-specific speed boost (50% faster in main building) and faster trail decay
         in_main_building = self.current_floor in (FLOOR_1F, FLOOR_2F)
@@ -2013,6 +2025,15 @@ class Game:
                 npc.stop_at_target = True
                 npc.speed_multiplier = 1.3
 
+    def _clear_bus_path(self):
+        """Ensure no NPCs block the road during the bus cinematic and departure."""
+        safe_road = pygame.Rect(-200, 2300, 1500, 300)
+        for npc in self.npc_manager.get_npcs_on_floor(0):
+            if npc.rect.colliderect(safe_road):
+                npc.rect.y = 2100
+                if getattr(npc, "target_pos", None) and npc.target_pos[1] > 2300:
+                    npc.target_pos = (npc.target_pos[0], 2100)
+
     def _get_time_string(self) -> str:
         total_minutes = int(self.time_of_day_minutes)
         hours_24 = (total_minutes // 60) % 24
@@ -2383,6 +2404,7 @@ class Game:
         # Draw parked car on campus
         if self.current_floor == FLOOR_CAMPUS:
             self._draw_parked_car()
+            self._draw_extra_parked_cars()
 
         for npc in self.npc_manager.get_npcs_on_floor(self.current_floor):
             npc.draw(self.screen, self.camera)
@@ -2405,7 +2427,7 @@ class Game:
                 self.world_map.set_marker("Oscar Jimenez", oscar.current_floor, oscar.rect.centerx, oscar.rect.centery, color=(200, 120, 40))
         except Exception:
             pass
-        self.world_map.set_marker("Carro", 0, self._parked_car_rect.centerx, self._parked_car_rect.centery, color=(80, 150, 255))
+        self.world_map.set_marker("School Bus", 0, self._parked_car_rect.centerx, self._parked_car_rect.centery, color=(250, 160, 30))
         controller_connected = self.controller.connected if self.controller else False
         self.world_map.draw(self.screen, controller_connected)
 
@@ -2432,7 +2454,7 @@ class Game:
                 )
         except Exception:
             pass
-        self.world_map.set_marker("Carro", 0, self._parked_car_rect.centerx, self._parked_car_rect.centery, color=(80, 150, 255))
+        self.world_map.set_marker("School Bus", 0, self._parked_car_rect.centerx, self._parked_car_rect.centery, color=(250, 160, 30))
         controller_connected = self.controller.connected if self.controller else False
         self.world_map.draw(self.screen, controller_connected)
     # ──────────────────────────────────────────────────────────
@@ -2445,6 +2467,7 @@ class Game:
         phase = self._cine_phase
 
         self._clear_noah_area()
+        self._clear_bus_path()
 
         if phase == "car":
             # Slide car from right to centre
@@ -2486,10 +2509,10 @@ class Game:
             pass  # input handled in _on_key_down / controller
 
         elif phase == "mission":
+            self._update_noah_guide(dt)
             self._cine_mission_timer -= dt
             if self._cine_mission_timer <= 0:
                 self._cine_phase = "guide"
-                self._start_noah_guide()
 
         elif phase == "guide":
             self._update_noah_guide(dt)
@@ -2503,6 +2526,7 @@ class Game:
                 self._cine_phase = "mission"
                 self._cine_show_mission = True
                 self._cine_mission_timer = 3.0
+                self._start_noah_guide()
 
         elif self._cine_phase == "final_dialogue":
             self._noah_final_dlg_index += 1
@@ -2566,7 +2590,9 @@ class Game:
         # 2F stair door: y=1750-1830 on x=2150
         self._noah_route = [
             ("campus", (2000, 2400)),      # Walk up from entrance
-            ("campus", (2000, 2000)),      # Towards building entrance
+            ("campus", (2250, 2350)),      # Go right to avoid fountain (east side)
+            ("campus", (2250, 2150)),      # Go up past fountain
+            ("campus", (2000, 2050)),      # Then left towards building entrance
             ("portal_1f", None),            # Trigger floor switch to 1F
             ("1f", (1600, 2100)),           # Reception area
             ("1f", (1600, 1936)),           # Just past reception→main hall door
@@ -2660,24 +2686,11 @@ class Game:
 
         # ── Car ──
         if self._cine_phase in ("car", "exit"):
-            car_w, car_h = 200, 70
             cx = int(self._car_x)
             cy = int(self._car_y)
-            # Car body
-            pygame.draw.rect(self.screen, (40, 40, 60), (cx, cy, car_w, car_h), border_radius=12)
-            # Roof
-            pygame.draw.rect(self.screen, (30, 30, 50), (cx + 40, cy - 25, 120, 30), border_radius=8)
-            # Windows
-            pygame.draw.rect(self.screen, (120, 160, 200), (cx + 50, cy - 20, 45, 20), border_radius=4)
-            pygame.draw.rect(self.screen, (120, 160, 200), (cx + 105, cy - 20, 45, 20), border_radius=4)
-            # Wheels
-            pygame.draw.circle(self.screen, (20, 20, 20), (cx + 45, cy + car_h), 16)
-            pygame.draw.circle(self.screen, (20, 20, 20), (cx + car_w - 45, cy + car_h), 16)
-            pygame.draw.circle(self.screen, (60, 60, 60), (cx + 45, cy + car_h), 8)
-            pygame.draw.circle(self.screen, (60, 60, 60), (cx + car_w - 45, cy + car_h), 8)
-            # Headlights
-            pygame.draw.circle(self.screen, (255, 230, 120), (cx + 5, cy + 20), 8)
-            pygame.draw.circle(self.screen, (255, 50, 50), (cx + car_w - 5, cy + 20), 8)
+            # Use the same school bus sprite as the parked car
+            car_surf = self._build_car_surface()
+            self.screen.blit(car_surf, (cx, cy))
 
         # ── Dialogue box ──
         if self._cine_phase == "dialogue" and self._cine_dlg_index < len(self._cine_dlg_lines):
@@ -2898,6 +2911,7 @@ class Game:
 
     def _update_car_departure(self, dt: float):
         """Tick the car departure cinematic state machine."""
+        self._clear_bus_path()
         if self._car_depart_phase == "walk_to_car":
             # Move player toward the car
             car_cx = self._parked_car_rect.centerx
@@ -2934,22 +2948,30 @@ class Game:
                 self._begin_day_transition()
 
     def _build_car_surface(self) -> pygame.Surface:
-        """Create a car sprite surface (200x90, transparent bg)."""
-        w, h = 200, 90
+        """Create a school bus sprite surface (300x135, transparent bg)."""
+        w, h = 300, 135
         surf = pygame.Surface((w, h), pygame.SRCALPHA)
+        bus_yellow = (250, 160, 30)
         # Body
-        pygame.draw.rect(surf, (40, 40, 60), (0, 20, w, 50), border_radius=12)
-        # Roof
-        pygame.draw.rect(surf, (30, 30, 50), (40, 0, 120, 25), border_radius=8)
+        pygame.draw.rect(surf, bus_yellow, (0, 30, w, 75), border_radius=9)
+        # Roof (higher than car)
+        pygame.draw.rect(surf, bus_yellow, (0, 0, w, 38), border_radius=6)
         # Windows
-        pygame.draw.rect(surf, (80, 130, 180), (50, 5, 45, 18), border_radius=4)
-        pygame.draw.rect(surf, (80, 130, 180), (105, 5, 45, 18), border_radius=4)
+        pygame.draw.rect(surf, (80, 130, 180), (15, 8, 45, 27), border_radius=3)
+        pygame.draw.rect(surf, (80, 130, 180), (75, 8, 45, 27), border_radius=3)
+        pygame.draw.rect(surf, (80, 130, 180), (135, 8, 45, 27), border_radius=3)
+        pygame.draw.rect(surf, (80, 130, 180), (195, 8, 45, 27), border_radius=3)
+        # Windshield (right side)
+        pygame.draw.rect(surf, (80, 130, 180), (255, 8, 30, 27), border_radius=3)
         # Wheels
-        pygame.draw.circle(surf, (25, 25, 25), (40, 70), 14)
-        pygame.draw.circle(surf, (25, 25, 25), (w - 40, 70), 14)
+        pygame.draw.circle(surf, (25, 25, 25), (60, 105), 21)
+        pygame.draw.circle(surf, (25, 25, 25), (w - 60, 105), 21)
         # Headlights (right side = front)
-        pygame.draw.rect(surf, (255, 220, 80), (w - 6, 35, 6, 12), border_radius=2)
-        pygame.draw.rect(surf, (255, 220, 80), (w - 6, 55, 6, 12), border_radius=2)
+        pygame.draw.rect(surf, (255, 220, 80), (w - 9, 68, 9, 18), border_radius=3)
+        # Tail lights (left side)
+        pygame.draw.rect(surf, (220, 40, 40), (0, 68, 9, 18), border_radius=3)
+        # Black stripe
+        pygame.draw.rect(surf, (20, 20, 20), (0, 60, w, 6))
         return surf
 
     def _draw_parked_car(self):
@@ -2964,6 +2986,42 @@ class Game:
             self.screen.blit(car_surf, rect)
         else:
             cr = self.camera.apply_rect(self._parked_car_rect)
+            self.screen.blit(car_surf, (cr.x, cr.y - 10))
+
+    def _build_regular_car_surface(self, color: tuple) -> pygame.Surface:
+        """Create a regular car sprite surface (200x90)."""
+        w, h = 200, 90
+        surf = pygame.Surface((w, h), pygame.SRCALPHA)
+        # Body
+        pygame.draw.rect(surf, color, (0, 20, w, 50), border_radius=12)
+        # Roof
+        roof_color = (max(0, color[0]-20), max(0, color[1]-20), max(0, color[2]-20))
+        pygame.draw.rect(surf, roof_color, (40, 0, 120, 25), border_radius=8)
+        # Windows
+        pygame.draw.rect(surf, (80, 130, 180), (50, 5, 45, 18), border_radius=4)
+        pygame.draw.rect(surf, (80, 130, 180), (105, 5, 45, 18), border_radius=4)
+        # Wheels
+        pygame.draw.circle(surf, (25, 25, 25), (40, 70), 14)
+        pygame.draw.circle(surf, (25, 25, 25), (w - 40, 70), 14)
+        # Headlights
+        pygame.draw.rect(surf, (255, 220, 80), (w - 6, 35, 6, 12), border_radius=2)
+        pygame.draw.rect(surf, (255, 220, 80), (w - 6, 55, 6, 12), border_radius=2)
+        # Tail lights
+        pygame.draw.rect(surf, (220, 40, 40), (0, 35, 6, 12), border_radius=2)
+        pygame.draw.rect(surf, (220, 40, 40), (0, 55, 6, 12), border_radius=2)
+        return surf
+
+    def _draw_extra_parked_cars(self):
+        """Draw additional cars parked in the lot."""
+        if self.current_floor != 0:
+            return
+        for rect, color, angle in self._extra_parked_cars:
+            car_surf = self._build_regular_car_surface(color)
+            if angle == 180:
+                car_surf = pygame.transform.flip(car_surf, True, False)
+            elif angle != 0:
+                car_surf = pygame.transform.rotate(car_surf, angle)
+            cr = self.camera.apply_rect(rect)
             self.screen.blit(car_surf, (cr.x, cr.y - 10))
 
     def _draw_car_panel(self):
@@ -3035,6 +3093,10 @@ class Game:
         day_text = day_font.render(f"Day {self._day_transition_target_day}", True, WHITE)
         self.screen.blit(day_text, day_text.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 20)))
 
+        # Subtitle
+        sub_font = pygame.font.SysFont("Arial", 28)
+        sub_text = sub_font.render("A new day begins...", True, (160, 160, 180))
+        self.screen.blit(sub_text, sub_text.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 50)))
         # Subtitle
         sub_font = pygame.font.SysFont("Arial", 28)
         sub_text = sub_font.render("A new day begins...", True, (160, 160, 180))

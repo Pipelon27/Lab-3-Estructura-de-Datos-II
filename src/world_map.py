@@ -467,8 +467,43 @@ class WorldMap:
                 continue
             sx, sy = self._world_to_screen(mx, my)
             mr = max(3, int(6 * z * 3))
-            pygame.draw.circle(screen, mcol, (sx, sy), mr)
-            pygame.draw.circle(screen, WHITE, (sx, sy), mr, 1)
+            
+            if name.lower() in ("car", "school bus"):
+                cw = max(24, int(60 * z))
+                ch = max(12, int(24 * z))
+                cx = sx - cw // 2
+                cy = sy - ch // 2
+                bus_yellow = (250, 160, 30)
+                # Bus body (longer and yellow)
+                pygame.draw.rect(screen, bus_yellow, (cx, cy, cw, ch), border_radius=2)
+                # Roof / Top detail (bus is a bit flat but let's draw some black stripes)
+                pygame.draw.rect(screen, (20, 20, 20), (cx + 2, cy + ch * 0.2, cw - 4, 2))
+                pygame.draw.rect(screen, (20, 20, 20), (cx + 2, cy + ch * 0.8, cw - 4, 2))
+                # Windows (black rect down the middle)
+                pygame.draw.rect(screen, (40, 60, 80), (cx + 4, cy + ch * 0.4, cw - 8, ch * 0.2))
+                # Wheels
+                pygame.draw.rect(screen, (30, 30, 30), (cx + cw*0.15, cy - 2, cw*0.15, 4))
+                pygame.draw.rect(screen, (30, 30, 30), (cx + cw*0.7, cy - 2, cw*0.15, 4))
+                pygame.draw.rect(screen, (30, 30, 30), (cx + cw*0.15, cy + ch - 2, cw*0.15, 4))
+                pygame.draw.rect(screen, (30, 30, 30), (cx + cw*0.7, cy + ch - 2, cw*0.15, 4))
+            elif name.lower() == "fountain":
+                # Draw fountain icon (figure only, no name)
+                import math, time
+                t = time.time()
+                fz = max(8, int(18 * z))  # fountain size
+                # Base pool
+                pygame.draw.circle(screen, (80, 120, 140), (sx, sy), fz)
+                pygame.draw.circle(screen, (120, 180, 200), (sx, sy), fz, 2)
+                # Water spout (animated height)
+                spout_h = int(fz * 0.6 + math.sin(t * 3) * fz * 0.15)
+                pygame.draw.rect(screen, (150, 210, 240), (sx - fz//4, sy - spout_h - fz//3, fz//2, spout_h))
+                # Top water burst
+                pygame.draw.circle(screen, (180, 230, 255), (sx, sy - spout_h - fz//3), fz//3)
+                # Skip name label for fountain
+                continue
+            else:
+                pygame.draw.circle(screen, mcol, (sx, sy), mr)
+                pygame.draw.circle(screen, WHITE, (sx, sy), mr, 1)
             lbl = self._font_room.render(name.replace('_', ' ').upper(), True, mcol)
             screen.blit(lbl, lbl.get_rect(center=(sx, sy - mr - 8)))
 

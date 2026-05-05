@@ -257,7 +257,6 @@ class Phone:
         # Click rects (phone-surface local coords, set each frame)
         self._home_icon_rects: list[tuple[pygame.Rect, PhoneApp]] = []
         self._home_btn_rect: Optional[pygame.Rect] = None
-        self._map_back_rect: Optional[pygame.Rect] = None
         self._task_rects:   list[tuple[pygame.Rect, object]]   = []
         self._post_rects:   list[tuple[pygame.Rect, object]]   = []
         self._like_rects:   list[tuple[pygame.Rect, object]]   = []
@@ -487,7 +486,6 @@ class Phone:
             return
 
         if self._view == "map":
-            self._draw_map_back_button()
             return
         
         if self._view == "map_loading":
@@ -839,15 +837,7 @@ class Phone:
         icon_rect = icon_surf.get_rect(center=(cx, cy))
         self.screen.blit(icon_surf, icon_rect.topleft)
 
-    def _draw_map_back_button(self):
-        bw, bh = 160, 44
-        bx = (SCREEN_WIDTH - bw) // 2
-        by = SCREEN_HEIGHT - bh - 28
-        self._map_back_rect = pygame.Rect(bx, by, bw, bh)
-        pygame.draw.rect(self.screen, PH_CARD2, self._map_back_rect, border_radius=10)
-        pygame.draw.rect(self.screen, PH_CYAN, self._map_back_rect, border_radius=10, width=2)
-        t = self._f_sec.render("⌂ Back to Home", True, PH_TEXT)
-        self.screen.blit(t, t.get_rect(center=self._map_back_rect.center))
+    # The map_back_button method has been removed as per request
 
     def _draw_content(self, s, cy: int, ch: int):
         {
@@ -1376,10 +1366,7 @@ class Phone:
             if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
                 self._map_close_to_home()
                 return True
-            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                if self._map_back_rect and self._map_back_rect.collidepoint(event.pos):
-                    self._map_close_to_home()
-                    return True
+            # Direct exit from map without clicking button (handled by world_map.py ESC/B button)
             close = self._map_ref.handle_event(event)
             if close:
                 self._map_close_to_home()

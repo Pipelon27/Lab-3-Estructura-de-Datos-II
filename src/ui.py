@@ -245,8 +245,11 @@ class UI:
 
         # ── XP bar ──
         from settings import XP_PER_LEVEL
+        total_xp = player.xp + (player.level - 1) * XP_PER_LEVEL
+        MAX_LEVEL = 10
+        max_total_xp = MAX_LEVEL * XP_PER_LEVEL
         self._bar(screen, 16, 56, 180, 10,
-                  player.xp, XP_PER_LEVEL,
+                  total_xp, max_total_xp,
                   XP_BLUE, XP_BG, f"Lv{player.level}")
 
         # ── day / phase ──
@@ -409,11 +412,21 @@ class UI:
         if car_rect:
             cx = car_rect.x * scale - ox
             cy = car_rect.y * scale - oy
-            cw = max(4, int(car_rect.width * scale))
+            cw = max(10, int(car_rect.width * scale))
             ch = max(4, int(car_rect.height * scale))
-            pygame.draw.rect(mm_surf, (80, 150, 255, 220), (int(cx), int(cy), cw, ch))
-            # Little label or dot
-            pygame.draw.circle(mm_surf, (200, 220, 255), (int(cx + cw/2), int(cy + ch/2)), 2)
+            bus_yellow = (250, 160, 30, 220)
+            # Bus body
+            pygame.draw.rect(mm_surf, bus_yellow, (int(cx), int(cy), cw, ch), border_radius=2)
+            # Roof detail (stripes)
+            pygame.draw.rect(mm_surf, (20, 20, 20, 220), (int(cx + 2), int(cy + ch * 0.2), cw - 4, 1))
+            pygame.draw.rect(mm_surf, (20, 20, 20, 220), (int(cx + 2), int(cy + ch * 0.8), cw - 4, 1))
+            # Windows
+            pygame.draw.rect(mm_surf, (40, 60, 80, 220), (int(cx + 4), int(cy + ch * 0.4), cw - 8, max(1, int(ch * 0.2))))
+            # Wheels
+            pygame.draw.rect(mm_surf, (30, 30, 30, 255), (int(cx + cw*0.15), int(cy - 2), cw*0.15, 2))
+            pygame.draw.rect(mm_surf, (30, 30, 30, 255), (int(cx + cw*0.7), int(cy - 2), cw*0.15, 2))
+            pygame.draw.rect(mm_surf, (30, 30, 30, 255), (int(cx + cw*0.15), int(cy + ch), cw*0.15, 2))
+            pygame.draw.rect(mm_surf, (30, 30, 30, 255), (int(cx + cw*0.7), int(cy + ch), cw*0.15, 2))
 
         # Player dot (always at center)
         pygame.draw.circle(mm_surf, (255, 220, 60), (radius, radius), 4)
