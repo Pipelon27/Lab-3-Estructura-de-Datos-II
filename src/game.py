@@ -602,6 +602,8 @@ class Game:
                 close = self.world_map.handle_event(event)
                 if close:
                     self.state = self.previous_state
+                    if self.phone.is_visible:
+                        self.phone.close()
                     if getattr(self.world_map, 'teleport_requested', False):
                         self.world_map.teleport_requested = False
                         tfloor = self.world_map.teleport_floor
@@ -773,19 +775,42 @@ class Game:
             self.world_map._refresh_room_selection(reset_index=True)
         elif self.state == GameState.MAP:
             self.state = self.previous_state
+            if self.phone.is_visible:
+                self.phone.close()
 
     def _handle_controller_playing(self, controller):
         """Handle controller input during PLAYING state."""
+        # ── Phone active ──
+        if self.phone.is_visible:
+            self.phone.handle_controller(controller)
+            return
+
         # ── Car panel: A confirms, B cancels ──
         if self._car_panel_active:
             if self._car_panel_input_delay > 0:
                 return  # ignore input during delay
+            menu_h = controller.get_menu_direction_horizontal()
+            if menu_h != 0:
+                sel = getattr(self, "_car_panel_selection", "accept")
+                self._car_panel_selection = "cancel" if sel == "accept" else "accept"
+
             if controller.is_confirm_pressed():
+                sel = getattr(self, "_car_panel_selection", "accept")
                 self._car_panel_active = False
-                self._start_car_departure()
+                if sel == "accept":
+                    self._start_car_departure()
+                else:
+                    self._car_panel_cooldown = 1.0
             elif controller.is_cancel_pressed():
                 self._car_panel_active = False
                 self._car_panel_cooldown = 1.0
+            return
+
+        # D-pad up: open phone directly
+        menu_v = controller.get_menu_direction()
+        if menu_v == -1:  # up
+            self.phone.toggle_phone()
+            self._hud_focus = None
             return
 
         # HUD focus navigation (D-pad left/right)
@@ -943,6 +968,8 @@ class Game:
         close = self.world_map.handle_controller(controller)
         if close:
             self.state = self.previous_state
+            if self.phone.is_visible:
+                self.phone.close()
             if getattr(self.world_map, 'teleport_requested', False):
                 self.world_map.teleport_requested = False
                 tfloor = self.world_map.teleport_floor
@@ -2815,6 +2842,11 @@ class Game:
 
         # Clear cafeteria of any remaining NPCs from previous day
         self._move_npcs_out_of_cafeteria(instant=True)
+
+        # Reset dash state so the visual trail works on new days
+        self.player._dashing = False
+        self.player._dash_timer = 0
+        self.player._dash_trail.clear()
         
         # Respawn player at Entrance
         self.player.rect.center = (2000, 2700)
@@ -2949,15 +2981,50 @@ class Game:
         title = title_font.render("End the day and go home?", True, WHITE)
         self.screen.blit(title, title.get_rect(center=(SCREEN_WIDTH // 2, by + 60)))
 
-        # Instructions
-        instr_font = pygame.font.SysFont("Arial", 20)
+        # Draw buttons
+        btn_y = by + 120
+        accept_rect = pygame.Rect(bx + 60, btn_y, 160, 44)
+        cancel_rect = pygame.Rect(bx + 280, btn_y, 160, 44)
+        
+        mouse_pos = pygame.mouse.get_pos()
+        hover_accept = accept_rect.collidepoint(mouse_pos)
+        hover_cancel = cancel_rect.collidepoint(mouse_pos)
+
+        sel = getattr(self, "_car_panel_selection", "accept")
         controller_connected = self.controller and self.controller.connected
+        
         if controller_connected:
-            instr_text = "\u24B6  Confirm       \u24B7  Cancel"
+            accept_color = (100, 150, 255) if sel == "accept" else (60, 100, 200)
+            cancel_color = (100, 150, 255) if sel == "cancel" else (60, 100, 200)
+            acc_outline = (255, 220, 50) if sel == "accept" else WHITE
+            can_outline = (255, 220, 50) if sel == "cancel" else WHITE
         else:
-            instr_text = "[SPACE] Confirm       [ESC] Cancel"
-        instr = instr_font.render(instr_text, True, (180, 180, 200))
-        self.screen.blit(instr, instr.get_rect(center=(SCREEN_WIDTH // 2, by + 140)))
+            accept_color = (100, 150, 255) if hover_accept else (60, 100, 200)
+            cancel_color = (100, 150, 255) if hover_cancel else (60, 100, 200)
+            acc_outline = WHITE
+            can_outline = WHITE
+
+        pygame.draw.rect(self.screen, accept_color, accept_rect, border_radius=10)
+        pygame.draw.rect(self.screen, acc_outline, accept_rect, 3, border_radius=10)
+
+        pygame.draw.rect(self.screen, cancel_color, cancel_rect, border_radius=10)
+        pygame.draw.rect(self.screen, can_outline, cancel_rect, 3, border_radius=10)
+
+        font = pygame.font.SysFont("Arial", 20, bold=True)
+        acc_text = font.render("\u24B6 Aceptar" if controller_connected and sel == "accept" else "Aceptar", True, WHITE)
+        can_text = font.render("\u24B7 Cancelar" if controller_connected and sel == "cancel" else "Cancelar", True, WHITE)
+
+        self.screen.blit(acc_text, acc_text.get_rect(center=accept_rect.center))
+        self.screen.blit(can_text, can_text.get_rect(center=cancel_rect.center))
+
+        # Handle mouse clicks
+        if pygame.mouse.get_pressed()[0] and getattr(self, "_car_panel_input_delay", 0) <= 0:
+            if hover_accept:
+                self._car_panel_active = False
+                self._start_car_departure()
+            elif hover_cancel:
+                self._car_panel_active = False
+                self._car_panel_cooldown = 1.0
 
     def _draw_day_transition(self):
         """Draw fullscreen black screen with 'Day X' text."""

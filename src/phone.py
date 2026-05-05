@@ -90,7 +90,7 @@ PH_BD_LT     = (68,  68,  98)
 
 PH_CYAN      = ( 90, 195, 255)
 PH_CYAN_DIM  = ( 45,  98, 128)
-PH_GREEN     = ( 76, 200, 130)
+PH_GREEN     = ( 57, 255,  20)  # Neón
 PH_AMBER     = (240, 185,  60)
 PH_RED       = (220,  60,  80)
 PH_PINK      = (255,  95, 145)
@@ -281,6 +281,7 @@ class Phone:
             self.active_task = None
             self.active_chat = None
             self._map_direct_access = False
+            self.selected_app = None
             for app in PhoneApp:
                 self._scroll[app] = 0
         else:
@@ -327,6 +328,7 @@ class Phone:
         self._pending_splash_app = None
         self._splash_t = 0.0
         self._map_direct_access = False
+        self.selected_app = None
         if self._map_ref:
             self._map_ref._confirm_teleport = False
             self._map_ref._teleport_target = None
@@ -436,7 +438,7 @@ class Phone:
         if self._view == "map_contract":
             self._map_contract_t = min(1.0, self._map_contract_t + dt / _DUR_MAP_CONTRACT)
             if self._map_contract_t >= 1.0:
-                self.go_home()
+                self.close()
 
     def consume_embedded_map_initial_sync(self) -> bool:
         if self._embedded_map_need_sync:
@@ -695,6 +697,9 @@ class Phone:
         cell_h = 88
         self._home_icon_rects = []
 
+        mouse_pos = pygame.mouse.get_pos()
+        lx, ly = self._screen_to_local(mouse_pos)
+
         for idx, app in enumerate(apps_order):
             row, col = divmod(idx, cols)
             ix = _CX + pad_x + col * cell_w
@@ -702,13 +707,20 @@ class Phone:
             ir = pygame.Rect(ix + 8, iy, cell_w - 16, 62)
             col_rgb = _ICON_COL.get(app.value, PH_CYAN)
             pygame.draw.rect(s, col_rgb, ir, border_radius=14)
-            pygame.draw.rect(s, PH_BD, ir, border_radius=14, width=1)
+            
+            hit = pygame.Rect(ir.x - 4, iy - 4, ir.w + 8, ir.height + 22)
+            self._home_icon_rects.append((hit, app))
+
+            is_hovered = hit.collidepoint((lx, ly))
+            is_selected = getattr(self, "selected_app", None) == app
+            
+            bd_col = PH_GREEN if (is_hovered or is_selected) else PH_BD
+            bd_w = 3 if (is_hovered or is_selected) else 1
+            pygame.draw.rect(s, bd_col, ir, border_radius=14, width=bd_w)
+
             self._draw_app_glyph(s, app, ir)
             lb = self._f_sub.render(labels[idx], True, PH_TEXT)
             s.blit(lb, lb.get_rect(midtop=(ir.centerx, ir.bottom + 4)))
-
-            hit = pygame.Rect(ir.x - 4, iy - 4, ir.w + 8, ir.height + 22)
-            self._home_icon_rects.append((hit, app))
 
             if app == PhoneApp.MESSAGES:
                 u = self.get_unread_messages_count()
@@ -1315,6 +1327,46 @@ class Phone:
     #  INPUT HANDLING
     # ══════════════════════════════════════════════════════════
 
+    def handle_controller(self, controller):
+        """Handle controller input for the phone."""
+        if not self.is_visible:
+            return
+
+        if controller.is_cancel_pressed():
+            if self._view == "app":
+                self.go_home()
+            elif self._view == "map":
+                self._map_close_to_home()
+            else:
+                self.close()
+            return
+            
+        if self._view == "home":
+            apps_order = [
+                PhoneApp.ACADEMIC, PhoneApp.SOCIAL, PhoneApp.MESSAGES,
+                PhoneApp.SCHEDULE, PhoneApp.MAP
+            ]
+            
+            menu_h = controller.get_menu_direction_horizontal()
+            if menu_h != 0:
+                if getattr(self, "selected_app", None) not in apps_order:
+                    self.selected_app = apps_order[0] if menu_h > 0 else apps_order[-1]
+                else:
+                    idx = apps_order.index(self.selected_app)
+                    idx = (idx + menu_h) % len(apps_order)
+                    self.selected_app = apps_order[idx]
+                
+            if controller.is_confirm_pressed() and getattr(self, "selected_app", None) in apps_order:
+                self._scroll[self.selected_app] = 0
+                self._start_app_splash(self.selected_app)
+                
+        elif self._view == "app":
+            menu_v = controller.get_menu_direction()
+            if menu_v == -1:  # up
+                self._scroll[self.current_app] = max(0, self._scroll[self.current_app] - 30)
+            elif menu_v == 1: # down
+                self._scroll[self.current_app] += 30
+
     def handle_input(self, event: pygame.event.Event) -> bool:
         """Return True if event was consumed."""
         if not self.is_visible:
@@ -1400,6 +1452,8 @@ class Phone:
             for rect, app in self._home_icon_rects:
                 if rect.collidepoint((lx, ly)):
                     self._scroll[app] = 0
+                    # Reset selected app when using mouse
+                    self.selected_app = None
                     self._start_app_splash(app)
                     return True
             return True

@@ -84,12 +84,12 @@ class UI:
         self.font_menu    = pygame.font.SysFont("arial", 30)
         self.font_hint    = pygame.font.SysFont("arial", 16)
         
-        # HUD icons: wallet + phone, right-anchored, same row
-        # Wallet: rightmost; Phone: 8px to the left of wallet
+        # HUD icons: wallet + phone, right-anchored to the left of the minimap
+        # Minimap spans up to approx 160px from the right, so we offset by 170px
         _icon_h    = 44
         _icon_w    = 40
-        _icon_bot  = SCREEN_HEIGHT - 16          # bottom edge
-        _wallet_x  = SCREEN_WIDTH  - 16 - _icon_w  # right margin 16px
+        _icon_bot  = SCREEN_HEIGHT - 26          # bottom edge raised higher
+        _wallet_x  = SCREEN_WIDTH  - 170 - _icon_w # right margin 170px
         self.wallet_icon_rect = pygame.Rect(_wallet_x,  _icon_bot - _icon_h, _icon_w, _icon_h)
         self.phone_icon_rect  = pygame.Rect(_wallet_x - _icon_w - 8, _icon_bot - _icon_h, _icon_w, _icon_h)
         
@@ -332,6 +332,9 @@ class UI:
         screen.blit(ph_lbl, ph_lbl.get_rect(center=(pr.centerx, pr.top - 10)))
         ph_key = self.font_hint.render("[P]", True, UI_TEXT_DIM)
         screen.blit(ph_key, ph_key.get_rect(center=(pr.centerx, pr.bottom + 10)))
+        phone_hover = pr.collidepoint(pygame.mouse.get_pos())
+        if phone_hover or hud_focus == "phone":
+            pygame.draw.rect(screen, (255, 220, 80), pr.inflate(6, 6), 2, border_radius=8)
 
     def _bar(self, screen, x, y, w, h, cur, mx, fg, bg, label=""):
         """Utility: draw a filled bar with a label."""
