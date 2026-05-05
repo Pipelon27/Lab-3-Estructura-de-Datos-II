@@ -2351,6 +2351,7 @@ class Game:
                              floor, room, self.reputation,
                              self._get_time_string(),
                              hud_focus=self._hud_focus,
+                             car_rect=self._parked_car_rect if self.current_floor == 0 else None,
                              )
             # Phone HUD icon with unread badge (delegated to Phone)
             self.phone.draw_hud_icon(
@@ -2404,6 +2405,7 @@ class Game:
                 self.world_map.set_marker("Oscar Jimenez", oscar.current_floor, oscar.rect.centerx, oscar.rect.centery, color=(200, 120, 40))
         except Exception:
             pass
+        self.world_map.set_marker("Carro", 0, self._parked_car_rect.centerx, self._parked_car_rect.centery, color=(80, 150, 255))
         controller_connected = self.controller.connected if self.controller else False
         self.world_map.draw(self.screen, controller_connected)
 
@@ -2430,6 +2432,7 @@ class Game:
                 )
         except Exception:
             pass
+        self.world_map.set_marker("Carro", 0, self._parked_car_rect.centerx, self._parked_car_rect.centery, color=(80, 150, 255))
         controller_connected = self.controller.connected if self.controller else False
         self.world_map.draw(self.screen, controller_connected)
     # ──────────────────────────────────────────────────────────
@@ -2993,16 +2996,13 @@ class Game:
         sel = getattr(self, "_car_panel_selection", "accept")
         controller_connected = self.controller and self.controller.connected
         
-        if controller_connected:
-            accept_color = (100, 150, 255) if sel == "accept" else (60, 100, 200)
-            cancel_color = (100, 150, 255) if sel == "cancel" else (60, 100, 200)
-            acc_outline = (255, 220, 50) if sel == "accept" else WHITE
-            can_outline = (255, 220, 50) if sel == "cancel" else WHITE
-        else:
-            accept_color = (100, 150, 255) if hover_accept else (60, 100, 200)
-            cancel_color = (100, 150, 255) if hover_cancel else (60, 100, 200)
-            acc_outline = WHITE
-            can_outline = WHITE
+        acc_active = hover_accept or (controller_connected and sel == "accept")
+        can_active = hover_cancel or (controller_connected and sel == "cancel")
+
+        accept_color = (100, 150, 255) if acc_active else (60, 100, 200)
+        cancel_color = (100, 150, 255) if can_active else (60, 100, 200)
+        acc_outline = (255, 220, 50) if acc_active else WHITE
+        can_outline = (255, 220, 50) if can_active else WHITE
 
         pygame.draw.rect(self.screen, accept_color, accept_rect, border_radius=10)
         pygame.draw.rect(self.screen, acc_outline, accept_rect, 3, border_radius=10)

@@ -230,7 +230,8 @@ class UI:
 
     def draw_hud(self, screen: pygame.Surface, player, current_phase,
                  day_number: int, floor=None, room=None, reputation=None,
-                 time_text: str | None = None, hud_focus: str | None = None):
+                 time_text: str | None = None, hud_focus: str | None = None,
+                 car_rect: pygame.Rect | None = None):
         """Draw the in-game heads-up display."""
         # ── health bar ──
         self._bar(screen, 16, 16, 180, 14,
@@ -265,7 +266,7 @@ class UI:
         screen.blit(zn, loc_rect)
 
         # ── circular minimap (bottom-right) ──
-        self._draw_minimap_circle(screen, floor, player)
+        self._draw_minimap_circle(screen, floor, player, car_rect)
 
         # ── reputation bar (bottom-left) ──
         try:
@@ -346,7 +347,7 @@ class UI:
             lbl = self.font_hud_sm.render(f"{label} {int(cur)}/{int(mx)}", True, WHITE)
             screen.blit(lbl, (x + 4, y - 1))
 
-    def _draw_minimap_circle(self, screen, floor, player):
+    def _draw_minimap_circle(self, screen, floor, player, car_rect=None):
         """Circular minimap in bottom-right that follows the player."""
         if not floor:
             return
@@ -403,6 +404,16 @@ class UI:
             th = max(2, int(tr.rect.height * scale))
             col = (180, 70, 70, 200) if tr.locked else (80, 180, 255, 200)
             pygame.draw.rect(mm_surf, col, (int(tx), int(ty), tw, th))
+
+        # Draw car on minimap
+        if car_rect:
+            cx = car_rect.x * scale - ox
+            cy = car_rect.y * scale - oy
+            cw = max(4, int(car_rect.width * scale))
+            ch = max(4, int(car_rect.height * scale))
+            pygame.draw.rect(mm_surf, (80, 150, 255, 220), (int(cx), int(cy), cw, ch))
+            # Little label or dot
+            pygame.draw.circle(mm_surf, (200, 220, 255), (int(cx + cw/2), int(cy + ch/2)), 2)
 
         # Player dot (always at center)
         pygame.draw.circle(mm_surf, (255, 220, 60), (radius, radius), 4)
