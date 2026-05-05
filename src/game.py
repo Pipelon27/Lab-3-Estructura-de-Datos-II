@@ -165,6 +165,7 @@ class Game:
         self._noah_route: list = []   # waypoints for Noah
         self._noah_route_idx: int = 0
         self._noah_wait_for_player: bool = False
+        self._cinematic_stairs_unlocked: bool = False  # allow seamless stairs after Noah switches floor
         self._noah_final_dialogue: bool = False
         self._exit_car_timer: float = 0.0
         self._exit_car_player_y: float = 0.0
@@ -180,6 +181,23 @@ class Game:
         self._cine_skip_focused: bool = False  # controller focus on skip button
         self.pause_options: list[str] = ["Resume", "Change Character", "Main Menu", "Quit"]
         self.return_to_menu: bool = False
+
+        # ── Day transition screen ──
+        self._day_transition_active: bool = False
+        self._day_transition_timer: float = 0.0
+        self._day_transition_target_day: int = 2
+
+        # ── Parked car (parking lot) ──
+        self._parked_car_rect = pygame.Rect(900, 2400, 200, 70)
+        self._car_panel_active: bool = False  # "End day?" confirmation panel
+        self._car_panel_input_delay: float = 0.0  # delay before accepting input
+        self._car_panel_cooldown: float = 0.0     # cooldown before re-triggering
+
+        # ── Car departure cinematic ──
+        self._car_departure_active: bool = False
+        self._car_depart_phase: str = ""      # "walk_to_car" | "drive_away"
+        self._car_depart_x: float = 0.0
+        self._car_depart_timer: float = 0.0
 
         # ── init subsystems (order matters) ──
         self._init_map()
@@ -724,7 +742,7 @@ class Game:
             self._handle_controller_map(controller)
         elif self.state == GameState.DAY_OVER:
             if controller.is_confirm_pressed():
-                self._start_next_day()
+                self._begin_day_transition()
 
     def _toggle_pause(self):
         """Toggle pause state."""
@@ -758,6 +776,18 @@ class Game:
 
     def _handle_controller_playing(self, controller):
         """Handle controller input during PLAYING state."""
+        # ── Car panel: A confirms, B cancels ──
+        if self._car_panel_active:
+            if self._car_panel_input_delay > 0:
+                return  # ignore input during delay
+            if controller.is_confirm_pressed():
+                self._car_panel_active = False
+                self._start_car_departure()
+            elif controller.is_cancel_pressed():
+                self._car_panel_active = False
+                self._car_panel_cooldown = 1.0
+            return
+
         # HUD focus navigation (D-pad left/right)
         menu_h = controller.get_menu_direction_horizontal()
         if menu_h != 0:
@@ -961,6 +991,10 @@ class Game:
             elif self.state == GameState.PAUSED:
                 self.state = getattr(self, 'previous_state', GameState.PLAYING)
             elif self.state == GameState.PLAYING:
+                if self._car_panel_active:
+                    self._car_panel_active = False
+                    self._car_panel_cooldown = 1.0
+                    return
                 self.state = GameState.PAUSED
             elif self.state in (GameState.INVENTORY_SCREEN,
                                 GameState.SKILL_TREE_SCREEN,
@@ -1001,6 +1035,18 @@ class Game:
     # ── key handlers per state ────────────────────────────────
 
     def _keys_playing(self, event: pygame.event.Event):
+        # ── Car panel active: SPACE confirms, ESC dismisses ──
+        if self._car_panel_active:
+            if self._car_panel_input_delay > 0:
+                return  # ignore input during delay
+            if event.key == KEY_INTERACT:
+                self._car_panel_active = False
+                self._start_car_departure()
+            elif event.key == KEY_PAUSE:
+                self._car_panel_active = False
+                self._car_panel_cooldown = 1.0  # prevent re-trigger
+            return
+
         # If SPACE (KEY_INTERACT) and an NPC is nearby, open dialogue;
         # otherwise treat SPACE (and dash aliases) as dash.
         if event.key == KEY_INTERACT:
@@ -1305,6 +1351,19 @@ class Game:
             if self._bathroom_block_timer == 0.0:
                 self._bathroom_blocked_room = None
 
+        # ── Day transition overlay (fullscreen "Day X") ──
+        if self._day_transition_active:
+            self._day_transition_timer -= dt
+            if self._day_transition_timer <= 0:
+                self._day_transition_active = False
+                self._start_next_day()
+            return  # freeze everything else
+
+        # ── Car departure cinematic ──
+        if self._car_departure_active:
+            self._update_car_departure(dt)
+            return  # freeze normal gameplay
+
         if not hasattr(self, '_last_known_level'):
             self._last_known_level = self.player.level
         if self.player.level > self._last_known_level:
@@ -1353,8 +1412,15 @@ class Game:
                 in_main_building = self.current_floor in (FLOOR_1F, FLOOR_2F)
                 speed_mult = 1.5 if in_main_building else 1.0
                 self.player.update(keys, p_walls, dt, speed_multiplier=speed_mult)
-                # Do NOT check seamless stairs during cinematic —
-                # floor switches are controlled by the route tags
+                # Only allow seamless stairs once Noah has reached the switch point
+                if self._cinematic_stairs_unlocked:
+                    old_floor = self.current_floor
+                    self._check_seamless_stairs()
+                    if self.current_floor != old_floor:
+                        # Player just transitioned — move Noah to the same floor
+                        noah = self.npc_manager.get_npc_by_id("npc_noah_carter")
+                        if noah:
+                            noah.current_floor = self.current_floor
                 self.camera.update(self.player)
             else:
                 self.camera.update(self.player)
@@ -1485,6 +1551,10 @@ class Game:
             for door in floor.doors:
                 if door.locked:
                     walls.append(door.rect)
+
+        # Parked car is solid on campus
+        if self.current_floor == FLOOR_CAMPUS:
+            walls.append(self._parked_car_rect)
                     
         # Apply floor-specific speed boost (50% faster in main building) and faster trail decay
         in_main_building = self.current_floor in (FLOOR_1F, FLOOR_2F)
@@ -1493,7 +1563,8 @@ class Game:
         
         # We pass the original dt to the player so they don't speed up during fast-forward,
         # but we use speed_mult for the floor-based boost.
-        self.player.update(keys, walls, dt, trail_decay=decay, speed_multiplier=speed_mult)
+        if not self._car_panel_active:
+            self.player.update(keys, walls, dt, trail_decay=decay, speed_multiplier=speed_mult)
         self._enforce_bathroom_access(floor, previous_rect)
         self._enforce_cafeteria_access(floor, previous_rect, dt)
 
@@ -1556,6 +1627,29 @@ class Game:
 
         # Portal-type transitions (campus entrance)
         self._check_floor_transition()
+
+        # Car interaction (campus parking lot)
+        if self._car_panel_cooldown > 0:
+            self._car_panel_cooldown -= dt
+        if self._car_panel_input_delay > 0:
+            self._car_panel_input_delay -= dt
+        if self.current_floor == FLOOR_CAMPUS and not self._car_panel_active and self._car_panel_cooldown <= 0:
+            if self.player.rect.inflate(12, 12).colliderect(self._parked_car_rect):
+                self._car_panel_active = True
+                self._car_panel_input_delay = 0.4  # require a fresh key press
+                # Push player out of the car rect
+                px, py = self.player.rect.centerx, self.player.rect.centery
+                cx, cy = self._parked_car_rect.center
+                if abs(px - cx) >= abs(py - cy):
+                    if px < cx:
+                        self.player.rect.right = self._parked_car_rect.left - 2
+                    else:
+                        self.player.rect.left = self._parked_car_rect.right + 2
+                else:
+                    if py < cy:
+                        self.player.rect.bottom = self._parked_car_rect.top - 2
+                    else:
+                        self.player.rect.top = self._parked_car_rect.bottom + 2
 
         # Camera
         self.camera.update(self.player)
@@ -1981,22 +2075,52 @@ class Game:
                 npc.ai_enabled = True
                 count += 1
 
+    # Clear vertical lanes between cafeteria tables (gap centres)
+    _CAF_EXIT_LANES = [2233, 2495, 2775, 3067]
+
+    def _cafeteria_exit_waypoints(self, npc) -> list[tuple[int, int]]:
+        """Build a collision-free waypoint list from an NPC's seat to the door.
+
+        Tables span x 2300-2430, 2560-2690, 2860-2990  /  y 720-1020.
+        Strategy: move to the nearest clear lane first, then go below
+        all tables, then slide left and exit through the door.
+        """
+        nx, ny = npc.rect.centerx, npc.rect.centery
+        BELOW_Y = 1062
+        DOOR_X  = 2200
+        DOOR_Y  = 780 + random.randint(-15, 15)
+
+        # Pick the nearest gap lane
+        lane_x = min(self._CAF_EXIT_LANES, key=lambda lx: abs(lx - nx))
+
+        wps: list[tuple[int, int]] = []
+
+        # If the NPC is in the table zone (y 700-1040), side-step to the
+        # gap first so they don't walk through a table.
+        if 700 < ny < 1040 and abs(lane_x - nx) > 25:
+            wps.append((lane_x, ny))           # sidestep to gap
+
+        wps.append((lane_x, BELOW_Y))          # down through gap
+        wps.append((DOOR_X, BELOW_Y))          # slide left below tables
+        wps.append((DOOR_X, DOOR_Y))           # up to door height
+        wps.append((2130, DOOR_Y))             # clear of door wall
+        return wps
+
     def _move_npcs_out_of_cafeteria(self, instant: bool = False):
-        """Clear the cafeteria — NPCs exit through the door then wander the main hall."""
+        """Clear the cafeteria - NPCs exit through the door then wander the main hall."""
         floor1 = self.school_map.get_floor(FLOOR_1F)
         if not floor1: return
         npcs = self.npc_manager.get_npcs_on_floor(FLOOR_1F)
-        
+
         count = 0
         for npc in npcs:
             if getattr(npc, "ignore_schedule", False): continue
-            
+
             room = floor1.get_room_at(npc.rect.centerx, npc.rect.centery)
             if room and room.id == "f1_cafeteria":
                 hall_x = random.randint(1100, 2100)
                 hall_y = random.randint(100, 1800)
                 if instant:
-                    # Instantly teleport out of cafeteria (used for day reset)
                     npc.rect.centerx = hall_x
                     npc.rect.centery = hall_y
                     npc.target_queue = []
@@ -2004,15 +2128,31 @@ class Game:
                     npc.ai_enabled = True
                     npc.stop_at_target = False
                 else:
-                    # 1) Go to the door first
-                    door_x = 2150 - 30
-                    door_y = 780 + random.randint(-20, 20)
-                    # 2) Then disperse into main hall
-                    npc.target_pos = (door_x, door_y)
-                    npc.target_queue = [(hall_x, hall_y)]
-                    npc.start_delay = count * 0.4
-                    npc.stop_at_target = False  # resume wandering after
+                    wps = self._cafeteria_exit_waypoints(npc)
+                    npc.bound_rect = None
+                    npc.target_pos = wps[0]
+                    npc.target_queue = wps[1:] + [(hall_x, hall_y)]
+                    npc.start_delay = count * 0.35
+                    npc.stop_at_target = False
                     npc.ai_enabled = True
+                    npc.speed_multiplier = 1.2
+                    count += 1
+
+        # Also handle classroom-group NPCs that are seated in the cafeteria
+        for group in self._classroom_groups:
+            for npc in [group["teacher"]] + group["students"]:
+                if getattr(npc, "ignore_schedule", False): continue
+                if instant: continue
+                room = floor1.get_room_at(npc.rect.centerx, npc.rect.centery)
+                if room and room.id == "f1_cafeteria":
+                    wps = self._cafeteria_exit_waypoints(npc)
+                    npc.bound_rect = None
+                    npc.target_pos = wps[0]
+                    npc.target_queue = wps[1:]
+                    npc.start_delay = count * 0.35
+                    npc.stop_at_target = True
+                    npc.ai_enabled = True
+                    npc.speed_multiplier = 1.2
                     count += 1
 
     # ── day cycle ─────────────────────────────────────────────
@@ -2198,6 +2338,12 @@ class Game:
         self.phone.set_hud_anchor(self.ui.phone_icon_rect)
         self.phone.draw()
 
+        # ── Fullscreen overlays (drawn on top of everything) ──
+        if self._day_transition_active:
+            self._draw_day_transition()
+        elif self._car_panel_active:
+            self._draw_car_panel()
+
         pygame.display.flip()
 
     def _draw_world(self):
@@ -2205,9 +2351,17 @@ class Game:
         floor = self.school_map.get_floor(self.current_floor)
         if floor:
             floor.draw(self.screen, self.camera)
+
+        # Draw parked car on campus
+        if self.current_floor == FLOOR_CAMPUS:
+            self._draw_parked_car()
+
         for npc in self.npc_manager.get_npcs_on_floor(self.current_floor):
             npc.draw(self.screen, self.camera)
-        self.player.draw(self.screen, self.camera)
+
+        # Hide player sprite during drive_away phase (player is "inside" the car)
+        if not (self._car_departure_active and self._car_depart_phase == "drive_away"):
+            self.player.draw(self.screen, self.camera)
 
     def _draw_map(self):
         """Render the interactive map viewer."""
@@ -2326,6 +2480,7 @@ class Game:
                 # End cinematic → PLAYING
                 self.state = GameState.PLAYING
                 self._noah_guide_active = False
+                self._cinematic_stairs_unlocked = False
                 noah = self.npc_manager.get_npc_by_id("npc_noah_carter")
                 if noah:
                     noah.ai_enabled = True
@@ -2341,6 +2496,7 @@ class Game:
         """Immediately end the intro cinematic and jump to PLAYING state."""
         self.state = GameState.PLAYING
         self._noah_guide_active = False
+        self._cinematic_stairs_unlocked = False
         self._cine_phase = "done"
         # Make sure Noah Carter is freed from the cinematic role
         noah = self.npc_manager.get_npc_by_id("npc_noah_carter")
@@ -2428,9 +2584,10 @@ class Game:
             return
 
         if tag == "switch_2f":
-            noah.current_floor = FLOOR_2F
-            noah.rect.center = (2420, 1860)
-            self._go_to_floor(FLOOR_2F, 2420, 1860)
+            # Don't change Noah's floor yet — keep him visible on 1F.
+            # Noah will switch to 2F when the player transitions via
+            # seamless stairs (handled in the guide movement block).
+            self._cinematic_stairs_unlocked = True
             self._noah_route_idx += 1
             return
 
@@ -2642,13 +2799,22 @@ class Game:
         
         # Handle button click
         if pygame.mouse.get_pressed()[0] and hover:
-            self._start_next_day()
+            self._begin_day_transition()
+
+    def _begin_day_transition(self):
+        """Show the 'Day X' fullscreen transition, then start the next day."""
+        self._day_transition_target_day = self.day_number + 1
+        self._day_transition_active = True
+        self._day_transition_timer = 3.0  # show for 3 seconds
 
     def _start_next_day(self):
         """Reset the day, increment counter, and respawn player while keeping stats."""
         self.day_number += 1
         self.time_of_day_minutes = 7 * 60 # 7:00 AM
         self._last_time_minutes = 7 * 60
+
+        # Clear cafeteria of any remaining NPCs from previous day
+        self._move_npcs_out_of_cafeteria(instant=True)
         
         # Respawn player at Entrance
         self.player.rect.center = (2000, 2700)
@@ -2681,3 +2847,128 @@ class Game:
                     door.locked = True
         
         self.state = GameState.PLAYING
+
+    # ──────────────────────────────────────────────────────────
+    #  CAR DEPARTURE CINEMATIC
+    # ──────────────────────────────────────────────────────────
+
+    def _start_car_departure(self):
+        """Begin the cinematic: player walks to car, gets in, car drives left off-map."""
+        self._car_departure_active = True
+        self._car_depart_phase = "walk_to_car"
+        self._car_depart_timer = 0.0
+        # Car world position (tracks where the car is during the drive)
+        self._car_depart_wx = float(self._parked_car_rect.centerx)
+        self._car_depart_wy = float(self._parked_car_rect.centery)
+
+    def _update_car_departure(self, dt: float):
+        """Tick the car departure cinematic state machine."""
+        if self._car_depart_phase == "walk_to_car":
+            # Move player toward the car
+            car_cx = self._parked_car_rect.centerx
+            car_cy = self._parked_car_rect.centery
+            dx = car_cx - self.player.rect.centerx
+            dy = car_cy - self.player.rect.centery
+            dist = (dx**2 + dy**2) ** 0.5
+            if dist > 10:
+                speed = 200 * dt
+                self.player.rect.centerx += int((dx / dist) * speed)
+                self.player.rect.centery += int((dy / dist) * speed)
+            else:
+                # Player reached the car — switch to driving
+                self._car_depart_phase = "drive_away"
+                self._car_depart_timer = 0.0
+            self.camera.update(self.player)
+
+        elif self._car_depart_phase == "drive_away":
+            # Drive straight left until off-map
+            self._car_depart_wx -= 400 * dt
+            self.player.rect.centerx = int(self._car_depart_wx)
+            self.player.rect.centery = int(self._car_depart_wy)
+            self.camera.update(self.player)
+
+            # Controller vibration while driving
+            if self.controller and self.controller.connected:
+                self.controller.rumble(0.3, 0.5, 100)
+
+            # Off the left edge of the map
+            if self._car_depart_wx < -200:
+                self._car_departure_active = False
+                if self.controller and self.controller.connected:
+                    self.controller.stop_rumble()
+                self._begin_day_transition()
+
+    def _build_car_surface(self) -> pygame.Surface:
+        """Create a car sprite surface (200x90, transparent bg)."""
+        w, h = 200, 90
+        surf = pygame.Surface((w, h), pygame.SRCALPHA)
+        # Body
+        pygame.draw.rect(surf, (40, 40, 60), (0, 20, w, 50), border_radius=12)
+        # Roof
+        pygame.draw.rect(surf, (30, 30, 50), (40, 0, 120, 25), border_radius=8)
+        # Windows
+        pygame.draw.rect(surf, (80, 130, 180), (50, 5, 45, 18), border_radius=4)
+        pygame.draw.rect(surf, (80, 130, 180), (105, 5, 45, 18), border_radius=4)
+        # Wheels
+        pygame.draw.circle(surf, (25, 25, 25), (40, 70), 14)
+        pygame.draw.circle(surf, (25, 25, 25), (w - 40, 70), 14)
+        # Headlights (right side = front)
+        pygame.draw.rect(surf, (255, 220, 80), (w - 6, 35, 6, 12), border_radius=2)
+        pygame.draw.rect(surf, (255, 220, 80), (w - 6, 55, 6, 12), border_radius=2)
+        return surf
+
+    def _draw_parked_car(self):
+        """Draw the parked car in the campus parking lot (facing left)."""
+        car_surf = self._build_car_surface()
+        # Flip horizontally so the car faces left
+        car_surf = pygame.transform.flip(car_surf, True, False)
+
+        if self._car_departure_active and self._car_depart_phase == "drive_away":
+            sx, sy = self.camera.apply_pos(self._car_depart_wx, self._car_depart_wy)
+            rect = car_surf.get_rect(center=(sx, sy))
+            self.screen.blit(car_surf, rect)
+        else:
+            cr = self.camera.apply_rect(self._parked_car_rect)
+            self.screen.blit(car_surf, (cr.x, cr.y - 10))
+
+    def _draw_car_panel(self):
+        """Draw the 'End the day?' confirmation panel overlay."""
+        overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 150))
+        self.screen.blit(overlay, (0, 0))
+
+        # Panel box
+        box_w, box_h = 500, 200
+        bx = (SCREEN_WIDTH - box_w) // 2
+        by = (SCREEN_HEIGHT - box_h) // 2
+        pygame.draw.rect(self.screen, (30, 30, 45), (bx, by, box_w, box_h), border_radius=16)
+        pygame.draw.rect(self.screen, WHITE, (bx, by, box_w, box_h), 3, border_radius=16)
+
+        # Title
+        title_font = pygame.font.SysFont("Arial", 28, bold=True)
+        title = title_font.render("End the day and go home?", True, WHITE)
+        self.screen.blit(title, title.get_rect(center=(SCREEN_WIDTH // 2, by + 60)))
+
+        # Instructions
+        instr_font = pygame.font.SysFont("Arial", 20)
+        controller_connected = self.controller and self.controller.connected
+        if controller_connected:
+            instr_text = "\u24B6  Confirm       \u24B7  Cancel"
+        else:
+            instr_text = "[SPACE] Confirm       [ESC] Cancel"
+        instr = instr_font.render(instr_text, True, (180, 180, 200))
+        self.screen.blit(instr, instr.get_rect(center=(SCREEN_WIDTH // 2, by + 140)))
+
+    def _draw_day_transition(self):
+        """Draw fullscreen black screen with 'Day X' text."""
+        self.screen.fill((0, 0, 0))
+
+        # "Day X" title
+        day_font = pygame.font.SysFont("Arial", 80, bold=True)
+        day_text = day_font.render(f"Day {self._day_transition_target_day}", True, WHITE)
+        self.screen.blit(day_text, day_text.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 20)))
+
+        # Subtitle
+        sub_font = pygame.font.SysFont("Arial", 28)
+        sub_text = sub_font.render("A new day begins...", True, (160, 160, 180))
+        self.screen.blit(sub_text, sub_text.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 50)))
