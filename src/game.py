@@ -675,10 +675,10 @@ class Game:
             # Block map/inventory/skill tree during cinematic
             pass
         else:
-            # Back/View: abre/cierra teléfono en partida (mapa solo desde la app)
+            # Back/View: abre mapa directamente sin pasar por home
             if controller.is_map_pressed():
                 if self.state == GameState.PLAYING and getattr(self, "phone", None):
-                    self.phone.toggle_phone()
+                    self.phone.open_map_direct()
                 return
 
         # X = Wallet (inventory removed, only wallet remains)
@@ -1010,9 +1010,9 @@ class Game:
                 return
 
         if event.key == KEY_MAP:
-            # Mapa solo desde la app del teléfono — M abre/cierra el teléfono
+            # Acceso directo al mapa: M abre directamente el mapa sin pasar por home
             if self.state == GameState.PLAYING:
-                self.phone.toggle_phone()
+                self.phone.open_map_direct()
             return
 
         # ── state-specific dispatch ──
