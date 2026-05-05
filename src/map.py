@@ -149,7 +149,7 @@ class Room:
     def __init__(self, room_id, name, description,
                  x, y, w, h, color,
                  locked=False, mission_tag=None,
-                 is_staircase=False, floor_tile=None):
+                 is_staircase=False, tile_path=None):
         self.id          = room_id
         self.name        = name
         self.description = description
@@ -158,7 +158,7 @@ class Room:
         self.locked      = locked
         self.mission_tag = mission_tag
         self.is_staircase = is_staircase
-        self.floor_tile  = floor_tile  # (tx, ty) in tile units for 3x3 tiling
+        self.tile_path   = tile_path   # Optional: path to a tile image
     def __repr__(self):
         return f"Room({self.id}, '{self.name}')"
 
@@ -224,23 +224,6 @@ class Floor:
     STAIR_STEP_B     = (48, 48, 58)
     STAIR_ARROW_COL  = (120, 130, 160)
 
-    _tileset = None  # shared across all Floor instances
-    _TILE_PX = 32   # each tile is 32x32 px in the source image
-
-    @classmethod
-    def _load_tileset(cls):
-        if cls._tileset is None:
-            import os
-            path = os.path.join(
-                os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                "data", "tiles", "Room_Builder_Floors_32x32.png"
-            )
-            try:
-                cls._tileset = pygame.image.load(path).convert_alpha()
-            except Exception:
-                cls._tileset = False  # mark as unavailable
-        return cls._tileset if cls._tileset is not False else None
-
     def __init__(self, floor_id, name, width, height, bg_color):
         self.id       = floor_id
         self.name     = name
@@ -253,6 +236,7 @@ class Floor:
         self.hackable_objects: list[dict]        = []
         self.doors:       list[Door]             = []
         self.furniture:   list[dict]             = []  # {"rect": Rect, "color": tuple, "outline": tuple|None}
+        self._tile_cache: dict[str, pygame.Surface] = {}  # path -> loaded Surface
 
     def add_room(self, room):
         self.rooms[room.id] = room
@@ -268,48 +252,6 @@ class Floor:
                 return r
         return None
 
-    def _draw_floor_tile(self, screen, camera, room):
-        """Draw a tiled floor pattern for the given room using the tileset."""
-        tileset = self._load_tileset()
-        if tileset is None or room.floor_tile is None:
-            return
-        tx, ty = room.floor_tile
-        T = self._TILE_PX
-        # World-space tile grid aligned to room origin
-        rx, ry, rw, rh = room.rect.x, room.rect.y, room.rect.w, room.rect.h
-        # Determine tile columns/rows that overlap the room
-        col_start = 0
-        col_end   = rw // T + 2
-        row_start = 0
-        row_end   = rh // T + 2
-        sw, sh = screen.get_width(), screen.get_height()
-        for row in range(row_end):
-            for col in range(col_end):
-                wx = rx + col * T
-                wy = ry + row * T
-                # Clip to room bounds in world space
-                if wx >= rx + rw or wy >= ry + rh:
-                    continue
-                sx_src = (tx + (col % 3)) * T
-                sy_src = (ty + (row % 3)) * T
-                # Screen position
-                scr_x, scr_y = camera.apply_pos(wx, wy)
-                if scr_x + T < 0 or scr_x > sw or scr_y + T < 0 or scr_y > sh:
-                    continue
-                src_rect = pygame.Rect(sx_src, sy_src, T, T)
-                # Clip drawn tile to room screen rect
-                room_scr = camera.apply_rect(room.rect)
-                dst_rect = pygame.Rect(scr_x, scr_y, T, T)
-                dst_clip = dst_rect.clip(room_scr)
-                if dst_clip.width <= 0 or dst_clip.height <= 0:
-                    continue
-                # Adjust source rect if destination was clipped
-                src_x_off = dst_clip.x - dst_rect.x
-                src_y_off = dst_clip.y - dst_rect.y
-                final_src = pygame.Rect(sx_src + src_x_off, sy_src + src_y_off,
-                                        dst_clip.width, dst_clip.height)
-                screen.blit(tileset, dst_clip, final_src)
-
     def draw(self, screen, camera):
         sw, sh = screen.get_width(), screen.get_height()
         bg = camera.apply_rect(pygame.Rect(0, 0, self.width, self.height))
@@ -320,8 +262,34 @@ class Floor:
             r = camera.apply_rect(room.rect)
             if r.right < 0 or r.left > sw or r.bottom < 0 or r.top > sh:
                 continue
-            if room.floor_tile and not room.is_staircase:
-                self._draw_floor_tile(screen, camera, room)
+            # Draw room: tiled texture if tile_path set, otherwise solid color
+            if room.tile_path:
+                if room.tile_path not in self._tile_cache:
+                    try:
+                        self._tile_cache[room.tile_path] = pygame.image.load(room.tile_path).convert()
+                    except Exception:
+                        self._tile_cache[room.tile_path] = None
+                tile_surf = self._tile_cache.get(room.tile_path)
+                if tile_surf:
+                    tw, th = tile_surf.get_size()
+                    # Clip drawing to this room's screen rect
+                    old_clip = screen.get_clip()
+                    screen.set_clip(r)
+                    # Tile across the room (world-space aligned so tiles don't drift with camera)
+                    cam_ox = int(camera.offset.x)
+                    cam_oy = int(camera.offset.y)
+                    start_wx = (room.rect.x // tw) * tw
+                    start_wy = (room.rect.y // th) * th
+                    wx = start_wx
+                    while wx < room.rect.right:
+                        wy = start_wy
+                        while wy < room.rect.bottom:
+                            screen.blit(tile_surf, (wx - cam_ox, wy - cam_oy))
+                            wy += th
+                        wx += tw
+                    screen.set_clip(old_clip)
+                else:
+                    pygame.draw.rect(screen, room.color, r)
             else:
                 pygame.draw.rect(screen, room.color, r)
             if room.is_staircase and r.height > 20:
@@ -512,34 +480,27 @@ class SchoolMap:
 
         f.add_room(Room("c_roundabout", "Entrance Roundabout",
                         "Main entrance to Ravenside High",
-                        1400, 2500, 1200, 400, (50, 58, 50),
-                        floor_tile=(0, 30)))
+                        1400, 2500, 1200, 400, (50, 58, 50)))
         f.add_room(Room("c_parking", "Parking Lot",
                         "Student and staff parking",
-                        100, 2100, 1100, 700, (48, 48, 48),
-                        floor_tile=(12, 9)))
+                        100, 2100, 1100, 700, (48, 48, 48)))
         f.add_room(Room("c_building", "Main Building",
                         "Walk through to enter 1st Floor",
                         1400, 1100, 1200, 900, (58, 52, 52),
-                        mission_tag="Enter to access 1st Floor",
-                        floor_tile=(0, 6)))
+                        mission_tag="Enter to access 1st Floor"))
         f.add_room(Room("c_fountain", "Central Fountain",
                         "Grand fountain in the courtyard",
-                        1700, 2050, 600, 350, (42, 58, 62),
-                        floor_tile=(8, 24)))
+                        1700, 2050, 600, 350, (42, 58, 62)))
         f.add_room(Room("c_gardens", "English Gardens",
                         "Manicured gardens with hedge maze",
-                        100, 150, 1200, 1000, (32, 58, 32),
-                        floor_tile=(0, 6)))
+                        100, 150, 1200, 1000, (32, 58, 32)))
         f.add_room(Room("c_tennis", "Ping Pong Court",
                         "One court for recreation",
-                        3100, 2100, 780, 750, (48, 62, 48),
-                        floor_tile=(12, 12)))
+                        3100, 2100, 780, 750, (48, 62, 48)))
         f.add_room(Room("c_coliseum", "Athletic Coliseum",
                         "Circular coliseum with basketball court",
                         2800, 150, 1080, 950, (58, 52, 42),
-                        mission_tag="Sports Arena",
-                        floor_tile=(0, 12)))
+                        mission_tag="Sports Arena"))
 
         # Outer boundary
         f.walls.extend([
@@ -597,61 +558,53 @@ class SchoolMap:
         f.add_room(Room("f1_computer_lab", "Computer Lab",
                         "Rows of monitors — Lena's territory",
                         16, 16, 1034, 494, (38, 52, 65),
-                        mission_tag="Lena's base", floor_tile=(12, 3)))
+                        mission_tag="Lena's base"))
         f.add_room(Room("f1_infirmary", "Infirmary",
                         "School nurse, bandages, rest beds",
-                        16, 510, 1034, 370, (55, 55, 60),
-                        floor_tile=(4, 30)))
+                        16, 510, 1034, 370, (55, 55, 60)))
         f.add_room(Room("f1_auditorium", "Auditorium",
                         "Large hall for assemblies",
-                        16, 880, 1034, by - 880, (52, 48, 55),
-                        floor_tile=(12, 15)))
+                        16, 880, 1034, by - 880, (52, 48, 55)))
         f.add_room(Room("f1_basement_stairs", "Basement Stairs",
                         "Staircase down to the Basement",
                         bx, by, bw, bh, (40, 38, 42),
-                        is_staircase=True, floor_tile=(12, 9)))
+                        is_staircase=True))
         men_bath_y = by + bh
         men_bath_h = max(180, 2400 - 16 - men_bath_y)
         f.add_room(Room("f1_men_bath", "Man Bathroom",
                         "Men's restroom tucked beside the stairwell",
-                        16, by, 1034, 2400 - 16 - by, (36, 52, 70),
-                        floor_tile=(8, 27)))
+                        16, by, 1034, 2400 - 16 - by, (36, 52, 70)))
         men_door_rect = (1050 - WT + 17, men_bath_y + 140, WT, DW)
         f.add_door(Door("f1_men_bath_door", *men_door_rect, color=(120, 160, 200)))
 
         # CENTRAL
         f.add_room(Room("f1_main_hall", "Main Hall",
                         "The central hub of Ravenside High",
-                        1050, 16, 1100, 1934, (50, 50, 65),
-                        floor_tile=(4, 3)))
+                        1050, 16, 1100, 1934, (50, 50, 65)))
         f.add_room(Room("f1_reception", "Reception",
                         "Front desk — entrance from campus",
-                        1050, 1950, 1100, 434, (48, 48, 55),
-                        floor_tile=(0, 24)))
+                        1050, 1950, 1100, 434, (48, 48, 55)))
 
         # RIGHT wing
         f.add_room(Room("f1_library", "Library",
                         "Quiet study hall hiding old secrets",
-                        2150, 16, 1034, 584, (52, 45, 50),
-                        floor_tile=(0, 9)))
+                        2150, 16, 1034, 584, (52, 45, 50)))
         f.add_room(Room("f1_cafeteria", "Cafeteria",
                         "Bustling with trays, rumours, and lunch money",
-                        2150, 600, 1034, 500, (58, 52, 42),
-                        floor_tile=(8, 12)))
+                        2150, 600, 1034, 500, (58, 52, 42)))
         f.add_room(Room("f1_counselor", "Counselor's Office",
                         "Safe space — the counselor is on your side",
                         2150, 1100, 1034, sy - 1100, (55, 55, 52),
-                        mission_tag="Ally", floor_tile=(0, 15)))
+                        mission_tag="Ally"))
         f.add_room(Room("f1_stairs_2f", "Stairs to 2F",
                         "Staircase up to the 2nd Floor",
                         sx, sy, sw, sh, (52, 55, 62),
-                        is_staircase=True, floor_tile=(12, 9)))
+                        is_staircase=True))
         women_bath_y = sy + sh
         women_bath_h = max(160, 2400 - 16 - women_bath_y)
         f.add_room(Room("f1_women_bath", "Woman Bathroom",
                         "Women's restroom beside the stairwell",
-                        2150, sy, 1034, 2400 - 16 - sy, (58, 48, 68),
-                        floor_tile=(12, 27)))
+                        2150, sy, 1034, 2400 - 16 - sy, (58, 48, 68)))
         women_door_rect = (2150, women_bath_y + 139, WT, DW)
         f.add_door(Door("f1_women_bath_door", *women_door_rect, color=(200, 140, 200)))
 
@@ -680,9 +633,9 @@ class SchoolMap:
         COUNTER_COL  = (110, 80, 50)
         COUNTER_OUTL = (90, 65, 40)
 
-        # L-shaped serving counter (top-right corner of cafeteria) — large
-        counter_h = pygame.Rect(2800, 620, 360, 40)
-        counter_v = pygame.Rect(3120, 620, 40, 260)
+        # L-shaped serving counter (top-right corner of cafeteria)
+        counter_h = pygame.Rect(2900, 620, 260, 16)
+        counter_v = pygame.Rect(3144, 620, 16, 180)
         f.furniture.append({"rect": counter_h, "color": COUNTER_COL, "outline": COUNTER_OUTL})
         f.furniture.append({"rect": counter_v, "color": COUNTER_COL, "outline": COUNTER_OUTL})
         f.walls.extend([counter_h, counter_v])
@@ -766,47 +719,44 @@ class SchoolMap:
         f.add_room(Room("f2_roof_stairs", "Stairs to Rooftop",
                         "Staircase up to the Rooftop",
                         rx, ry, rw, rh, (38, 48, 58),
-                        is_staircase=True, floor_tile=(12, 9)))
+                        is_staircase=True))
+        _tile_mad = "data/tiles/piso_mad.png"
         f.add_room(Room("f2_art_room", "Art Room",
                         "Canvases, paint, and creative chaos",
                         16, art_y, 1034, 650, (60, 50, 55),
-                        floor_tile=(8, 12)))
+                        tile_path=_tile_mad))
         f.add_room(Room("f2_music_room", "Music Room",
                         "Instruments hung on walls, soundproofed",
                         16, mus_y, 1034, 420, (55, 48, 58),
-                        floor_tile=(4, 15)))
+                        tile_path=_tile_mad))
         f.add_room(Room("f2_science_lab", "Science Labs",
                         "Bunsen burners, chemicals, safety goggles",
-                        16, sci_y, 1034, 584, (42, 55, 60),
-                        floor_tile=(8, 15)))
+                        16, sci_y, 1034, 584, (42, 55, 60)))
 
         # CENTRAL
         f.add_room(Room("f2_corridor", "2F Corridor",
                         "The upper-floor hallway",
-                        1050, 16, 1100, 1934, (48, 48, 58),
-                        floor_tile=(4, 6)))
+                        1050, 16, 1100, 1934, (48, 48, 58)))
         f.add_room(Room("f2_classrooms", "Classrooms",
                         "Standard classrooms for lectures",
                         1050, 1950, 1100, 434, (48, 50, 55),
-                        floor_tile=(4, 6)))
+                        tile_path=_tile_mad))
 
         # RIGHT wing
         f.add_room(Room("f2_director", "Director's Office",
                         "Director Walsh's office — main quest",
                         2150, 16, 1034, 500, (62, 45, 45),
-                        mission_tag="Main Quest", floor_tile=(4, 9)))
+                        mission_tag="Main Quest"))
         f.add_room(Room("f2_conference", "Conference Room",
                         "Long table, projector — faculty meetings",
-                        2150, 516, 1034, 434, (55, 52, 48),
-                        floor_tile=(4, 3)))
+                        2150, 516, 1034, 434, (55, 52, 48)))
         f.add_room(Room("f2_admin", "Admin Offices",
                         "Administrative staff desks",
-                        2150, 950, 1034, sy - 950, (52, 52, 55),
-                        floor_tile=(0, 24)))
+                        2150, 950, 1034, sy - 950, (52, 52, 55)))
         f.add_room(Room("f2_stairs_1f", "Stairs to 1F",
                         "Staircase down to the 1st Floor",
                         sx, sy, sw, sh, (52, 55, 62),
-                        is_staircase=True, floor_tile=(12, 9)))
+                        is_staircase=True))
 
         # Outer boundary
         f.walls.extend([
@@ -860,27 +810,27 @@ class SchoolMap:
         f.add_room(Room("b_stairs_up", "Stairs to 1F",
                         "Staircase up to the 1st Floor",
                         bx, by, bw, bh, (40, 40, 48),
-                        is_staircase=True, floor_tile=(12, 9)))
+                        is_staircase=True))
         f.add_room(Room("b_smile_club", "Smile Club Room",
                         "Where the Smile Club holds secret meetings",
                         300, 200, 800, 550, (35, 25, 30),
-                        mission_tag="Secret meetings", floor_tile=(4, 18)))
+                        mission_tag="Secret meetings"))
         f.add_room(Room("b_server_room", "Server Room",
                         "The Smile Club's main servers hum menacingly",
                         1150, 200, 800, 550, (28, 32, 38),
-                        mission_tag="Main Target", floor_tile=(12, 12)))
+                        mission_tag="Main Target"))
         f.add_room(Room("b_surveillance", "Surveillance Center",
                         "Screens showing every hallway in the school",
                         2000, 200, 700, 550, (30, 30, 35),
-                        mission_tag="Security feeds", floor_tile=(12, 15)))
+                        mission_tag="Security feeds"))
         f.add_room(Room("b_detention", "Detention Cells",
                         "Holding cells — some NPCs are trapped here",
                         300, 800, 800, 500, (30, 25, 28),
-                        mission_tag="Rescuable NPCs", floor_tile=(0, 33)))
+                        mission_tag="Rescuable NPCs"))
         f.add_room(Room("b_terminal", "Final Terminal",
                         "The terminal where you choose the ending",
                         1150, 800, 800, 500, (38, 28, 32),
-                        mission_tag="Choose your ending", floor_tile=(8, 9)))
+                        mission_tag="Choose your ending"))
 
         # Outer boundary
         f.walls.extend([
@@ -924,19 +874,17 @@ class SchoolMap:
         f.add_room(Room("rt_stairs_down", "Stairs to 2F",
                         "Staircase down to the 2nd Floor",
                         rx, ry, rw, rh, (38, 42, 55),
-                        is_staircase=True, floor_tile=(12, 9)))
+                        is_staircase=True))
         f.add_room(Room("rt_terrace", "Rooftop Terrace",
                         "Open sky — secret meetings at night",
                         1200, 500, 1200, 1200, (35, 50, 65),
-                        mission_tag="Night meetings", floor_tile=(8, 21)))
+                        mission_tag="Night meetings"))
         f.add_room(Room("rt_antenna", "Antenna Platform",
                         "Radio antenna and satellite equipment",
-                        1500, 100, 400, 350, (40, 45, 55),
-                        floor_tile=(12, 9)))
+                        1500, 100, 400, 350, (40, 45, 55)))
         f.add_room(Room("rt_benches", "Resting Area",
                         "Benches with a view of the campus below",
-                        1300, 1750, 800, 350, (38, 48, 50),
-                        floor_tile=(12, 30)))
+                        1300, 1750, 800, 350, (38, 48, 50)))
 
         # Outer boundary
         f.walls.extend([
