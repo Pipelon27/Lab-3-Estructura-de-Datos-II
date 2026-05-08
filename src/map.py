@@ -1192,14 +1192,16 @@ class SchoolMap:
         men_bath_h = max(180, 2400 - 16 - men_bath_y)
         f.add_room(Room("f1_men_bath", "Man Bathroom",
                         "Men's restroom tucked beside the stairwell",
-                        16, by, 1034, 2400 - 16 - by, (36, 52, 70)))
+                        16, by, 1034, 2400 - 16 - by, (36, 52, 70),
+                        tile_path="data/tiles/piso_bañoh.png"))
         men_door_rect = (1050 - WT + 17, men_bath_y + 140, WT, DW)
         f.add_door(Door("f1_men_bath_door", *men_door_rect, color=(120, 160, 200)))
 
         # CENTRAL
         f.add_room(Room("f1_main_hall", "Main Hall",
                         "The central hub of Ravenside High",
-                        1050, 16, 1100, 1934, (50, 50, 65)))
+                        1050, 16, 1100, 1934, (50, 50, 65),
+                        tile_path="data/tiles/piso_hall.png"))
         f.add_room(Room("f1_reception", "Reception",
                         "Front desk — entrance from campus",
                         1050, 1950, 1100, 434, (48, 48, 55)))
@@ -1210,7 +1212,8 @@ class SchoolMap:
                         2150, 16, 1034, 584, (52, 45, 50)))
         f.add_room(Room("f1_cafeteria", "Cafeteria",
                         "Bustling with trays, rumours, and lunch money",
-                        2150, 600, 1034, 500, (58, 52, 42)))
+                        2150, 600, 1034, 500, (58, 52, 42),
+                        tile_path="data/tiles/piso_cafeteria.png"))
         f.add_room(Room("f1_counselor", "Counselor's Office",
                         "Safe space — the counselor is on your side",
                         2150, 1100, 1034, sy - 1100, (55, 55, 52),
@@ -1223,7 +1226,8 @@ class SchoolMap:
         women_bath_h = max(160, 2400 - 16 - women_bath_y)
         f.add_room(Room("f1_women_bath", "Woman Bathroom",
                         "Women's restroom beside the stairwell",
-                        2150, sy, 1034, 2400 - 16 - sy, (58, 48, 68)))
+                        2150, sy, 1034, 2400 - 16 - sy, (58, 48, 68),
+                        tile_path="data/tiles/piso_bañom.png"))
         women_door_rect = (2150, women_bath_y + 139, WT, DW)
         f.add_door(Door("f1_women_bath_door", *women_door_rect, color=(200, 140, 200)))
 
@@ -1340,7 +1344,11 @@ class SchoolMap:
                         "Staircase up to the Rooftop",
                         rx, ry, rw, rh, (38, 48, 58),
                         is_staircase=True))
-        _tile_mad = "data/tiles/piso_mad.png"
+        _tile_mad   = "data/tiles/piso_mad.png"
+        _tile_mad2  = "data/tiles/piso_mad2.png"
+        _tile_mad3  = "data/tiles/piso_mad3.png"
+        _tile_dir   = "data/tiles/piso_director.png"
+        _tile_hall  = "data/tiles/piso_hall.png"
         f.add_room(Room("f2_art_room", "Art Room",
                         "Canvases, paint, and creative chaos",
                         16, art_y, 1034, 650, (60, 50, 55),
@@ -1348,7 +1356,7 @@ class SchoolMap:
         f.add_room(Room("f2_music_room", "Music Room",
                         "Instruments hung on walls, soundproofed",
                         16, mus_y, 1034, 420, (55, 48, 58),
-                        tile_path=_tile_mad))
+                        tile_path=_tile_mad2))
         f.add_room(Room("f2_science_lab", "Science Labs",
                         "Bunsen burners, chemicals, safety goggles",
                         16, sci_y, 1034, 584, (42, 55, 60)))
@@ -1356,17 +1364,19 @@ class SchoolMap:
         # CENTRAL
         f.add_room(Room("f2_corridor", "2F Corridor",
                         "The upper-floor hallway",
-                        1050, 16, 1100, 1934, (48, 48, 58)))
+                        1050, 16, 1100, 1934, (48, 48, 58),
+                        tile_path=_tile_hall))
         f.add_room(Room("f2_classrooms", "Classrooms",
                         "Standard classrooms for lectures",
                         1050, 1950, 1100, 434, (48, 50, 55),
-                        tile_path=_tile_mad))
+                        tile_path=_tile_mad3))
 
         # RIGHT wing
         f.add_room(Room("f2_director", "Director's Office",
                         "Director Walsh's office — main quest",
                         2150, 16, 1034, 500, (62, 45, 45),
-                        mission_tag="Main Quest"))
+                        mission_tag="Main Quest",
+                        tile_path=_tile_dir))
         f.add_room(Room("f2_conference", "Conference Room",
                         "Long table, projector — faculty meetings",
                         2150, 516, 1034, 434, (55, 52, 48)))
