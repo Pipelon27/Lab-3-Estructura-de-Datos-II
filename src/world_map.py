@@ -144,7 +144,23 @@ class WorldMap:
                     dy = abs(event.pos[1] - self._drag_start[1])
                     if dx < 5 and dy < 5 and not self._confirm_teleport:
                         wx, wy = self._screen_to_world(*event.pos)
-                        self._teleport_target = (self.current_tab, wx, wy)
+                        target_tab = self.current_tab
+                        tx, ty = wx, wy
+                        
+                        # Special case: Redirect clicks on Campus buildings to their interiors
+                        if self.current_tab == 0 and self._hovered_room:
+                            rid = self._hovered_room.id
+                            if rid == "c_coliseum":
+                                target_tab = self.school_map.FLOOR_COLISEUM_INTERIOR
+                                tx, ty = 900, 1100 # Default interior spawn
+                            elif rid == "c_tennis":
+                                target_tab = self.school_map.FLOOR_PINGPONG_INTERIOR
+                                tx, ty = 800, 1000 # Default interior spawn
+                            elif rid == "c_building":
+                                target_tab = 0 # Campus
+                                tx, ty = 2000, 2100 # In front of Main Building
+                        
+                        self._teleport_target = (target_tab, tx, ty)
                         self._confirm_teleport = True
                         self.teleport_requested = False
                         return False
@@ -441,16 +457,8 @@ class WorldMap:
                 pygame.draw.line(screen, (200, 50, 50), (dx, dy), (dx + dw, dy + dh), 1)
                 pygame.draw.line(screen, (200, 50, 50), (dx + dw, dy), (dx, dy + dh), 1)
 
-        # Transitions
-        for tr in floor.transitions:
-            tx, ty = self._world_to_screen(tr.rect.x, tr.rect.y)
-            tw = max(4, int(tr.rect.width * z))
-            th = max(4, int(tr.rect.height * z))
-            col = (180, 60, 60) if tr.locked else (80, 180, 255)
-            pygame.draw.rect(screen, col, (tx, ty, tw, th))
-            if tw > 30:
-                lbl = self._font_room.render(tr.label, True, WHITE)
-                screen.blit(lbl, (tx + 2, ty - 14))
+        # Transitions removed from map as requested
+        pass
 
         # Player indicator
         if self.current_tab == self.player_floor:

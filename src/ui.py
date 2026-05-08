@@ -399,14 +399,8 @@ class UI:
             pygame.draw.rect(mm_surf, (100, 100, 110, 220),
                              (int(wx), int(wy), ww, wh))
 
-        # Transitions
-        for tr in floor.transitions:
-            tx = tr.rect.x * scale - ox
-            ty = tr.rect.y * scale - oy
-            tw = max(2, int(tr.rect.width * scale))
-            th = max(2, int(tr.rect.height * scale))
-            col = (180, 70, 70, 200) if tr.locked else (80, 180, 255, 200)
-            pygame.draw.rect(mm_surf, col, (int(tx), int(ty), tw, th))
+        # Transitions removed from minimap as requested
+        pass
 
         # Draw car on minimap
         if car_rect:

@@ -463,16 +463,334 @@ class Floor:
                     pygame.draw.circle(drop_surf, (220, 240, 255, alpha), (drop_size, drop_size), drop_size)
                     screen.blit(drop_surf, (dfx - drop_size, dfy - drop_size))
 
-        font_sm = pygame.font.SysFont("arial", 13, bold=True)
-        for tr in self.transitions:
-            r = camera.apply_rect(tr.rect)
-            if r.right < 0 or r.left > sw:
-                continue
-            pygame.draw.rect(screen, self.TRANSITION_COLOR, r)
-            pygame.draw.rect(screen, WHITE, r, 1)
-            if tr.label and r.width > 20:
-                lbl = font_sm.render(tr.label, True, WHITE)
-                screen.blit(lbl, (r.x + 2, r.y - 16))
+            if hasattr(self, 'basketball_court'):
+                bcr = camera.apply_rect(self.basketball_court)
+                if bcr.right > 0 and bcr.left < sw and bcr.bottom > 0 and bcr.top < sh:
+                    pygame.draw.line(screen, WHITE, (bcr.centerx, bcr.top), (bcr.centerx, bcr.bottom), 3)
+                    pygame.draw.circle(screen, WHITE, bcr.center, int(bcr.height * 0.15), 3)
+                    key_w = int(bcr.width * 0.2)
+                    key_h = int(bcr.height * 0.4)
+                    left_key = pygame.Rect(bcr.left, bcr.centery - key_h//2, key_w, key_h)
+                    pygame.draw.rect(screen, WHITE, left_key, 3)
+                    pygame.draw.circle(screen, WHITE, (left_key.right, left_key.centery), int(key_h//2), 3)
+                    right_key = pygame.Rect(bcr.right - key_w, bcr.centery - key_h//2, key_w, key_h)
+                    pygame.draw.rect(screen, WHITE, right_key, 3)
+                    pygame.draw.circle(screen, WHITE, (right_key.left, right_key.centery), int(key_h//2), 3)
+
+            if hasattr(self, 'garden_decorations'):
+                for item in self.garden_decorations:
+                    if item[0] == 'tree':
+                        _, tx, ty, rad = item
+                        sx, sy = camera.apply_pos(tx, ty)
+                        draw_rad = rad * 2
+                        if -60 < sx < sw + 60 and -60 < sy < sh + 60:
+                            pygame.draw.circle(screen, (20, 40, 20), (sx + 5, sy + 5), draw_rad)
+                    elif item[0] == 'flower':
+                        _, fx, fy, color = item
+                        sx, sy = camera.apply_pos(fx, fy)
+                        if -10 < sx < sw + 10 and -10 < sy < sh + 10:
+                            pygame.draw.circle(screen, color, (sx, sy), 4)
+                            pygame.draw.circle(screen, (255, 255, 0), (sx, sy), 2)
+                    elif item[0] == 'bush':
+                        _, bx, by, rad = item
+                        sx, sy = camera.apply_pos(bx, by)
+                        if -40 < sx < sw + 40 and -40 < sy < sh + 40:
+                            # Drawing a bush as a cluster of circles for texture
+                            pygame.draw.circle(screen, (34, 60, 34), (sx, sy), rad)
+                            pygame.draw.circle(screen, (46, 82, 46), (sx - 4, sy - 2), int(rad*0.7))
+                            pygame.draw.circle(screen, (24, 48, 24), (sx + 4, sy + 3), int(rad*0.6))
+                            
+            # Road dashed lines
+            road_y = 2925
+            if hasattr(self, 'rooms') and "c_road" in self.rooms:
+                road_room = self.rooms["c_road"].rect
+                ry_screen = camera.apply_pos(road_room.x, road_y)[1]
+                if -10 < ry_screen < sh + 10:
+                    dash_len = 80
+                    dash_gap = 60
+                    for lx in range(road_room.x, road_room.right, dash_len + dash_gap):
+                        start_pos = camera.apply_pos(lx, road_y)
+                        end_pos = camera.apply_pos(min(lx + dash_len, road_room.right), road_y)
+                        if start_pos[0] < sw and end_pos[0] > 0:
+                            pygame.draw.line(screen, (220, 220, 220), start_pos, end_pos, 4)
+            if hasattr(self, "curved_road"):
+                import math
+                c = self.curved_road
+                cx, cy = c["center"]
+                radius = c["radius"]
+                curve_points = [(cx, cy)]
+                for i in range(17):
+                    ang = -math.pi / 2 + (i / 16) * (math.pi / 2)
+                    curve_points.append((cx + int(math.cos(ang) * radius),
+                                         cy + int(math.sin(ang) * radius)))
+                pygame.draw.polygon(screen, c["color"], [camera.apply_pos(x, y) for x, y in curve_points])
+                arc_rect = camera.apply_rect(pygame.Rect(cx - radius, cy - radius, radius * 2, radius * 2))
+                pygame.draw.arc(screen, (220, 220, 220), arc_rect, -math.pi / 2, 0, 4)
+            
+            if hasattr(self, "basketball_court"):
+                import math
+                bc = self.basketball_court
+                r = camera.apply_rect(bc)
+                if r.right > 0 and r.left < sw:
+                    # Lines are white
+                    lc = (240, 240, 240)
+                    # Outer boundary
+                    pygame.draw.rect(screen, lc, r, 3)
+                    # Mid-court line
+                    pygame.draw.line(screen, lc, (r.centerx, r.top), (r.centerx, r.bottom), 3)
+                    # Center circle
+                    pygame.draw.circle(screen, lc, r.center, 70, 3)
+                    
+                    # Arcs/Lines for each half
+                    key_w = 220
+                    key_h = 300
+                    tp_rad = 380
+                    
+                    for side in [-1, 1]:
+                        # Key area (rectangle)
+                        if side == -1:
+                            kx = r.left
+                        else:
+                            kx = r.right - key_w
+                        
+                        ky = r.centery - key_h // 2
+                        key_rect = pygame.Rect(kx, ky, key_w, key_h)
+                        pygame.draw.rect(screen, lc, key_rect, 3)
+                        
+                        # Three point line (large arc)
+                        tp_center = (r.left if side == -1 else r.right, r.centery)
+                        tp_rect = pygame.Rect(tp_center[0] - tp_rad, tp_center[1] - tp_rad, tp_rad * 2, tp_rad * 2)
+                        if side == -1:
+                            # Left side arc
+                            pygame.draw.arc(screen, lc, tp_rect, -math.pi/2, math.pi/2, 3)
+                        else:
+                            # Right side arc
+                            pygame.draw.arc(screen, lc, tp_rect, math.pi/2, 3*math.pi/2, 3)
+
+        # Transitions drawing - only for interior floors (to show the exit)
+        if self.id != 0:
+            font_sm = pygame.font.SysFont("arial", 13, bold=True)
+            for tr in self.transitions:
+                r = camera.apply_rect(tr.rect)
+                if r.right < 0 or r.left > sw:
+                    continue
+                pygame.draw.rect(screen, (80, 180, 255, 180), r)
+                pygame.draw.rect(screen, WHITE, r, 1)
+                if tr.label and r.width > 20:
+                    lbl = font_sm.render(tr.label, True, WHITE)
+                    screen.blit(lbl, (r.x + 2, r.y - 16))
+
+    def draw_foreground(self, screen, camera, player):
+        sw, sh = screen.get_width(), screen.get_height()
+        
+        if self.id == 0:
+            # Draw top-down facades matching a city-street style reference.
+            building_specs = [
+                ("c_building", {
+                    "wall_color": (145, 164, 188),
+                    "trim_color": (68, 82, 104),
+                    "window_color": (145, 190, 220),
+                    "window_cols": 3,
+                    "window_rows": 2,
+                    "window_mode": "grid",
+                    "sign": "MAIN BUILDING",
+                    "entry": "double_glass",
+                    "rooftop": True,
+                }),
+                ("c_tennis", {
+                    "wall_color": (188, 168, 132),
+                    "trim_color": (92, 78, 58),
+                    "window_color": (152, 196, 222),
+                    "window_cols": 2,
+                    "window_rows": 1,
+                    "window_mode": "double_normal",
+                    "sign": "PING PONG",
+                    "entry": "pingpong_icon",
+                    "rooftop": False,
+                }),
+                ("c_coliseum", {
+                    "wall_color": (170, 163, 146),
+                    "trim_color": (90, 84, 68),
+                    "window_color": (145, 184, 208),
+                    "window_cols": 2,
+                    "window_rows": 1,
+                    "window_mode": "double_large",
+                    "sign": "ATHLETIC COLISEUM",
+                    "entry": "gate",
+                    "rooftop": False,
+                }),
+            ]
+
+            for rid, spec in building_specs:
+                room = self.rooms.get(rid)
+                if room:
+                    rr = camera.apply_rect(room.rect)
+                    if rr.right > 0 and rr.left < sw and rr.bottom > 0 and rr.top < sh:
+                        roof_h = max(20, int(rr.height * 0.2))
+                        facade_h = max(90, int(rr.height * 0.45))
+                        body_rect = pygame.Rect(rr.x, rr.y, rr.width, rr.height)
+                        facade_rect = pygame.Rect(rr.x, rr.bottom - facade_h, rr.width, facade_h)
+                        roof_rect = pygame.Rect(rr.x, rr.y, rr.width, roof_h)
+                        sidewalk_rect = pygame.Rect(rr.x, rr.bottom + 2, rr.width, 20)
+
+                        pygame.draw.rect(screen, spec["wall_color"], body_rect)
+                        pygame.draw.line(screen, spec["trim_color"],
+                                         (body_rect.x + 2, body_rect.y + 2),
+                                         (body_rect.right - 3, body_rect.y + 2), 2)
+                        pygame.draw.line(screen, (50, 50, 56),
+                                         (body_rect.x + 2, body_rect.bottom - 3),
+                                         (body_rect.right - 3, body_rect.bottom - 3), 2)
+                        pygame.draw.rect(screen, spec["trim_color"], body_rect, 3)
+
+                        if spec["rooftop"]:
+                            rooftop = pygame.Rect(rr.x + 10, rr.y + 10, rr.width - 20, rr.height - facade_h - 16)
+                            pygame.draw.rect(screen, (110, 122, 142), rooftop)
+                            pygame.draw.rect(screen, (70, 82, 102), rooftop, 3)
+                            ac1 = pygame.Rect(rooftop.x + 20, rooftop.y + 20, 46, 26)
+                            ac2 = pygame.Rect(rooftop.right - 70, rooftop.y + 28, 50, 28)
+                            pygame.draw.rect(screen, (82, 88, 98), ac1)
+                            pygame.draw.rect(screen, (82, 88, 98), ac2)
+                            pygame.draw.rect(screen, (48, 54, 64), ac1, 2)
+                            pygame.draw.rect(screen, (48, 54, 64), ac2, 2)
+                        else:
+                            pygame.draw.rect(screen, spec["trim_color"], roof_rect)
+                            pygame.draw.line(screen, (45, 45, 50), (roof_rect.x, roof_rect.bottom - 2),
+                                             (roof_rect.right, roof_rect.bottom - 2), 2)
+
+                        pygame.draw.rect(screen, spec["wall_color"], facade_rect)
+                        pygame.draw.rect(screen, spec["trim_color"], facade_rect, 3)
+                        sign_rect = pygame.Rect(facade_rect.x + 14, facade_rect.y + 8, facade_rect.width - 28, 26)
+                        pygame.draw.rect(screen, (72, 72, 82), sign_rect)
+                        pygame.draw.rect(screen, (205, 205, 215), sign_rect, 2)
+                        sign_font = pygame.font.SysFont("arial", max(11, min(17, sign_rect.height - 7)), bold=True)
+                        sign_txt = sign_font.render(spec["sign"], True, (230, 232, 240))
+                        screen.blit(sign_txt, (sign_rect.centerx - sign_txt.get_width() // 2,
+                                               sign_rect.centery - sign_txt.get_height() // 2))
+
+                        door_w = max(56, min(110, int(facade_rect.width * 0.18)))
+                        if spec["entry"] == "double_glass":
+                            door_w = max(120, min(200, int(facade_rect.width * 0.34)))
+                        door_h = max(46, int(facade_rect.height * 0.56))
+                        door_rect = pygame.Rect(
+                            facade_rect.centerx - door_w // 2,
+                            facade_rect.bottom - door_h - 4,
+                            door_w,
+                            door_h,
+                        )
+                        if spec["entry"] == "double_glass":
+                            pygame.draw.rect(screen, (80, 115, 142), door_rect)
+                            pygame.draw.rect(screen, (42, 54, 68), door_rect, 2)
+                            pygame.draw.line(screen, (220, 230, 240),
+                                             (door_rect.centerx, door_rect.y + 2),
+                                             (door_rect.centerx, door_rect.bottom - 3), 2)
+                            pygame.draw.rect(screen, (210, 226, 240),
+                                             (door_rect.x + 6, door_rect.y + 6, 8, door_rect.height - 14), 1)
+                            pygame.draw.rect(screen, (210, 226, 240),
+                                             (door_rect.right - 14, door_rect.y + 6, 8, door_rect.height - 14), 1)
+                        elif spec["entry"] == "gate":
+                            pygame.draw.rect(screen, (82, 72, 66), door_rect)
+                            pygame.draw.rect(screen, (45, 38, 35), door_rect, 2)
+                            for gx in range(door_rect.x + 8, door_rect.right - 6, 10):
+                                pygame.draw.line(screen, (34, 30, 28),
+                                                 (gx, door_rect.y + 4), (gx, door_rect.bottom - 4), 2)
+                            pygame.draw.rect(screen, (118, 108, 92),
+                                             (door_rect.x + 2, door_rect.y + 2, door_rect.width - 4, 6))
+                        else:
+                            pygame.draw.rect(screen, (86, 116, 124), door_rect)
+                            pygame.draw.rect(screen, (38, 48, 54), door_rect, 2)
+                            icon_cx, icon_cy = door_rect.centerx, door_rect.y + 14
+                            pygame.draw.circle(screen, (235, 245, 250), (icon_cx - 10, icon_cy), 5)
+                            pygame.draw.circle(screen, (255, 165, 85), (icon_cx + 8, icon_cy), 4)
+                            pygame.draw.rect(screen, (222, 182, 120), (icon_cx - 2, icon_cy + 6, 9, 3))
+
+                        # Building Nameplate
+                        if rid == "c_building":
+                            font_title = pygame.font.SysFont("arial", 24, bold=True)
+                            text = font_title.render("RAVENSIDE HIGH SCHOOL", True, (220, 230, 240))
+                            tw, th = text.get_size()
+                            # Positioned above the door
+                            tx = door_rect.centerx - tw // 2
+                            ty = door_rect.y - th - 15
+                            # Subtle shadow/plate behind text
+                            plate = pygame.Rect(tx - 10, ty - 5, tw + 20, th + 10)
+                            pygame.draw.rect(screen, (40, 45, 55), plate, border_radius=3)
+                            pygame.draw.rect(screen, (80, 95, 110), plate, 1, border_radius=3)
+                            screen.blit(text, (tx, ty))
+
+                        mode = spec.get("window_mode", "grid")
+                        if mode in ("double_large", "double_normal"):
+                            side_margin = max(26, int(facade_rect.width * 0.1))
+                            top_margin = 46
+                            gap = max(24, int(facade_rect.width * 0.08))
+                            cell_h = max(28, int(facade_rect.height * (0.23 if mode == "double_large" else 0.16)))
+                            usable_w = facade_rect.width - 2 * side_margin - gap
+                            cell_w = max(52, usable_w // 2)
+                            wx1 = facade_rect.x + side_margin
+                            wx2 = wx1 + cell_w + gap
+                            wy = facade_rect.y + top_margin
+                            for wx in (wx1, wx2):
+                                win = pygame.Rect(wx, wy, cell_w, cell_h)
+                                pygame.draw.rect(screen, spec["window_color"], win)
+                                pygame.draw.rect(screen, spec["trim_color"], win, 2)
+                                pygame.draw.line(screen, (210, 230, 245),
+                                                 (win.x + 3, win.y + 3), (win.x + 3, win.bottom - 4), 1)
+                        else:
+                            cols = spec["window_cols"]
+                            rows = spec["window_rows"]
+                            side_margin = max(14, int(facade_rect.width * 0.07))
+                            top_margin = 42
+                            bottom_margin = max(10, int(facade_rect.height * 0.1))
+                            usable_w = facade_rect.width - (2 * side_margin)
+                            usable_h = facade_rect.height - top_margin - bottom_margin
+                            cell_w = max(32, usable_w // max(1, cols * 2 - 1))
+                            cell_h = max(18, usable_h // max(1, rows * 2))
+                            x_gap = max(10, (usable_w - cols * cell_w) // max(1, cols - 1))
+                            y_gap = max(8, (usable_h - rows * cell_h) // max(1, rows - 1))
+
+                            for row in range(rows):
+                                wy = facade_rect.y + top_margin + row * (cell_h + y_gap)
+                                for col in range(cols):
+                                    wx = facade_rect.x + side_margin + col * (cell_w + x_gap)
+                                    win = pygame.Rect(wx, wy, cell_w, cell_h)
+                                    if win.colliderect(door_rect.inflate(24, 8)):
+                                        continue
+                                    pygame.draw.rect(screen, spec["window_color"], win)
+                                    pygame.draw.rect(screen, spec["trim_color"], win, 2)
+                                    pygame.draw.line(
+                                        screen,
+                                        (210, 230, 245),
+                                        (win.x + 3, win.y + 3),
+                                        (win.x + 3, win.bottom - 4),
+                                        1,
+                                    )
+
+                        pygame.draw.rect(screen, (168, 168, 176), sidewalk_rect)
+                        pygame.draw.line(screen, (210, 210, 220),
+                                         (sidewalk_rect.x, sidewalk_rect.y + 2),
+                                         (sidewalk_rect.right, sidewalk_rect.y + 2), 2)
+                        pygame.draw.line(screen, (110, 110, 120),
+                                         (sidewalk_rect.x, sidewalk_rect.bottom - 2),
+                                         (sidewalk_rect.right, sidewalk_rect.bottom - 2), 2)
+                            
+    def draw_top_layer(self, screen, camera):
+        """Draw elements that should be above everything else (like tree canopies)."""
+        sw, sh = screen.get_width(), screen.get_height()
+        if self.id == 0:
+            if hasattr(self, 'garden_decorations'):
+                for item in self.garden_decorations:
+                    if item[0] == 'tree':
+                        _, tx, ty, rad = item
+                        sx, sy = camera.apply_pos(tx, ty)
+                        draw_rad = rad * 2
+                        if -60 < sx < sw + 60 and -60 < sy < sh + 60:
+                            # Shadow/Outline
+                            pygame.draw.circle(screen, (20, 40, 20), (sx + 4, sy + 4), draw_rad)
+                            # Canopy
+                            pygame.draw.circle(screen, (34, 100, 34), (sx, sy), draw_rad)
+                            # Highlight
+                            pygame.draw.circle(screen, (40, 120, 40),
+                                               (sx - int(draw_rad * 0.2), sy - int(draw_rad * 0.2)),
+                                               int(draw_rad * 0.7))
 
     def __repr__(self):
         return f"Floor({self.id}, '{self.name}', rooms={len(self.rooms)})"
@@ -524,6 +842,8 @@ def _lower_door_y(ry, rh):
 # ══════════════════════════════════════════════════════════════
 
 class SchoolMap:
+    FLOOR_COLISEUM_INTERIOR = 5
+    FLOOR_PINGPONG_INTERIOR = 6
 
     # Staircase positions (same rect on BOTH connected floors)
     #   Right wing: door at x=2150, gap on RIGHT
@@ -564,6 +884,8 @@ class SchoolMap:
         self.floors[2] = self._build_floor2()
         self.floors[3] = self._build_basement()
         self.floors[4] = self._build_rooftop()
+        self.floors[self.FLOOR_COLISEUM_INTERIOR] = self._build_coliseum_interior()
+        self.floors[self.FLOOR_PINGPONG_INTERIOR] = self._build_pingpong_interior()
 
         # ── seamless staircases (stairs only, NOT campus) ─────
         for (rect, fab, fbl) in [
@@ -588,14 +910,18 @@ class SchoolMap:
 
         f.add_room(Room("c_roundabout", "Entrance Roundabout",
                         "Main entrance to Ravenside High",
-                        1400, 2500, 1200, 400, (50, 58, 50)))
+                        1400, 2500, 1200, 350, (50, 58, 50)))
         f.add_room(Room("c_parking", "Parking Lot",
                         "Student and staff parking",
-                        100, 2100, 1100, 700, (48, 48, 48)))
+                        0, 2100, 1200, 750, (48, 48, 48)))
+        f.add_room(Room("c_road", "Main Road",
+                        "Paved street with curved ending",
+                        0, 2850, 2900, 150, (35, 35, 40)))
         f.add_room(Room("c_building", "Main Building",
                         "Walk through to enter 1st Floor",
-                        1400, 1100, 1200, 900, (58, 52, 52),
+                        1400, 1100, 1200, 900, (48, 48, 55),
                         mission_tag="Enter to access 1st Floor"))
+
         f.add_room(Room("c_fountain", "Central Fountain",
                         "Grand fountain in the courtyard",
                         1700, 2050, 600, 350, (42, 58, 62)))
@@ -604,34 +930,93 @@ class SchoolMap:
                         100, 150, 1200, 1000, (32, 58, 32)))
         f.add_room(Room("c_tennis", "Ping Pong Court",
                         "One court for recreation",
-                        3100, 2100, 780, 750, (48, 62, 48)))
+                        3100, 2100, 780, 750, (40, 52, 44)))
         f.add_room(Room("c_coliseum", "Athletic Coliseum",
                         "Circular coliseum with basketball court",
-                        2800, 150, 1080, 950, (58, 52, 42),
+                        2800, 150, 1080, 950, (44, 40, 36),
                         mission_tag="Sports Arena"))
+        f.add_room(Room("c_coliseum_court", "Basketball Court",
+                        "The main court",
+                        2800 + WT + 100, 150 + WT + 100, 1080 - 2 * WT - 200, 950 - 2 * WT - 200, (176, 110, 66)))
 
         # Outer boundary
         f.walls.extend([
             _hw(0, 0, 4000), _hw(0, 3000 - WT, 4000),
             _vw(0, 0, 3000), _vw(4000 - WT, 0, 3000),
         ])
-        # Building walls  (entrance door at bottom)
+        # Building walls (new double-width entrance at bottom)
         bx, by, bw, bh = 1400, 1100, 1200, 900
-        bdx = bx + (bw - DW) // 2        # door X in bottom wall
+        bdoor_w = 4 * DW
+        bdx = bx + (bw - bdoor_w) // 2
         f.walls.append(_hw(bx, by, bw))
         f.walls.append(_vw(bx, by, bh))
         f.walls.append(_vw(bx + bw - WT, by, bh))
-        f.walls.extend(_hwall_gaps(by + bh - WT, bx, bx + bw, [(bdx, DW)]))
-        # Coliseum
-        cy = 150 + (950 - DW) // 2
-        f.walls.extend([_hw(2800, 150, 1080), _hw(2800, 1100 - WT, 1080)])
-        f.walls.extend(_vwall_gaps(2800, 150, 1100, [(cy, DW)]))
-        f.walls.append(_vw(2800 + 1080 - WT, 150, 950))
-        # Tennis
-        ty = 2100 + (750 - DW) // 2
-        f.walls.extend([_hw(3100, 2100, 780), _hw(3100, 2850 - WT, 780)])
-        f.walls.extend(_vwall_gaps(3100, 2100, 2850, [(ty, DW)]))
-        f.walls.append(_vw(3100 + 780 - WT, 2100, 750))
+        f.walls.extend(_hwall_gaps(by + bh - WT, bx, bx + bw, [(bdx, bdoor_w)]))
+        
+        # Facade collision (purple areas mentioned by user)
+        facade_depth = int(bh * 0.4)
+        f.walls.append(pygame.Rect(bx, by + bh - facade_depth, bdx - bx, facade_depth))
+        f.walls.append(pygame.Rect(bdx + bdoor_w, by + bh - facade_depth, (bx + bw) - (bdx + bdoor_w), facade_depth))
+        # Side walls for the entrance hallway
+        f.walls.append(_vw(bdx - WT, by + bh - facade_depth, facade_depth))
+        f.walls.append(_vw(bdx + bdoor_w, by + bh - facade_depth, facade_depth))
+        
+        # Entrance Hallway back-wall (blocks going further "up")
+        f.walls.append(_hw(bdx - WT, by + bh - 60, bdoor_w + 2 * WT))
+        # Coliseum (new gate at bottom)
+        cx, cy, cw, ch = 2800, 150, 1080, 950
+        col_gate_w = 3 * DW
+        col_gate_x = cx + (cw - col_gate_w) // 2
+        f.walls.append(_hw(cx, cy, cw))
+        f.walls.append(_vw(cx, cy, ch))
+        f.walls.append(_vw(cx + cw - WT, cy, ch))
+        f.walls.extend(_hwall_gaps(cy + ch - WT, cx, cx + cw, [(col_gate_x, col_gate_w)]))
+        
+        # Facade collision for Coliseum
+        facade_depth_col = int(ch * 0.45)
+        f.walls.append(pygame.Rect(cx, cy + ch - facade_depth_col, col_gate_x - cx, facade_depth_col))
+        f.walls.append(pygame.Rect(col_gate_x + col_gate_w, cy + ch - facade_depth_col, (cx + cw) - (col_gate_x + col_gate_w), facade_depth_col))
+        # Side walls for the gate
+        f.walls.append(_vw(col_gate_x - WT, cy + ch - facade_depth_col, facade_depth_col))
+        f.walls.append(_vw(col_gate_x + col_gate_w, cy + ch - facade_depth_col, facade_depth_col))
+        
+        # Internal walls around the basketball court on Campus floor
+        court_x, court_y = 2800 + WT + 100, 150 + WT + 100
+        court_w, court_h = 1080 - 2 * WT - 200, 950 - 2 * WT - 200
+        f.walls.extend([
+            _hw(court_x, court_y, court_w),
+            _vw(court_x, court_y, court_h),
+            _vw(court_x + court_w - WT, court_y, court_h)
+        ])
+        # Bottom wall of the court with gap for entrance
+        f.walls.extend(_hwall_gaps(court_y + court_h - WT, court_x, court_x + court_w, [(col_gate_x, col_gate_w)]))
+        
+        # Entrance Hallway back-wall for Coliseum
+        f.walls.append(_hw(col_gate_x - WT, cy + ch - 60, col_gate_w + 2 * WT))
+        
+        # Ping Pong Court (new centered entrance at bottom)
+        tx, ty, tw, th = 3100, 2100, 780, 750
+        tennis_door_w = 2 * DW
+        tennis_door_x = tx + (tw - tennis_door_w) // 2
+        f.walls.append(_hw(tx, ty, tw))
+        f.walls.append(_vw(tx, ty, th))
+        f.walls.append(_vw(tx + tw - WT, ty, th))
+        f.walls.extend(_hwall_gaps(ty + th - WT, tx, tx + tw, [(tennis_door_x, tennis_door_w)]))
+        
+        # Facade collision for Ping Pong Court
+        facade_depth_pp = int(th * 0.5)
+        f.walls.append(pygame.Rect(tx, ty + th - facade_depth_pp, tennis_door_x - tx, facade_depth_pp))
+        f.walls.append(pygame.Rect(tennis_door_x + tennis_door_w, ty + th - facade_depth_pp, (tx + tw) - (tennis_door_x + tennis_door_w), facade_depth_pp))
+        # Side walls for the entrance
+        f.walls.append(_vw(tennis_door_x - WT, ty + th - facade_depth_pp, facade_depth_pp))
+        f.walls.append(_vw(tennis_door_x + tennis_door_w, ty + th - facade_depth_pp, facade_depth_pp))
+        
+        # Entrance Hallway back-wall for Ping Pong
+        f.walls.append(_hw(tennis_door_x - WT, ty + th - 60, tennis_door_w + 2 * WT))
+        
+        # Interior columns for Ping Pong to prevent walking through the whole building
+        f.walls.append(pygame.Rect(tx + 100, ty + 100, 40, 40))
+        f.walls.append(pygame.Rect(tx + tw - 140, ty + 100, 40, 40))
         # Garden hedges
         f.walls.extend([
             _hw(300, 500, 500), _hw(550, 800, 550),
@@ -657,11 +1042,124 @@ class SchoolMap:
         )
         f.walls.append(f.fountain_rect)
 
+        # Basketball court
+        f.basketball_court = pygame.Rect(2800 + WT, 150 + WT, 1080 - 2 * WT, 950 - 2 * WT)
+        f.curved_road = {"center": (2900, 3000), "radius": 150, "color": (35, 35, 40)}
+
+        # Garden decorations
+        import random
+        rng = random.Random(42)
+        f.garden_decorations = []
+        for _ in range(50):
+            for _ in range(10):
+                tx = rng.randint(150, 1250)
+                ty = rng.randint(200, 1100)
+                rad = rng.randint(20, 35)
+                treect = pygame.Rect(tx - rad//2, ty - rad//2, rad, rad)
+                if not any(treect.colliderect(w) for w in f.walls):
+                    f.garden_decorations.append(('tree', tx, ty, rad))
+                    f.walls.append(pygame.Rect(tx - 10, ty - 10, 20, 20))
+                    break
+        for _ in range(120):
+            fx = rng.randint(150, 1250)
+            fy = rng.randint(200, 1100)
+            color = rng.choice([(255, 100, 100), (255, 200, 100), (150, 150, 255), (255, 200, 200), (255, 255, 255)])
+            f.garden_decorations.append(('flower', fx, fy, color))
+
+        # Benches
+        for _ in range(10):
+            for _ in range(10):
+                bx = rng.randint(150, 1250)
+                by = rng.randint(200, 1100)
+                rect = pygame.Rect(bx, by, 60, 25)
+                if not any(rect.colliderect(w) for w in f.walls):
+                    f.furniture.append({"rect": rect, "color": (120, 80, 40), "outline": (80, 50, 20)})
+                    f.walls.append(rect)
+                    break
+        
+        # Roundabout bushes decoration (neat rows on each side)
+        for side_x in [1420, 2580]: # Left and Right edges
+            for by in range(2520, 2850, 45):
+                rad = 18
+                f.garden_decorations.append(('bush', side_x, by, rad))
+        
+        # Parking Lot bushes (strictly outside the perimeter)
+        # Top edge (above the parking lot)
+        for px in range(20, 1180, 50):
+            f.garden_decorations.append(('bush', px, 2100 - 25, 18))
+        # Right edge (to the right of the parking lot)
+        for py in range(2100, 2850, 50):
+            f.garden_decorations.append(('bush', 1200 + 25, py, 18))
+
+        # Main Building perimeters
+        for bx in range(1400, 2600, 60): # Top
+            f.garden_decorations.append(('bush', bx, 1100 - 25, 20))
+        for by in range(1100, 1950, 60): # Sides
+            f.garden_decorations.append(('bush', 1400 - 25, by, 20))
+            f.garden_decorations.append(('bush', 2600 + 25, by, 20))
+
+        # Athletic Coliseum perimeters
+        for cx in range(2800, 3880, 70): # Top
+            f.garden_decorations.append(('bush', cx, 150 - 30, 22))
+        for cy in range(150, 1050, 70): # Sides
+            f.garden_decorations.append(('bush', 2800 - 30, cy, 22))
+            f.garden_decorations.append(('bush', 3880 + 30, cy, 22))
+
+        # Ping Pong Court perimeters
+        for tx in range(3100, 3880, 60): # Top
+            f.garden_decorations.append(('bush', tx, 2100 - 25, 20))
+        for ty in range(2100, 2750, 60): # Sides
+            f.garden_decorations.append(('bush', 3100 - 25, ty, 20))
+            f.garden_decorations.append(('bush', 3880 + 25, ty, 20))
+
         # Portal: building entrance → 1F reception
         f.transitions.append(FloorTransition(
-            (bdx, by + bh - WT - 40, DW, 30),
+            (bdx, by + bh - 30, bdoor_w, 60),
             FLOOR_1F, 1600, 2200,
             label="Enter"))
+
+        # Portal: Coliseum entrance → Coliseum Interior
+        f.transitions.append(FloorTransition(
+            (col_gate_x, cy + ch - 30, col_gate_w, 60),
+            self.FLOOR_COLISEUM_INTERIOR, 900, 1100,
+            label="Enter Arena"))
+
+        # Portal: Ping Pong entrance → Ping Pong Interior
+        f.transitions.append(FloorTransition(
+            (tennis_door_x, ty + th - 30, tennis_door_w, 60),
+            self.FLOOR_PINGPONG_INTERIOR, 800, 1000,
+            label="Enter Court"))
+
+        # Building visual specifications
+        f.building_specs = {
+            "Main Building": {
+                "facade_rect": pygame.Rect(bx, by, bw, bh),
+                "facade_color": (145, 164, 188),
+                "trim_color": (110, 125, 145),
+                "window_color": (30, 45, 60),
+                "window_rows": 3,
+                "window_cols": 12,
+                "entry": "double_door"
+            },
+            "Athletic Coliseum": {
+                "facade_rect": pygame.Rect(cx, cy, cw, ch),
+                "facade_color": (155, 145, 135),
+                "trim_color": (115, 105, 95),
+                "window_color": (40, 35, 30),
+                "window_rows": 2,
+                "window_cols": 8,
+                "entry": "gate"
+            },
+            "Ping Pong Court": {
+                "facade_rect": pygame.Rect(tx, ty, tw, th),
+                "facade_color": (135, 155, 145),
+                "trim_color": (95, 115, 105),
+                "window_color": (35, 45, 40),
+                "window_rows": 2,
+                "window_cols": 6,
+                "entry": "door"
+            }
+        }
 
         return f
 
@@ -1036,4 +1534,85 @@ class SchoolMap:
         f.walls.append(_vw(1900 - WT, 100, 350))
         f.add_door(Door("rt_antenna_door", 1500, 235, WT, DW, is_vertical=True, color=(100, 100, 120)))
 
+        return f
+
+    def _build_coliseum_interior(self):
+        f = Floor(self.FLOOR_COLISEUM_INTERIOR, "Athletic Coliseum Interior", 1800, 1300, (44, 40, 36))
+
+        f.add_room(Room("ci_hall", "Coliseum Hall",
+                        "Indoor arena corridors and access points",
+                        0, 0, 1800, 1300, (62, 56, 50)))
+        f.add_room(Room("ci_court", "Arena Court",
+                        "Main indoor basketball arena",
+                        220, 180, 1360, 850, (176, 110, 66)))
+
+        f.walls.extend([
+            _hw(0, 0, 1800), _hw(0, 1300 - WT, 1800),
+            _vw(0, 0, 1300), _vw(1800 - WT, 0, 1300),
+        ])
+
+        # Court enclosure with a center gate at the bottom, top corridor gap, and side corridors.
+        gate_w = 3 * DW
+        gate_x = 220 + (1360 - gate_w) // 2
+        f.walls.extend(_hwall_gaps(180, 220, 220 + 1360, [(gate_x, gate_w)]))
+        # Left wall with gap for corridor
+        f.walls.extend(_vwall_gaps(220, 180, 180 + 850, [(180 + 350, 150)]))
+        # Right wall with gap for corridor
+        f.walls.extend(_vwall_gaps(220 + 1360 - WT, 180, 180 + 850, [(180 + 350, 150)]))
+        f.walls.extend(_hwall_gaps(180 + 850 - WT, 220, 220 + 1360, [(gate_x, gate_w)]))
+        
+        # Entrance Hallway walls (purple wall requested by user)
+        f.walls.append(_vw(gate_x - WT, 180 + 850, 1300 - (180 + 850)))
+        f.walls.append(_vw(gate_x + gate_w, 180 + 850, 1300 - (180 + 850)))
+        # Block the rest of the bottom area except the hallway
+        f.walls.append(pygame.Rect(0, 180 + 850, gate_x - WT, 1300 - (180 + 850)))
+        f.walls.append(pygame.Rect(gate_x + gate_w + WT, 180 + 850, 1800 - (gate_x + gate_w + WT), 1300 - (180 + 850)))
+
+        # Indoor court lines.
+        f.basketball_court = pygame.Rect(220 + WT, 180 + WT, 1360 - 2 * WT, 850 - 2 * WT)
+
+        # Exit back to campus at the very bottom of the hallway (purple cross requested by user).
+        f.transitions.append(FloorTransition(
+            (gate_x, 1300 - 40, gate_w, 40),
+            FLOOR_CAMPUS, 3340, 1130,
+            label="Campus"))
+        return f
+
+    def _build_pingpong_interior(self):
+        f = Floor(self.FLOOR_PINGPONG_INTERIOR, "Ping Pong Court Interior", 1300, 1000, (40, 52, 44))
+
+        f.add_room(Room("pi_hall", "Ping Pong Hall",
+                        "Indoor practice court",
+                        0, 0, 1300, 1000, (58, 72, 62)))
+
+        f.walls.extend([
+            _hw(0, 0, 1300), _hw(0, 1000 - WT, 1300),
+            _vw(0, 0, 1000), _vw(1300 - WT, 0, 1000),
+        ])
+
+        # Centered bottom door.
+        door_w = 2 * DW
+        door_x = (1300 - door_w) // 2
+        f.walls.extend(_hwall_gaps(1000 - WT, 0, 1300, [(door_x, door_w)]))
+
+        # Tables in a 2x2 grid.
+        t_w, t_h = 220, 120
+        table_pos = [
+            (300, 250), (780, 250),
+            (300, 550), (780, 550)
+        ]
+        f.ping_pong_tables = []
+        for i, (tx, ty) in enumerate(table_pos):
+            t_rect = pygame.Rect(tx, ty, t_w, t_h)
+            f.walls.append(t_rect)
+            f.furniture.append({"rect": t_rect, "color": (30, 100, 40), "outline": WHITE})
+            f.ping_pong_tables.append(t_rect)
+        
+        # Set the main interactive table for minigame logic if needed
+        f.ping_pong_table = f.ping_pong_tables[0]
+
+        f.transitions.append(FloorTransition(
+            (door_x, 1000 - WT - 34, door_w, 30),
+            FLOOR_CAMPUS, 3490, 2880,
+            label="Campus"))
         return f

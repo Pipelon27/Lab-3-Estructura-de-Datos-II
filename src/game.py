@@ -47,6 +47,9 @@ from src.world_map  import WorldMap
 from src.pingpong   import PingPongGame
 from src.controller import get_controller, init_controller, update_controller, XBOX_A
 
+FLOOR_COLISEUM_INTERIOR = 5
+FLOOR_PINGPONG_INTERIOR = 6
+
 
 # Pools for dynamically generated classroom NPC names
 CLASS_FIRST_NAMES = [
@@ -199,6 +202,8 @@ class Game:
         self._car_panel_active: bool = False  # "End day?" confirmation panel
         self._car_panel_input_delay: float = 0.0  # delay before accepting input
         self._car_panel_cooldown: float = 0.0     # cooldown before re-triggering
+        self._entry_prompt_target: dict | None = None
+        self._entry_prompt_cooldown: float = 0.0
 
         # ── Car departure cinematic ──
         self._car_departure_active: bool = False
@@ -262,15 +267,15 @@ class Game:
         self.npc_manager.load_npcs_from_json()
         from settings import SocialGroup, NPC_SIZE
         
-        # Position Oscar and observers inside the Ping Pong Courts on the campus floor
+        # Position Oscar and observers inside the Ping Pong interior floor
         oscar = self.npc_manager.get_npc_by_id("npc_oscar")
         if oscar:
-            oscar.current_floor = FLOOR_CAMPUS
+            oscar.current_floor = FLOOR_PINGPONG_INTERIOR
             oscar.ai_enabled = True
-            oscar.bound_rect = pygame.Rect(3100 + 30, 2100 + 30, 780 - 60 - NPC_SIZE, 750 - 60 - NPC_SIZE)
+            oscar.bound_rect = pygame.Rect(40, 40, 1300 - 80 - NPC_SIZE, 1000 - 80 - NPC_SIZE)
             # Place Oscar near the centre of the court
-            oscar.rect.centerx = 3490
-            oscar.rect.centery = 2375
+            oscar.rect.centerx = 650
+            oscar.rect.centery = 430
             # gather observers and arrange them in a circle around Oscar
             obs_ids = [
                 "npc_oscar_obs1",
@@ -283,9 +288,9 @@ class Game:
                 obs = self.npc_manager.get_npc_by_id(oid)
                 if not obs:
                     continue
-                obs.current_floor = FLOOR_CAMPUS
+                obs.current_floor = FLOOR_PINGPONG_INTERIOR
                 obs.ai_enabled = True
-                obs.bound_rect = pygame.Rect(3100 + 30, 2100 + 30, 780 - 60 - NPC_SIZE, 750 - 60 - NPC_SIZE)
+                obs.bound_rect = pygame.Rect(40, 40, 1300 - 80 - NPC_SIZE, 1000 - 80 - NPC_SIZE)
                 obs.name = "Club Member"
                 obs.show_name = True
                 angle = (i / len(obs_ids)) * (2 * math.pi)
@@ -777,8 +782,9 @@ class Game:
         if self.state == GameState.PLAYING:
             self.previous_state = self.state
             self.state = GameState.MAP
-            self.world_map.current_tab = self.current_floor
-            self.world_map._centre_on_floor(self.current_floor)
+            map_floor = self.current_floor if self.current_floor in FLOOR_SIZES else FLOOR_CAMPUS
+            self.world_map.current_tab = map_floor
+            self.world_map._centre_on_floor(map_floor)
             self.world_map._refresh_room_selection(reset_index=True)
         elif self.state == GameState.MAP:
             self.state = self.previous_state
@@ -860,6 +866,8 @@ class Game:
                 npc = self._nearest_npc(NPC_INTERACTION_RANGE)
                 if npc:
                     self._try_interact()
+                elif self._try_building_entry_confirm():
+                    pass
                 else:
                     self.player.start_dash()
 
@@ -1029,6 +1037,7 @@ class Game:
                     self._car_panel_active = False
                     self._car_panel_cooldown = 1.0
                     return
+                self.previous_state = self.state
                 self.state = GameState.PAUSED
             elif self.state in (GameState.INVENTORY_SCREEN,
                                 GameState.SKILL_TREE_SCREEN,
@@ -1087,6 +1096,8 @@ class Game:
             npc = self._nearest_npc(NPC_INTERACTION_RANGE)
             if npc:
                 self._try_interact()
+            elif self._try_building_entry_confirm():
+                pass
             else:
                 self.player.start_dash()
         elif event.key in (KEY_DASH_ALT, KEY_DASH_ALT2):
@@ -1211,9 +1222,63 @@ class Game:
                 self.state = GameState.DIALOGUE
                 self.mission_manager.advance_objective_event("talk_to", npc.id)
 
+    def _get_campus_entry_target(self):
+        if self.current_floor != FLOOR_CAMPUS:
+            return None
+        if self._entry_prompt_cooldown > 0:
+            return None
+        px, py = self.player.rect.centerx, self.player.rect.centery
+        entrances = [
+            {
+                "id": "main_building",
+                "label": "Main Building",
+                "zone": pygame.Rect(1880, 1960, 240, 110),
+                "target_floor": FLOOR_1F,
+                "spawn": (1600, 2200),
+            },
+            {
+                "id": "athletic_coliseum",
+                "label": "Athletic Coliseum",
+                "zone": pygame.Rect(3190, 1060, 300, 90),
+                "target_floor": FLOOR_COLISEUM_INTERIOR,
+                "spawn": (900, 980),
+            },
+            {
+                "id": "ping_pong_court",
+                "label": "Ping Pong Court",
+                "zone": pygame.Rect(3340, 2810, 300, 90),
+                "target_floor": FLOOR_PINGPONG_INTERIOR,
+                "spawn": (650, 760),
+            },
+        ]
+        for entry in entrances:
+            if entry["zone"].collidepoint(px, py):
+                return entry
+        return None
+
+    def _update_entry_prompt_target(self):
+        if self._entry_prompt_cooldown > 0:
+            self._entry_prompt_target = None
+            return
+        self._entry_prompt_target = self._get_campus_entry_target()
+
+    def _try_building_entry_confirm(self) -> bool:
+        target = self._entry_prompt_target
+        if not target:
+            return False
+        sx, sy = target["spawn"]
+        self._go_to_floor(target["target_floor"], sx, sy)
+        self._transition_cooldown = 0.5
+        self._entry_prompt_cooldown = 0.6
+        self._entry_prompt_target = None
+        return True
+
     def _check_floor_transition(self):
         """Portal-type transitions (legacy — kept for future use)."""
         if self._transition_cooldown > 0:
+            return
+        # Campus building entries are now manual with confirmation prompt.
+        if self.current_floor == FLOOR_CAMPUS:
             return
         floor = self.school_map.get_floor(self.current_floor)
         if not floor:
@@ -1323,6 +1388,13 @@ class Game:
             return False
 
         room = floor.get_room_at(tx, ty)
+        if floor_id == FLOOR_CAMPUS and room:
+            if room.id == "c_tennis":
+                self._go_to_floor(FLOOR_PINGPONG_INTERIOR, 650, 760)
+                return True
+            if room.id == "c_coliseum":
+                self._go_to_floor(FLOOR_COLISEUM_INTERIOR, 900, 980)
+                return True
         if room:
             allowed_bath, msg_bath = self._is_bathroom_access_allowed(room.id, self.player.character)
             if not allowed_bath:
@@ -1568,6 +1640,8 @@ class Game:
         # Transition cooldown
         if self._transition_cooldown > 0:
             self._transition_cooldown -= dt
+        if self._entry_prompt_cooldown > 0:
+            self._entry_prompt_cooldown -= dt
 
         # Movement
         keys  = pygame.key.get_pressed()
@@ -1666,6 +1740,7 @@ class Game:
 
         # Portal-type transitions (campus entrance)
         self._check_floor_transition()
+        self._update_entry_prompt_target()
 
         # Car interaction (campus parking lot)
         if self._car_panel_cooldown > 0:
@@ -1709,10 +1784,12 @@ class Game:
             "f2_art_room", "f2_music_room", "f2_conference", "f2_classrooms",
             "f1_stairs_2f", "f1_basement_stairs", "f2_stairs_1f", "f2_stairs_rooftop", "bs_stairs_1f"
         ]
+        if self.current_floor == FLOOR_CAMPUS:
+            restricted += ["c_building", "c_tennis", "c_coliseum", "c_b_hall", "c_b_lab", "c_b_lib"]
         
         self.npc_manager.update_on_floor(
             current_dt, self.current_floor, floor, npc_walls,
-            classrooms_restricted=is_class_session,
+            classrooms_restricted=(is_class_session or self.current_floor == FLOOR_CAMPUS),
             restricted_rooms=restricted
         )
 
@@ -2380,7 +2457,6 @@ class Game:
                 self.ui.phone_icon_rect,
                 unread=self.phone.get_unread_messages_count(),
             )
-
         # Notifications always on top
         self.ui.draw_notifications(self.screen)
 
@@ -2406,12 +2482,37 @@ class Game:
             self._draw_parked_car()
             self._draw_extra_parked_cars()
 
+        if floor and hasattr(floor, 'draw_foreground'):
+            floor.draw_foreground(self.screen, self.camera, self.player)
+
         for npc in self.npc_manager.get_npcs_on_floor(self.current_floor):
             npc.draw(self.screen, self.camera)
 
         # Hide player sprite during drive_away phase (player is "inside" the car)
         if not (self._car_departure_active and self._car_depart_phase == "drive_away"):
             self.player.draw(self.screen, self.camera)
+
+        # ── Draw Top Layer (Trees, etc.) ──
+        if floor and hasattr(floor, 'draw_top_layer'):
+            floor.draw_top_layer(self.screen, self.camera)
+
+    def _draw_entry_prompt(self, building_name: str):
+        panel_w, panel_h = 520, 54
+        panel = pygame.Rect(
+            self.screen.get_width() // 2 - panel_w // 2,
+            self.screen.get_height() - 120,
+            panel_w,
+            panel_h,
+        )
+        pygame.draw.rect(self.screen, (26, 30, 38), panel, border_radius=8)
+        pygame.draw.rect(self.screen, (160, 170, 190), panel, 2, border_radius=8)
+        is_controller = bool(self.controller and self.controller.connected)
+        key_hint = "[A]" if is_controller else "[SPACE]"
+        text = f"Enter {building_name}?  {key_hint} yes  |  move away to cancel"
+        fnt = pygame.font.SysFont("arial", 22, bold=True)
+        surf = fnt.render(text, True, (232, 236, 245))
+        self.screen.blit(surf, (panel.centerx - surf.get_width() // 2,
+                                panel.centery - surf.get_height() // 2))
 
     def _draw_map(self):
         """Render the interactive map viewer."""
@@ -2434,8 +2535,9 @@ class Game:
     def _draw_phone_world_map_layer(self):
         """WorldMap fullscreen while keeping PLAYING state (opened from phone app)."""
         if self.phone.consume_embedded_map_initial_sync():
-            self.world_map.current_tab = self.current_floor
-            self.world_map._centre_on_floor(self.current_floor)
+            map_floor = self.current_floor if self.current_floor in FLOOR_SIZES else FLOOR_CAMPUS
+            self.world_map.current_tab = map_floor
+            self.world_map._centre_on_floor(map_floor)
             self.world_map._refresh_room_selection(reset_index=True)
         self.world_map.set_player_pos(
             self.current_floor,
@@ -2674,12 +2776,16 @@ class Game:
 
     def _draw_cinematic(self):
         """Render the intro cinematic overlay."""
-        if self._player_spawned:
-            self._draw_world()
-        else:
-            # Dark campus background
-            self.screen.fill((25, 35, 25))
-            # Draw entrance area label
+        if not self._player_spawned:
+            self.camera.offset.x = max(0, min(2000 - SCREEN_WIDTH // 2, self.camera.map_width - SCREEN_WIDTH))
+            self.camera.offset.y = max(0, min(2900 - SCREEN_HEIGHT // 2, self.camera.map_height - SCREEN_HEIGHT))
+
+        self._draw_world()
+
+        if not self._player_spawned:
+            dim = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+            dim.fill((0, 0, 0, 100))
+            self.screen.blit(dim, (0, 0))
             font_sm = pygame.font.SysFont("Arial", 20)
             lbl = font_sm.render("Ravenside High — Entrance", True, (180, 180, 180))
             self.screen.blit(lbl, lbl.get_rect(center=(SCREEN_WIDTH // 2, 40)))
