@@ -1183,7 +1183,8 @@ class SchoolMap:
                         16, 510, 1034, 370, (55, 55, 60)))
         f.add_room(Room("f1_auditorium", "Auditorium",
                         "Large hall for assemblies",
-                        16, 880, 1034, by - 880, (52, 48, 55)))
+                        16, 880, 1034, by - 880, (52, 48, 55),
+                        tile_path="data/tiles/piso_auditorium.png"))
         f.add_room(Room("f1_basement_stairs", "Basement Stairs",
                         "Staircase down to the Basement",
                         bx, by, bw, bh, (40, 38, 42),
@@ -1217,7 +1218,8 @@ class SchoolMap:
         f.add_room(Room("f1_counselor", "Counselor's Office",
                         "Safe space — the counselor is on your side",
                         2150, 1100, 1034, sy - 1100, (55, 55, 52),
-                        mission_tag="Ally"))
+                        mission_tag="Ally",
+                        tile_path="data/tiles/piso_counselor.png"))
         f.add_room(Room("f1_stairs_2f", "Stairs to 2F",
                         "Staircase up to the 2nd Floor",
                         sx, sy, sw, sh, (52, 55, 62),
@@ -1382,7 +1384,8 @@ class SchoolMap:
                         2150, 516, 1034, 434, (55, 52, 48)))
         f.add_room(Room("f2_admin", "Admin Offices",
                         "Administrative staff desks",
-                        2150, 950, 1034, sy - 950, (52, 52, 55)))
+                        2150, 950, 1034, sy - 950, (52, 52, 55),
+                        tile_path="data/tiles/piso_admin.png"))
         f.add_room(Room("f2_stairs_1f", "Stairs to 1F",
                         "Staircase down to the 1st Floor",
                         sx, sy, sw, sh, (52, 55, 62),
