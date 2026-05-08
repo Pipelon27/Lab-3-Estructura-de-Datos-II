@@ -28,6 +28,14 @@ class Camera:
         self.map_width  = map_width
         self.map_height = map_height
         self.lerp_speed = lerp_speed
+        self.zoom       = 1.0
+        self.view_w     = SCREEN_WIDTH
+        self.view_h     = SCREEN_HEIGHT
+
+    def set_zoom(self, zoom: float):
+        self.zoom = zoom
+        self.view_w = int(SCREEN_WIDTH / zoom)
+        self.view_h = int(SCREEN_HEIGHT / zoom)
 
     # ── public API ────────────────────────────────────────────
 
@@ -42,17 +50,17 @@ class Camera:
         Uses linear interpolation for smooth following and clamps
         to map boundaries so the camera never shows out-of-bounds.
         """
-        # Desired offset centres the target on screen
-        goal_x = target.rect.centerx - SCREEN_WIDTH  // 2
-        goal_y = target.rect.centery - SCREEN_HEIGHT // 2
+        # Desired offset centres the target on screen (considering zoom)
+        goal_x = target.rect.centerx - self.view_w // 2
+        goal_y = target.rect.centery - self.view_h // 2
 
         # Lerp towards goal
         self.offset.x += (goal_x - self.offset.x) * self.lerp_speed
         self.offset.y += (goal_y - self.offset.y) * self.lerp_speed
 
         # Clamp so we never scroll past map edges
-        self.offset.x = max(0, min(self.offset.x, self.map_width  - SCREEN_WIDTH))
-        self.offset.y = max(0, min(self.offset.y, self.map_height - SCREEN_HEIGHT))
+        self.offset.x = max(0, min(self.offset.x, self.map_width  - self.view_w))
+        self.offset.y = max(0, min(self.offset.y, self.map_height - self.view_h))
 
     def apply(self, entity) -> pygame.Rect:
         """Return a copy of *entity.rect* shifted by the camera offset.

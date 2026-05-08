@@ -8,6 +8,7 @@ concrete subclasses with character-specific abilities and skill trees.
 
 from __future__ import annotations
 
+import os
 import pygame
 from settings import (
     PLAYER_SIZE, PLAYER_SPEED, PLAYER_SPRINT_SPEED,
@@ -100,6 +101,16 @@ class Player:
         self.crowd_chance       = 0
         self.respect_aura       = 0
 
+        # Animation
+        self.animations = {
+            "idle_up": [], "idle_down": [], "idle_left": [], "idle_right": [],
+            "walk_up": [], "walk_down": [], "walk_left": [], "walk_right": [],
+        }
+        self.state = "idle"
+        self.frame_index = 0
+        self.animation_timer = 0.0
+        self.image: pygame.Surface | None = None
+
         # Skill tree (set by subclass)
         self.skill_tree: SkillTree | None = None
 
@@ -142,6 +153,27 @@ class Player:
         self._collide(walls, dx, 0)
         self.rect.y += int(dy * spd)
         self._collide(walls, 0, dy)
+
+        # Update animation state
+        if dx == 0 and dy == 0:
+            self.state = "idle"
+        else:
+            self.state = "walk"
+
+        # Update animation frame
+        anim_key = f"{self.state}_{self.direction.value}"
+        frames = self.animations.get(anim_key, [])
+        if frames:
+            # Animation speed: 12.0 frames/sec for walking, 6.0 frames/sec for idle
+            anim_speed = 12.0 if self.state == "walk" else 6.0
+            if sprinting:
+                anim_speed *= 1.5
+            
+            self.animation_timer += dt * anim_speed
+            if self.animation_timer >= len(frames):
+                self.animation_timer = 0.0
+            self.frame_index = int(self.animation_timer) % len(frames)
+            self.image = frames[self.frame_index]
 
         # Stamina regen
         if not sprinting:
@@ -227,10 +259,9 @@ class Player:
     # ── rendering (placeholder) ───────────────────────────────
 
     def draw(self, screen: pygame.Surface, camera):
-        """Draw the player as a coloured rectangle with a direction arrow."""
+        """Draw the player (sprite or fallback rectangle)."""
         # Draw dash trail
         for r, t in self._dash_trail:
-            # Clamp alpha to [0, 255] to avoid ValueError
             alpha = max(0, min(255, int(255 * (t / 15.0) * 0.4)))
             trail_surf = pygame.Surface(r.size, pygame.SRCALPHA)
             trail_surf.fill((*self.color[:3], alpha))
@@ -238,28 +269,36 @@ class Player:
 
         draw_rect = camera.apply(self)
 
-        # Body
-        pygame.draw.rect(screen, self.color, draw_rect, border_radius=6)
-        pygame.draw.rect(screen, self.outline, draw_rect, 2, border_radius=6)
-
-        # Direction indicator (small triangle)
-        cx, cy = draw_rect.center
-        sz = 6
-        if self.direction == Direction.UP:
-            pts = [(cx, cy - sz - 4), (cx - sz, cy - 2), (cx + sz, cy - 2)]
-        elif self.direction == Direction.DOWN:
-            pts = [(cx, cy + sz + 4), (cx - sz, cy + 2), (cx + sz, cy + 2)]
-        elif self.direction == Direction.LEFT:
-            pts = [(cx - sz - 4, cy), (cx - 2, cy - sz), (cx - 2, cy + sz)]
+        if self.image:
+            # Align bottom-center of the sprite with bottom-center of the hitbox
+            sprite_rect = self.image.get_rect(midbottom=draw_rect.midbottom)
+            screen.blit(self.image, sprite_rect)
+            
+            # Optional debug hitbox (can be removed later)
+            # pygame.draw.rect(screen, (255, 0, 0), draw_rect, 1)
         else:
-            pts = [(cx + sz + 4, cy), (cx + 2, cy - sz), (cx + 2, cy + sz)]
-        pygame.draw.polygon(screen, WHITE, pts)
+            # Fallback Body
+            pygame.draw.rect(screen, self.color, draw_rect, border_radius=6)
+            pygame.draw.rect(screen, self.outline, draw_rect, 2, border_radius=6)
+
+            # Direction indicator (small triangle)
+            cx, cy = draw_rect.center
+            sz = 6
+            if self.direction == Direction.UP:
+                pts = [(cx, cy - sz - 4), (cx - sz, cy - 2), (cx + sz, cy - 2)]
+            elif self.direction == Direction.DOWN:
+                pts = [(cx, cy + sz + 4), (cx - sz, cy + 2), (cx + sz, cy + 2)]
+            elif self.direction == Direction.LEFT:
+                pts = [(cx - sz - 4, cy), (cx - 2, cy - sz), (cx - 2, cy + sz)]
+            else:
+                pts = [(cx + sz + 4, cy), (cx + 2, cy - sz), (cx + 2, cy + sz)]
+            pygame.draw.polygon(screen, WHITE, pts)
 
         # Name tag
         font = pygame.font.SysFont("arial", 14)
         name_surf = font.render(self.character.value.title(), True, WHITE)
         screen.blit(name_surf,
-                    name_surf.get_rect(center=(cx, draw_rect.top - 10)))
+                    name_surf.get_rect(center=(draw_rect.centerx, draw_rect.top - 10)))
 
     # ── serialisation (for network) ───────────────────────────
 
@@ -294,6 +333,37 @@ class Aiden(Player):
         self.attack_damage = 12          # slightly higher base
         self.sprint_speed  = PLAYER_SPRINT_SPEED + 1
         self.skill_tree    = build_aiden_tree()
+        self._load_sprites()
+
+    def _load_sprites(self):
+        """Extract idle and walk frames from the spritesheet."""
+        base_dir = os.path.dirname(os.path.dirname(__file__))
+        path = os.path.join(base_dir, "assets", "Characters BEHIND THE SMILE", "PROTAGONISTS", "Aiden Parker.png")
+        if not os.path.exists(path):
+            print(f"Warning: Aiden spritesheet not found at {path}")
+            return
+
+        sheet = pygame.image.load(path).convert_alpha()
+        frame_w, frame_h = 32, 64
+
+        def get_frame(col, row):
+            rect = pygame.Rect(col * frame_w, row * frame_h, frame_w, frame_h)
+            return sheet.subsurface(rect).copy()
+
+        # Row 1 (Fila 2) (Idle): Right (0-5), Up (6-11), Left (12-17), Down (18-23)
+        self.animations["idle_right"] = [get_frame(c, 1) for c in range(0, 6)]
+        self.animations["idle_up"]    = [get_frame(c, 1) for c in range(6, 12)]
+        self.animations["idle_left"]  = [get_frame(c, 1) for c in range(12, 18)]
+        self.animations["idle_down"]  = [get_frame(c, 1) for c in range(18, 24)]
+
+        # Row 2 (Fila 3) (Walk/Run): Right (0-5), Up (6-11), Left (12-17), Down (18-23)
+        self.animations["walk_right"] = [get_frame(c, 2) for c in range(0, 6)]
+        self.animations["walk_up"]    = [get_frame(c, 2) for c in range(6, 12)]
+        self.animations["walk_left"]  = [get_frame(c, 2) for c in range(12, 18)]
+        self.animations["walk_down"]  = [get_frame(c, 2) for c in range(18, 24)]
+
+        # Set default image
+        self.image = self.animations["idle_down"][0]
 
 
 # ══════════════════════════════════════════════════════════════

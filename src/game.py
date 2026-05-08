@@ -2473,28 +2473,52 @@ class Game:
 
     def _draw_world(self):
         """Render floor, NPCs, player."""
+        # Smooth camera zoom
+        target_zoom = 1.0 if self.current_floor == FLOOR_CAMPUS else 1.5
+        current_zoom = getattr(self.camera, 'zoom', 1.0)
+        if abs(current_zoom - target_zoom) > 0.01:
+            new_zoom = current_zoom + (target_zoom - current_zoom) * 0.05
+        else:
+            new_zoom = target_zoom
+            
+        self.camera.set_zoom(new_zoom)
+        
+        if self.camera.zoom != 1.0:
+            view_w, view_h = self.camera.view_w, self.camera.view_h
+            if not hasattr(self, '_zoom_surface') or self._zoom_surface.get_size() != (view_w, view_h):
+                self._zoom_surface = pygame.Surface((view_w, view_h))
+            target_surf = self._zoom_surface
+            target_surf.fill(BLACK)
+        else:
+            target_surf = self.screen
+
         floor = self.school_map.get_floor(self.current_floor)
         if floor:
-            floor.draw(self.screen, self.camera)
+            floor.draw(target_surf, self.camera)
 
         # Draw parked car on campus
         if self.current_floor == FLOOR_CAMPUS:
-            self._draw_parked_car()
-            self._draw_extra_parked_cars()
+            self._draw_parked_car(target_surf)
+            self._draw_extra_parked_cars(target_surf)
 
         if floor and hasattr(floor, 'draw_foreground'):
-            floor.draw_foreground(self.screen, self.camera, self.player)
+            floor.draw_foreground(target_surf, self.camera, self.player)
 
         for npc in self.npc_manager.get_npcs_on_floor(self.current_floor):
-            npc.draw(self.screen, self.camera)
+            npc.draw(target_surf, self.camera)
 
         # Hide player sprite during drive_away phase (player is "inside" the car)
         if not (self._car_departure_active and self._car_depart_phase == "drive_away"):
-            self.player.draw(self.screen, self.camera)
+            self.player.draw(target_surf, self.camera)
 
         # ── Draw Top Layer (Trees, etc.) ──
         if floor and hasattr(floor, 'draw_top_layer'):
-            floor.draw_top_layer(self.screen, self.camera)
+            floor.draw_top_layer(target_surf, self.camera)
+            
+        if self.camera.zoom != 1.0:
+            # Scale up to screen size and blit
+            scaled = pygame.transform.scale(target_surf, (SCREEN_WIDTH, SCREEN_HEIGHT))
+            self.screen.blit(scaled, (0, 0))
 
     def _draw_entry_prompt(self, building_name: str):
         panel_w, panel_h = 520, 54
@@ -3080,7 +3104,8 @@ class Game:
         pygame.draw.rect(surf, (20, 20, 20), (0, 60, w, 6))
         return surf
 
-    def _draw_parked_car(self):
+    def _draw_parked_car(self, surface=None):
+        surface = surface or self.screen
         """Draw the parked car in the campus parking lot (facing left)."""
         car_surf = self._build_car_surface()
         # Flip horizontally so the car faces left
@@ -3089,10 +3114,10 @@ class Game:
         if self._car_departure_active and self._car_depart_phase == "drive_away":
             sx, sy = self.camera.apply_pos(self._car_depart_wx, self._car_depart_wy)
             rect = car_surf.get_rect(center=(sx, sy))
-            self.screen.blit(car_surf, rect)
+            surface.blit(car_surf, rect)
         else:
             cr = self.camera.apply_rect(self._parked_car_rect)
-            self.screen.blit(car_surf, (cr.x, cr.y - 10))
+            surface.blit(car_surf, (cr.x, cr.y - 10))
 
     def _build_regular_car_surface(self, color: tuple) -> pygame.Surface:
         """Create a regular car sprite surface (200x90)."""
@@ -3117,7 +3142,8 @@ class Game:
         pygame.draw.rect(surf, (220, 40, 40), (0, 55, 6, 12), border_radius=2)
         return surf
 
-    def _draw_extra_parked_cars(self):
+    def _draw_extra_parked_cars(self, surface=None):
+        surface = surface or self.screen
         """Draw additional cars parked in the lot."""
         if self.current_floor != 0:
             return
@@ -3128,7 +3154,7 @@ class Game:
             elif angle != 0:
                 car_surf = pygame.transform.rotate(car_surf, angle)
             cr = self.camera.apply_rect(rect)
-            self.screen.blit(car_surf, (cr.x, cr.y - 10))
+            surface.blit(car_surf, (cr.x, cr.y - 10))
 
     def _draw_car_panel(self):
         """Draw the 'End the day?' confirmation panel overlay."""
