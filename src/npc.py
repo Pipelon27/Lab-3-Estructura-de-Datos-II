@@ -318,18 +318,33 @@ class NPC:
             self.rect.clamp_ip(pygame.Rect(30, 30, max_x, max_y))
 
     def _collide(self, walls: list[pygame.Rect], dx: float, dy: float):
-        """Push the NPC out of any wall it overlaps, based on movement direction."""
-        for wall in walls:
-            if self.rect.colliderect(wall):
-                if dx > 0:
-                    self.rect.right = wall.left
-                elif dx < 0:
-                    self.rect.left = wall.right
-                
-                if dy > 0:
-                    self.rect.bottom = wall.top
-                elif dy < 0:
-                    self.rect.top = wall.bottom
+        """Slide the NPC along walls instead of teleporting - prevents jitter."""
+        # Separate axis handling for smoother sliding
+        # First, handle X collisions
+        if dx != 0:
+            for wall in walls:
+                if self.rect.colliderect(wall):
+                    if dx > 0:  # moving right
+                        overlap = self.rect.right - wall.left
+                        if overlap > 0 and overlap < self.rect.width:
+                            self.rect.right = wall.left
+                    elif dx < 0:  # moving left
+                        overlap = wall.right - self.rect.left
+                        if overlap > 0 and overlap < self.rect.width:
+                            self.rect.left = wall.right
+        
+        # Then, handle Y collisions
+        if dy != 0:
+            for wall in walls:
+                if self.rect.colliderect(wall):
+                    if dy > 0:  # moving down
+                        overlap = self.rect.bottom - wall.top
+                        if overlap > 0 and overlap < self.rect.height:
+                            self.rect.bottom = wall.top
+                    elif dy < 0:  # moving up
+                        overlap = wall.bottom - self.rect.top
+                        if overlap > 0 and overlap < self.rect.height:
+                            self.rect.top = wall.bottom
 
     # ── drawing ───────────────────────────────────────────────
 

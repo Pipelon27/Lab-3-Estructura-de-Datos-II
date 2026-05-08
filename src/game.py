@@ -381,13 +381,10 @@ class Game:
             # Place Gordon at the bottom-right corner of the cafeteria
             gordon.rect.x = caf.rect.right  - NPC_SIZE - 40
             gordon.rect.y = caf.rect.bottom - NPC_SIZE - 40
-            gordon.bound_rect = pygame.Rect(
-                caf.rect.right  - NPC_SIZE - 80,
-                caf.rect.bottom - NPC_SIZE - 80,
-                60, 60,
-            )
+            # Gordon walks around the entire cafeteria area (not just a small corner)
+            gordon.bound_rect = caf.rect.inflate(-60, -60)
             gordon.ignore_schedule = True  # He belongs in the kitchen
-            gordon.ai_enabled = False
+            gordon.ai_enabled = True  # Enable AI so he can walk around
             self.npc_manager.npcs[gordon.id] = gordon
             self.npc_manager.relationships.add_node(gordon.id)
 
@@ -2177,6 +2174,7 @@ class Game:
         if not floor1: return
         npcs = self.npc_manager.get_npcs_on_floor(FLOOR_1F)
         caf_room = floor1.rooms.get("f1_cafeteria")
+        library_room = floor1.rooms.get("f1_library")
         if not caf_room: return
 
         # Cafeteria layout: tables at y=720..1020. Door at (2210, 780).
@@ -2187,14 +2185,33 @@ class Game:
         for npc in npcs:
             if npc.id.startswith("npc_rnd_") and not getattr(npc, "ignore_schedule", False):
                 seat = self._get_cafeteria_seat()
-                # Route: main hall → door → below tables corridor → seat
-                npc.target_pos = (1600, 800 + random.randint(-50, 50))
-                npc.target_queue = [
-                    (2210, 780 + random.randint(-15, 15)),         # through door
-                    (2210 + random.randint(20, 60), below_tables_y),  # go below tables
-                    (seat[0], below_tables_y),                     # align x with seat
-                    seat,                                          # final seat
-                ]
+                
+                # Check if NPC is in library - if so, route through main hall
+                in_library = library_room and library_room.rect.collidepoint(npc.rect.centerx, npc.rect.centery)
+                
+                if in_library:
+                    # Route: Library → Library Door (x=2150, y=420 center) → Main Hall → Cafeteria door → seat
+                    # Library door is at x=2150, y=300 to y=540 (3*DW wide, centered at y=420)
+                    door_y = 420 + random.randint(-30, 30)  # Center of library door gap
+                    npc.target_pos = (2180, door_y)  # Inside library, near the door
+                    npc.target_queue = [
+                        (2140, door_y),                                # At library door (inside)
+                        (2100, door_y),                                # Exit to Main Hall corridor
+                        (2100, 780 + random.randint(-15, 15)),         # Go down to cafeteria door level
+                        (2210, 780 + random.randint(-15, 15)),         # Through cafeteria door
+                        (2210 + random.randint(20, 60), below_tables_y),  # go below tables
+                        (seat[0], below_tables_y),                     # align x with seat
+                        seat,                                          # final seat
+                    ]
+                else:
+                    # Default route: main hall → door → below tables corridor → seat
+                    npc.target_pos = (1600, 800 + random.randint(-50, 50))
+                    npc.target_queue = [
+                        (2210, 780 + random.randint(-15, 15)),         # through door
+                        (2210 + random.randint(20, 60), below_tables_y),  # go below tables
+                        (seat[0], below_tables_y),                     # align x with seat
+                        seat,                                          # final seat
+                    ]
                 npc.start_delay = count * 0.6
                 npc.stop_at_target = True
                 npc.ai_enabled = True
@@ -2207,11 +2224,11 @@ class Game:
         """Build a collision-free waypoint list from an NPC's seat to the door.
 
         Tables span x 2300-2430, 2560-2690, 2860-2990  /  y 720-1020.
-        Strategy: move to the nearest clear lane first, then go below
-        all tables, then slide left and exit through the door.
+        Strategy: move to the nearest clear lane first, then go ABOVE
+        all tables (exit via top), then slide left and exit through the door.
         """
         nx, ny = npc.rect.centerx, npc.rect.centery
-        BELOW_Y = 1062
+        ABOVE_Y = 680  # Above all tables (tables start at y=720)
         DOOR_X  = 2200
         DOOR_Y  = 780 + random.randint(-15, 15)
 
@@ -2225,9 +2242,9 @@ class Game:
         if 700 < ny < 1040 and abs(lane_x - nx) > 25:
             wps.append((lane_x, ny))           # sidestep to gap
 
-        wps.append((lane_x, BELOW_Y))          # down through gap
-        wps.append((DOOR_X, BELOW_Y))          # slide left below tables
-        wps.append((DOOR_X, DOOR_Y))           # up to door height
+        wps.append((lane_x, ABOVE_Y))          # up through gap (exit via top)
+        wps.append((DOOR_X, ABOVE_Y))          # slide left above tables
+        wps.append((DOOR_X, DOOR_Y))           # down to door height
         wps.append((2130, DOOR_Y))             # clear of door wall
         return wps
 
@@ -2664,6 +2681,8 @@ class Game:
                 corridor = floor2.rooms.get("f2_corridor")
                 if corridor:
                     noah.bound_rect = corridor.rect.inflate(-40, -40)
+                    # Place Noah in the corridor away from doors (center-left of corridor)
+                    noah.rect.center = (corridor.rect.centerx - 200, corridor.rect.centery)
         # Ensure player is placed at entrance if still off-screen
         if not self._player_spawned or self.player.rect.x < 0:
             f0 = self.school_map.get_floor(0)
