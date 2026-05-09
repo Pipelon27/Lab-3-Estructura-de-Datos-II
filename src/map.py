@@ -236,6 +236,7 @@ class Floor:
         self.hackable_objects: list[dict]        = []
         self.doors:       list[Door]             = []
         self.furniture:   list[dict]             = []  # {"rect": Rect, "color": tuple, "outline": tuple|None}
+        self.bg_tile_path = None
         self._tile_cache: dict[str, pygame.Surface] = {}  # path -> loaded Surface
 
     def add_room(self, room):
@@ -254,8 +255,35 @@ class Floor:
 
     def draw(self, screen, camera):
         sw, sh = screen.get_width(), screen.get_height()
-        bg = camera.apply_rect(pygame.Rect(0, 0, self.width, self.height))
+        bg_rect = pygame.Rect(0, 0, self.width, self.height)
+        bg = camera.apply_rect(bg_rect)
         pygame.draw.rect(screen, self.bg_color, bg)
+
+        # Draw background tile if set
+        if self.bg_tile_path:
+            if self.bg_tile_path not in self._tile_cache:
+                try:
+                    self._tile_cache[self.bg_tile_path] = pygame.image.load(self.bg_tile_path).convert()
+                except Exception:
+                    self._tile_cache[self.bg_tile_path] = None
+            
+            tile_surf = self._tile_cache.get(self.bg_tile_path)
+            if tile_surf:
+                tw, th = tile_surf.get_size()
+                old_clip = screen.get_clip()
+                screen.set_clip(bg)
+                cam_ox = int(camera.offset.x)
+                cam_oy = int(camera.offset.y)
+                # Tile over the entire floor area
+                wx = 0
+                while wx < self.width:
+                    wy = 0
+                    while wy < self.height:
+                        screen.blit(tile_surf, (wx - cam_ox, wy - cam_oy))
+                        wy += th
+                    wx += tw
+                screen.set_clip(old_clip)
+
         font14 = pygame.font.SysFont("arial", 14)
 
         for room in sorted(self.rooms.values(), key=lambda r: r.is_staircase):
@@ -1443,6 +1471,7 @@ class SchoolMap:
 
     def _build_basement(self):
         f = Floor(3, "Basement", 3200, 2400, FLOOR_BG_COLORS[3])
+        f.bg_tile_path = "data/tiles/piso_basement.png"
 
         bx, by, bw, bh = self.STAIR_1F_BS
 
@@ -1514,6 +1543,7 @@ class SchoolMap:
 
     def _build_rooftop(self):
         f = Floor(4, "Rooftop", 3200, 2400, FLOOR_BG_COLORS[4])
+        f.bg_tile_path = "data/tiles/piso_rooftop.png"
 
         rx, ry, rw, rh = self.STAIR_2F_RT
 
