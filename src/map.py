@@ -241,6 +241,7 @@ class Floor:
         self.hackable_objects: list[dict]        = []
         self.doors:       list[Door]             = []
         self.furniture:   list[dict]             = []  # {"rect": Rect, "color": tuple, "outline": tuple|None}
+        self.bg_tile_path = None
         self._tile_cache: dict[str, pygame.Surface] = {}  # path -> loaded Surface
 
     def add_room(self, room):
@@ -259,8 +260,35 @@ class Floor:
 
     def draw(self, screen, camera):
         sw, sh = screen.get_width(), screen.get_height()
-        bg = camera.apply_rect(pygame.Rect(0, 0, self.width, self.height))
+        bg_rect = pygame.Rect(0, 0, self.width, self.height)
+        bg = camera.apply_rect(bg_rect)
         pygame.draw.rect(screen, self.bg_color, bg)
+
+        # Draw background tile if set
+        if self.bg_tile_path:
+            if self.bg_tile_path not in self._tile_cache:
+                try:
+                    self._tile_cache[self.bg_tile_path] = pygame.image.load(self.bg_tile_path).convert()
+                except Exception:
+                    self._tile_cache[self.bg_tile_path] = None
+            
+            tile_surf = self._tile_cache.get(self.bg_tile_path)
+            if tile_surf:
+                tw, th = tile_surf.get_size()
+                old_clip = screen.get_clip()
+                screen.set_clip(bg)
+                cam_ox = int(camera.offset.x)
+                cam_oy = int(camera.offset.y)
+                # Tile over the entire floor area
+                wx = 0
+                while wx < self.width:
+                    wy = 0
+                    while wy < self.height:
+                        screen.blit(tile_surf, (wx - cam_ox, wy - cam_oy))
+                        wy += th
+                    wx += tw
+                screen.set_clip(old_clip)
+
         font14 = pygame.font.SysFont("arial", 14)
 
         for room in sorted(self.rooms.values(), key=lambda r: r.is_staircase):
@@ -1230,14 +1258,16 @@ class SchoolMap:
         f.add_room(Room("f1_computer_lab", "Computer Lab",
                         "Rows of monitors — Lena's territory",
                         16, 16, 1034, 494, (38, 52, 65),
-                        mission_tag="Lena's base"))
+                        mission_tag="Lena's base",
+                        tile_path="data/tiles/piso_labs.png"))
         f.add_room(Room("f1_infirmary", "Infirmary",
                         "School nurse, bandages, rest beds",
-                        16, 510, 1034, 370, (55, 55, 60)))
+                        16, 510, 1034, 370, (55, 55, 60),
+                        tile_path="data/tiles/piso_blancobaldosa.png"))
         f.add_room(Room("f1_auditorium", "Auditorium",
                         "Large hall for assemblies",
                         16, 880, 1034, by - 880, (52, 48, 55),
-                        tile_path="data/tiles/piso_auditorium.png"))
+                        tile_path="data/tiles/piso_hall.png"))
         f.add_room(Room("f1_basement_stairs", "Basement Stairs",
                         "Staircase down to the Basement",
                         bx, by, bw, bh, (40, 38, 42),
@@ -1247,7 +1277,7 @@ class SchoolMap:
         f.add_room(Room("f1_men_bath", "Man Bathroom",
                         "Men's restroom tucked beside the stairwell",
                         16, by, 1034, 2400 - 16 - by, (36, 52, 70),
-                        tile_path="data/tiles/piso_bañoh.png"))
+                        tile_path="data/tiles/piso_blancobaldosa.png"))
         men_door_rect = (1050 - WT + 17, men_bath_y + 140, WT, DW)
         f.add_door(Door("f1_men_bath_door", *men_door_rect, color=(120, 160, 200)))
 
@@ -1258,12 +1288,14 @@ class SchoolMap:
                         tile_path="data/tiles/piso_hall.png"))
         f.add_room(Room("f1_reception", "Reception",
                         "Front desk — entrance from campus",
-                        1050, 1950, 1100, 434, (48, 48, 55)))
+                        1050, 1950, 1100, 434, (48, 48, 55),
+                        tile_path="data/tiles/piso_recepcion.png"))
 
         # RIGHT wing
         f.add_room(Room("f1_library", "Library",
                         "Quiet study hall hiding old secrets",
-                        2150, 16, 1034, 584, (52, 45, 50)))
+                        2150, 16, 1034, 584, (52, 45, 50),
+                        tile_path="data/tiles/piso_hall.png"))
         f.add_room(Room("f1_cafeteria", "Cafeteria",
                         "Bustling with trays, rumours, and lunch money",
                         2150, 600, 1034, 500, (58, 52, 42),
@@ -1272,7 +1304,7 @@ class SchoolMap:
                         "Safe space — the counselor is on your side",
                         2150, 1100, 1034, sy - 1100, (55, 55, 52),
                         mission_tag="Ally",
-                        tile_path="data/tiles/piso_counselor.png"))
+                        tile_path="data/tiles/piso_hall.png"))
         f.add_room(Room("f1_stairs_2f", "Stairs to 2F",
                         "Staircase up to the 2nd Floor",
                         sx, sy, sw, sh, (52, 55, 62),
@@ -1282,7 +1314,7 @@ class SchoolMap:
         f.add_room(Room("f1_women_bath", "Woman Bathroom",
                         "Women's restroom beside the stairwell",
                         2150, sy, 1034, 2400 - 16 - sy, (58, 48, 68),
-                        tile_path="data/tiles/piso_bañom.png"))
+                        tile_path="data/tiles/piso_blancobaldosa.png"))
         women_door_rect = (2150, women_bath_y + 139, WT, DW)
         f.add_door(Door("f1_women_bath_door", *women_door_rect, color=(200, 140, 200)))
 
@@ -1409,14 +1441,15 @@ class SchoolMap:
         f.add_room(Room("f2_art_room", "Art Room",
                         "Canvases, paint, and creative chaos",
                         16, art_y, 1034, 650, (60, 50, 55),
-                        tile_path=_tile_mad))
+                        tile_path=_tile_hall))
         f.add_room(Room("f2_music_room", "Music Room",
                         "Instruments hung on walls, soundproofed",
                         16, mus_y, 1034, 420, (55, 48, 58),
-                        tile_path=_tile_mad2))
+                        tile_path=_tile_hall))
         f.add_room(Room("f2_science_lab", "Science Labs",
                         "Bunsen burners, chemicals, safety goggles",
-                        16, sci_y, 1034, 584, (42, 55, 60)))
+                        16, sci_y, 1034, 584, (42, 55, 60),
+                        tile_path="data/tiles/piso_labs.png"))
 
         # CENTRAL
         f.add_room(Room("f2_corridor", "2F Corridor",
@@ -1426,7 +1459,7 @@ class SchoolMap:
         f.add_room(Room("f2_classrooms", "Classrooms",
                         "Standard classrooms for lectures",
                         1050, 1950, 1100, 434, (48, 50, 55),
-                        tile_path=_tile_mad3))
+                        tile_path=_tile_hall))
 
         # RIGHT wing
         f.add_room(Room("f2_director", "Director's Office",
@@ -1436,11 +1469,12 @@ class SchoolMap:
                         tile_path=_tile_dir))
         f.add_room(Room("f2_conference", "Conference Room",
                         "Long table, projector — faculty meetings",
-                        2150, 516, 1034, 434, (55, 52, 48)))
+                        2150, 516, 1034, 434, (55, 52, 48),
+                        tile_path="data/tiles/piso_conference.png"))
         f.add_room(Room("f2_admin", "Admin Offices",
                         "Administrative staff desks",
                         2150, 950, 1034, sy - 950, (52, 52, 55),
-                        tile_path="data/tiles/piso_admin.png"))
+                        tile_path=_tile_hall))
         f.add_room(Room("f2_stairs_1f", "Stairs to 1F",
                         "Staircase down to the 1st Floor",
                         sx, sy, sw, sh, (52, 55, 62),
@@ -1492,33 +1526,41 @@ class SchoolMap:
 
     def _build_basement(self):
         f = Floor(3, "Basement", 3200, 2400, FLOOR_BG_COLORS[3])
+        f.bg_tile_path = "data/tiles/piso_basement.png"
 
         bx, by, bw, bh = self.STAIR_1F_BS
 
+        _tile_b = "data/tiles/piso_basement.png"
         f.add_room(Room("b_stairs_up", "Stairs to 1F",
                         "Staircase up to the 1st Floor",
                         bx, by, bw, bh, (40, 40, 48),
-                        is_staircase=True))
+                        is_staircase=True,
+                        tile_path=_tile_b))
         f.add_room(Room("b_smile_club", "Smile Club Room",
                         "Where the Smile Club holds secret meetings",
                         300, 200, 800, 550, (35, 25, 30),
-                        mission_tag="Secret meetings"))
+                        mission_tag="Secret meetings",
+                        tile_path=_tile_b))
         f.add_room(Room("b_server_room", "Server Room",
                         "The Smile Club's main servers hum menacingly",
                         1150, 200, 800, 550, (28, 32, 38),
-                        mission_tag="Main Target"))
+                        mission_tag="Main Target",
+                        tile_path=_tile_b))
         f.add_room(Room("b_surveillance", "Surveillance Center",
                         "Screens showing every hallway in the school",
                         2000, 200, 700, 550, (30, 30, 35),
-                        mission_tag="Security feeds"))
+                        mission_tag="Security feeds",
+                        tile_path=_tile_b))
         f.add_room(Room("b_detention", "Detention Cells",
                         "Holding cells — some NPCs are trapped here",
                         300, 800, 800, 500, (30, 25, 28),
-                        mission_tag="Rescuable NPCs"))
+                        mission_tag="Rescuable NPCs",
+                        tile_path=_tile_b))
         f.add_room(Room("b_terminal", "Final Terminal",
                         "The terminal where you choose the ending",
                         1150, 800, 800, 500, (38, 28, 32),
-                        mission_tag="Choose your ending"))
+                        mission_tag="Choose your ending",
+                        tile_path=_tile_b))
 
         # Outer boundary
         f.walls.extend([
@@ -1556,23 +1598,29 @@ class SchoolMap:
 
     def _build_rooftop(self):
         f = Floor(4, "Rooftop", 3200, 2400, FLOOR_BG_COLORS[4])
+        f.bg_tile_path = "data/tiles/piso_rooftop.png"
 
         rx, ry, rw, rh = self.STAIR_2F_RT
 
+        _tile_rt = "data/tiles/piso_rooftop.png"
         f.add_room(Room("rt_stairs_down", "Stairs to 2F",
                         "Staircase down to the 2nd Floor",
                         rx, ry, rw, rh, (38, 42, 55),
-                        is_staircase=True))
+                        is_staircase=True,
+                        tile_path=_tile_rt))
         f.add_room(Room("rt_terrace", "Rooftop Terrace",
                         "Open sky — secret meetings at night",
                         1200, 500, 1200, 1200, (35, 50, 65),
-                        mission_tag="Night meetings"))
+                        mission_tag="Night meetings",
+                        tile_path=_tile_rt))
         f.add_room(Room("rt_antenna", "Antenna Platform",
                         "Radio antenna and satellite equipment",
-                        1500, 100, 400, 350, (40, 45, 55)))
+                        1500, 100, 400, 350, (40, 45, 55),
+                        tile_path=_tile_rt))
         f.add_room(Room("rt_benches", "Resting Area",
                         "Benches with a view of the campus below",
-                        1300, 1750, 800, 350, (38, 48, 50)))
+                        1300, 1750, 800, 350, (38, 48, 50),
+                        tile_path=_tile_rt))
 
         # Outer boundary
         f.walls.extend([
