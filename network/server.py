@@ -48,6 +48,10 @@ class GameServer:
         if self.room_code:
             self._broadcaster = RoomBroadcaster(self.room_code, tcp_port=self.port)
 
+        # Generate a seed for randomness sync
+        import random
+        self.seed = random.randint(0, 1000000)
+
         # Latest data received from the client (Lena)
         self._remote_data: dict | None = None
 
@@ -101,9 +105,9 @@ class GameServer:
                     self._broadcaster.stop()
                     self._broadcaster = None
 
-                # Send handshake
+                # Send handshake with seed
                 self._client.sendall(
-                    encode_message(MessageType.HANDSHAKE, {"status": "ok"})
+                    encode_message(MessageType.HANDSHAKE, {"status": "ok", "seed": self.seed})
                 )
                 self._recv_loop()
             except socket.timeout:

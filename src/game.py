@@ -104,6 +104,12 @@ class Game:
         self.is_host     = is_host
         self.network     = network_instance
 
+        # Seed randomness for co-op sync
+        if self.multiplayer and self.network and hasattr(self.network, 'seed'):
+            import random
+            random.seed(self.network.seed)
+            print(f"[Game] Seeding randomness with {self.network.seed}")
+
         self.running        = True
         self.state          = GameState.INTRO_CINEMATIC
         self.previous_state = GameState.INTRO_CINEMATIC

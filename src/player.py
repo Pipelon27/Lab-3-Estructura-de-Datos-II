@@ -245,13 +245,29 @@ class Player:
         
         # LERP (Linear Interpolation) for smoother movement
         # 0.4 is a balance between responsiveness and smoothness
-        self.rect.x += (target_x - self.rect.x) * 0.4
-        self.rect.y += (target_y - self.rect.y) * 0.4
+        # Only LERP if we are far enough to avoid integer truncation issues
+        dx = (target_x - self.rect.x)
+        dy = (target_y - self.rect.y)
+        
+        if abs(dx) < 2:
+            self.rect.x = target_x
+        else:
+            self.rect.x += int(dx * 0.4)
+            
+        if abs(dy) < 2:
+            self.rect.y = target_y
+        else:
+            self.rect.y += int(dy * 0.4)
 
-        # Movement detection (ignore very small jitter)
-        # We compare target against current to see if they are actually being moved by the network
-        is_moving = abs(target_x - old_x) > 1.0 or abs(target_y - old_y) > 1.0
-        self.state = "walk" if is_moving else "idle"
+        # Movement detection
+        # We use the state sent from the network if available, otherwise infer it
+        network_state = data.get("state")
+        if network_state:
+            self.state = network_state
+        else:
+            # Fallback movement detection
+            is_moving = abs(target_x - old_x) > 2.0 or abs(target_y - old_y) > 2.0
+            self.state = "walk" if is_moving else "idle"
 
         direction_val = data.get("direction")
         if direction_val is not None:
@@ -358,6 +374,7 @@ class Player:
             "character": self.character.value,
             "x": self.rect.x,  "y": self.rect.y,
             "direction": self.direction.value,
+            "state": self.state,
             "health": self.health, "stamina": self.stamina,
             "xp": self.xp, "level": self.level,
             "dashing": self._dashing,

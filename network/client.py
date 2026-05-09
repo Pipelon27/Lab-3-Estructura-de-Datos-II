@@ -36,6 +36,7 @@ class GameClient:
         self._lock      = threading.Lock()
         self._remote_data: dict | None = None
         self._connected = False
+        self.seed       = 0
 
     # ── lifecycle ─────────────────────────────────────────────
 
@@ -60,7 +61,9 @@ class GameClient:
         # Wait for handshake
         hs = recv_message(self._sock)
         if hs and hs.get("type") == MessageType.HANDSHAKE.value:
-            print(f"[Client] Connected to {self.host}:{self.port}")
+            data = hs.get("data", {})
+            self.seed = data.get("seed", 0)
+            print(f"[Client] Connected to {self.host}:{self.port} (seed: {self.seed})")
         else:
             print("[Client] Warning: no handshake received")
 
