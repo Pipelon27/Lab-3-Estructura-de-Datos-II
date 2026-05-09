@@ -301,7 +301,7 @@ class JoinLobbyMenu:
         self.font_status = pygame.font.SysFont("arial", 24)
 
     def _discover_and_connect(self):
-        ip_port = discover_room(self.input_text, timeout=3.0)
+        ip_port = discover_room(self.input_text, timeout=5.0)
         if ip_port:
             ip, port = ip_port
             try:
