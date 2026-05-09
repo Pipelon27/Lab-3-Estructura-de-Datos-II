@@ -1746,11 +1746,16 @@ class Game:
         if self.current_floor == FLOOR_CAMPUS:
             restricted += ["c_building", "c_tennis", "c_coliseum", "c_b_hall", "c_b_lab", "c_b_lib"]
         
-        self.npc_manager.update_on_floor(
-            current_dt, self.current_floor, floor, npc_walls,
-            classrooms_restricted=(is_class_session or self.current_floor == FLOOR_CAMPUS),
-            restricted_rooms=restricted
-        )
+        if self.multiplayer and not self.is_host:
+            # Client: only update animations, positions are synced from host
+            self.npc_manager.update_animations_on_floor(current_dt, self.current_floor)
+        else:
+            # Host or Solo: run full NPC AI
+            self.npc_manager.update_on_floor(
+                current_dt, self.current_floor, floor, npc_walls,
+                classrooms_restricted=(is_class_session or self.current_floor == FLOOR_CAMPUS),
+                restricted_rooms=restricted
+            )
 
         # Apply pending bound_rect for classroom NPCs that have stopped
         for group in self._classroom_groups:
@@ -2499,8 +2504,20 @@ class Game:
         if not self.network:
             return
         try:
-            self.network.send_player_update(self.player.to_dict())
+            player_data = self.player.to_dict()
+            
+            # Host: also send NPC data for synchronization
+            if self.is_host:
+                npcs = self.npc_manager.get_npcs_on_floor(self.current_floor)
+                # Pack minimal NPC data to save bandwidth
+                player_data["npc_sync"] = [
+                    (n.id, n.rect.x, n.rect.y, n.direction.value, n.state) 
+                    for n in npcs
+                ]
+
+            self.network.send_player_update(player_data)
             remote = self.network.get_remote_data()
+            
             if remote and self.remote_player:
                 # Apply floor-specific decay for remote player
                 in_main_building = self.current_floor in (FLOOR_1F, FLOOR_2F)
@@ -2510,6 +2527,21 @@ class Game:
                 
                 # Update health/stamina if provided
                 self.remote_player.health = remote.get("health", self.remote_player.health)
+
+                # Client: Apply NPC updates from host
+                if not self.is_host and "npc_sync" in remote:
+                    for nid, nx, ny, ndir, nstate in remote["npc_sync"]:
+                        npc = self.npc_manager.get_npc_by_id(nid)
+                        if npc:
+                            # Use simple LERP for NPCs too to keep them smooth
+                            npc.rect.x += (nx - npc.rect.x) * 0.5
+                            npc.rect.y += (ny - npc.rect.y) * 0.5
+                            from settings import Direction
+                            try:
+                                npc.direction = Direction(ndir)
+                            except ValueError:
+                                pass
+                            npc.state = nstate
         except Exception:
             pass
 

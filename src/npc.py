@@ -778,5 +778,10 @@ class NPCManager:
                     elif room.id == "f1_women_bath" and gender != "female":
                         npc.rect.update(previous_rect)
 
+    def update_animations_on_floor(self, dt: float, floor_id: int):
+        """Update only the animations of NPCs on a floor (used by co-op clients)."""
+        for npc in self.get_npcs_on_floor(floor_id):
+            npc._advance_animation(dt)
+
     def __repr__(self):
         return f"NPCManager({len(self.npcs)} npcs, {self.relationships})"
