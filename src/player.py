@@ -236,6 +236,9 @@ class Player:
         """Update remote player state from network data."""
         self._dashing = data.get("dashing", False)
         
+        # Save previous pos for movement detection
+        old_x, old_y = self.rect.x, self.rect.y
+
         # Position with simple interpolation to smooth movement
         target_x = data.get("x", self.rect.x)
         target_y = data.get("y", self.rect.y)
@@ -245,6 +248,11 @@ class Player:
         self.rect.x += (target_x - self.rect.x) * 0.4
         self.rect.y += (target_y - self.rect.y) * 0.4
 
+        # Movement detection (ignore very small jitter)
+        # We compare target against current to see if they are actually being moved by the network
+        is_moving = abs(target_x - old_x) > 1.0 or abs(target_y - old_y) > 1.0
+        self.state = "walk" if is_moving else "idle"
+
         direction_val = data.get("direction")
         if direction_val is not None:
             from settings import Direction
@@ -253,11 +261,17 @@ class Player:
             except ValueError:
                 pass
 
-        # Update visuals (animation state) based on movement
-        # (Assuming the remote side provides enough info or we infer it)
-        # For now, just use "walk" if it moved, "idle" otherwise.
-        # This is a bit rough but works for sync.
-        
+        # Update animation frame (sync with local player logic)
+        anim_key = f"{self.state}_{self.direction.value}"
+        frames = self.animations.get(anim_key, [])
+        if frames:
+            anim_speed = 12.0 if self.state == "walk" else 6.0
+            self.animation_timer += dt * anim_speed
+            if self.animation_timer >= len(frames):
+                self.animation_timer = 0.0
+            self.frame_index = int(self.animation_timer) % len(frames)
+            self.image = frames[self.frame_index]
+
         # Dash trail for remote player
         if self._dashing:
             self._dash_trail.append((self.rect.copy(), 15))
