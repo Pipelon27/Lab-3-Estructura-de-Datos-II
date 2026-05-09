@@ -48,6 +48,7 @@ class GameClient:
         self._sock.settimeout(timeout)
         try:
             self._sock.connect((self.host, self.port))
+            self._sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
         except (socket.timeout, ConnectionRefusedError, OSError) as exc:
             raise ConnectionError(
                 f"Cannot reach server at {self.host}:{self.port}"

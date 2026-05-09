@@ -848,6 +848,9 @@ class Game:
             if sel == 0:
                 self.state = getattr(self, 'previous_state', GameState.PLAYING)
             elif sel == 1:
+                if self.multiplayer:
+                    self.ui.show_notification("Cannot change character: Roles are already established in co-op mode.", NOTIF_ERROR)
+                    return
                 # Character swap logic (same as keyboard)
                 from settings import Character, NOTIF_INFO
                 from src.player import Aiden, Lena
@@ -1087,6 +1090,9 @@ class Game:
             if sel == 0:  # Resume
                 self.state = getattr(self, 'previous_state', GameState.PLAYING)
             elif sel == 1:  # Change Character
+                if self.multiplayer:
+                    self.ui.show_notification("Cannot change character: Roles are already established in co-op mode.", NOTIF_ERROR)
+                    return
                 from settings import Character, NOTIF_INFO
                 from src.player import Aiden, Lena
                 
@@ -2490,30 +2496,14 @@ class Game:
             self.network.send_player_update(self.player.to_dict())
             remote = self.network.get_remote_data()
             if remote and self.remote_player:
-                px = getattr(self.remote_player, "_prev_x", self.remote_player.rect.x)
-                py = getattr(self.remote_player, "_prev_y", self.remote_player.rect.y)
+                # Apply floor-specific decay for remote player
+                in_main_building = self.current_floor in (FLOOR_1F, FLOOR_2F)
+                decay = 2 if in_main_building else 1
                 
-                self.remote_player.rect.x = remote.get("x", self.remote_player.rect.x)
-                self.remote_player.rect.y = remote.get("y", self.remote_player.rect.y)
+                self.remote_player.update_remote(remote, dt, trail_decay=decay)
                 
-                direction_val = remote.get("direction")
-                if direction_val is not None:
-                    self.remote_player.direction = Direction(direction_val)
-                    
-                is_moving = (self.remote_player.rect.x != px) or (self.remote_player.rect.y != py)
-                self.remote_player.state = "walk" if is_moving else "idle"
-                
-                self.remote_player._prev_x = self.remote_player.rect.x
-                self.remote_player._prev_y = self.remote_player.rect.y
-                
-                anim_key = f"{self.remote_player.state}_{self.remote_player.direction.value}"
-                frames = self.remote_player.animations.get(anim_key, [])
-                if frames:
-                    self.remote_player.animation_timer += dt * (12.0 if is_moving else 6.0)
-                    if self.remote_player.animation_timer >= len(frames):
-                        self.remote_player.animation_timer = 0.0
-                    self.remote_player.frame_index = int(self.remote_player.animation_timer) % len(frames)
-                    self.remote_player.image = frames[self.remote_player.frame_index]
+                # Update health/stamina if provided
+                self.remote_player.health = remote.get("health", self.remote_player.health)
         except Exception:
             pass
 

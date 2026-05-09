@@ -58,6 +58,7 @@ class GameServer:
         self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self._sock.bind((self.host, self.port))
+        self._sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
         self._sock.listen(1)
         self._sock.settimeout(1.0)       # so we can check _running
         self._running = True
@@ -93,6 +94,7 @@ class GameServer:
                 print(f"[Server] Client connected: {addr}")
                 with self._lock:
                     self._client = client
+                    self._client.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
                 
                 # Stop broadcasting once someone connects
                 if self._broadcaster:

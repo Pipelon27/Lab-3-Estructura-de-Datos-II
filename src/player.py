@@ -232,6 +232,43 @@ class Player:
                 elif dy < 0:
                     self.rect.top = wall.bottom
 
+    def update_remote(self, data: dict, dt: float, trail_decay: int = 1):
+        """Update remote player state from network data."""
+        self._dashing = data.get("dashing", False)
+        
+        # Position with simple interpolation to smooth movement
+        target_x = data.get("x", self.rect.x)
+        target_y = data.get("y", self.rect.y)
+        
+        # LERP (Linear Interpolation) for smoother movement
+        # 0.4 is a balance between responsiveness and smoothness
+        self.rect.x += (target_x - self.rect.x) * 0.4
+        self.rect.y += (target_y - self.rect.y) * 0.4
+
+        direction_val = data.get("direction")
+        if direction_val is not None:
+            from settings import Direction
+            try:
+                self.direction = Direction(direction_val)
+            except ValueError:
+                pass
+
+        # Update visuals (animation state) based on movement
+        # (Assuming the remote side provides enough info or we infer it)
+        # For now, just use "walk" if it moved, "idle" otherwise.
+        # This is a bit rough but works for sync.
+        
+        # Dash trail for remote player
+        if self._dashing:
+            self._dash_trail.append((self.rect.copy(), 15))
+
+        # Trail decay (needed for remote players since update() isn't called)
+        new_trail = []
+        for r, t in self._dash_trail:
+            if t > 0:
+                new_trail.append((r, t - trail_decay))
+        self._dash_trail = new_trail
+
     # ── XP & levelling ────────────────────────────────────────
 
     def gain_xp(self, amount: int):
@@ -309,6 +346,7 @@ class Player:
             "direction": self.direction.value,
             "health": self.health, "stamina": self.stamina,
             "xp": self.xp, "level": self.level,
+            "dashing": self._dashing,
         }
 
     def __repr__(self):
