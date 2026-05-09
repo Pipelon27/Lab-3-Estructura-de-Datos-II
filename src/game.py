@@ -2541,8 +2541,14 @@ class Game:
                 decay = 2 if in_main_building else 1
                 
                 self.remote_player.update_remote(remote, dt, trail_decay=decay)
-                self.remote_player.current_floor = remote.get("floor", 1)
+                rf = remote.get("floor", 1)
+                self.remote_player.current_floor = rf
                 
+                # Update WorldMap with remote player position
+                if hasattr(self, "world_map"):
+                    rname = "Lena" if self.player.character.value == "aiden" else "Aiden"
+                    self.world_map.set_remote_player_pos(rf, self.remote_player.rect.centerx, self.remote_player.rect.centery, rname)
+
                 # Update health/stamina if provided
                 self.remote_player.health = remote.get("health", self.remote_player.health)
 
@@ -2679,7 +2685,9 @@ class Game:
         if not (self._car_departure_active and self._car_depart_phase == "drive_away"):
             self.player.draw(target_surf, self.camera)
             if getattr(self, "remote_player", None):
-                self.remote_player.draw(target_surf, self.camera)
+                # Ghosting bug fix: only draw if on same floor
+                if self.remote_player.current_floor == self.current_floor:
+                    self.remote_player.draw(target_surf, self.camera)
 
         # ── Draw Top Layer (Trees, etc.) ──
         if floor and hasattr(floor, 'draw_top_layer'):

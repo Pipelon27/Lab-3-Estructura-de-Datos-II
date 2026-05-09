@@ -62,6 +62,12 @@ class WorldMap:
         self.player_floor    = FLOOR_1F
         self.player_x        = 0
         self.player_y        = 0
+        
+        # Remote player position (for co-op)
+        self.remote_floor    = -1
+        self.remote_x        = 0
+        self.remote_y        = 0
+        self.remote_name     = ""
 
         # Controller selection state
         self._room_order: list = []
@@ -95,6 +101,12 @@ class WorldMap:
         self.player_floor = floor_id
         self.player_x     = x
         self.player_y     = y
+
+    def set_remote_player_pos(self, floor_id: int, x: int, y: int, name: str):
+        self.remote_floor = floor_id
+        self.remote_x     = x
+        self.remote_y     = y
+        self.remote_name  = name
 
     def reset_teleport_state(self):
         """Clear any pending teleport confirmation/selection."""
@@ -479,6 +491,18 @@ class WorldMap:
             pygame.draw.circle(screen, WHITE, (px, py), r, 2)
             you = self._font_room.render("YOU", True, (255, 220, 60))
             screen.blit(you, you.get_rect(center=(px, py - r - 8)))
+
+        # Remote player indicator
+        if self.remote_floor == self.current_tab:
+            rx, ry = self._world_to_screen(self.remote_x, self.remote_y)
+            r = max(4, int(8 * z * 3))
+            # Use character-specific color (pink for Lena, blue for Aiden)
+            # We'll use a generic bright color for now or try to match
+            col = (255, 100, 255) if "lena" in self.remote_name.lower() else (100, 150, 255)
+            pygame.draw.circle(screen, col, (rx, ry), r)
+            pygame.draw.circle(screen, WHITE, (rx, ry), r, 2)
+            lbl = self._font_room.render(self.remote_name.upper(), True, col)
+            screen.blit(lbl, lbl.get_rect(center=(rx, ry - r - 8)))
 
         # Draw any markers (e.g., Oscar) if they are on this floor
         for name, (mfloor, mx, my, mcol) in self._markers.items():
