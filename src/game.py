@@ -152,7 +152,7 @@ class Game:
         self._cine_timer: float = 0.0
         self._car_x: float = float(SCREEN_WIDTH + 200)
         self._car_target_x: float = float(SCREEN_WIDTH // 2 - 100)
-        self._car_y: float = float(SCREEN_HEIGHT - 170)
+        self._car_y: float = float(SCREEN_HEIGHT // 2 + 157)  # Aligned with Main Road (y=2925) when camera centers on Roundabout
         self._car_speed: float = 400.0      # px / sec
         self._cine_dlg_lines: list[str] = [
             "Hey\u2026 you're new, right? Ravenside can be\u2026 a lot at first. Just\u2014 don't trust every smile you see here.",
@@ -356,6 +356,11 @@ class Game:
         self.dialogue_system = DialogueSystem()
         self.dialogue_system.load_dialogues_from_json()
         self.camera = Camera(self._floor_w, self._floor_h)
+        # Snap camera to entrance for intro cinematic to prevent lerp-from-zero spawn bugs
+        target_x = 2000 - SCREEN_WIDTH // 2
+        target_y = 2700 - SCREEN_HEIGHT // 2
+        self.camera.offset.x = max(0, min(target_x, self.camera.map_width - SCREEN_WIDTH))
+        self.camera.offset.y = max(0, min(target_y, self.camera.map_height - SCREEN_HEIGHT))
         # Ping-pong minigame
         self.pingpong = PingPongGame()
         self.phone = Phone(self.screen,
@@ -2553,12 +2558,10 @@ class Game:
                 self._cine_phase = "exit"
                 self._exit_car_timer = 0.0
                 # Spawn player at the car door (right side of car)
-                car_screen_cx = int(self._car_x) + 160
-                car_screen_cy = int(self._car_y) + 70
-                # Convert screen → world
-                wx = int(car_screen_cx + self.camera.offset.x)
-                wy = int(car_screen_cy + self.camera.offset.y)
-                self.player.rect.center = (wx, wy)
+                # We use the fake target position (2000, 2700) to ensure reliable spawn even if camera is still lerping
+                cam_y = 2700 - SCREEN_HEIGHT // 2
+                wy = int(self._car_y + 70 + cam_y)
+                self.player.rect.center = (2000, wy)
                 self._exit_car_player_y = float(wy)
                 self._player_spawned = True
                 # Stop vibration when car stops

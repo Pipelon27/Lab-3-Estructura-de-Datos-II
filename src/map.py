@@ -279,11 +279,13 @@ class Floor:
                 screen.set_clip(bg)
                 cam_ox = int(camera.offset.x)
                 cam_oy = int(camera.offset.y)
-                # Tile over the entire floor area
-                wx = 0
-                while wx < self.width:
-                    wy = 0
-                    while wy < self.height:
+                # Tile over the entire floor area, but only for visible tiles
+                start_wx = (cam_ox // tw) * tw
+                start_wy = (cam_oy // th) * th
+                wx = start_wx
+                while wx < cam_ox + sw and wx < self.width:
+                    wy = start_wy
+                    while wy < cam_oy + sh and wy < self.height:
                         screen.blit(tile_surf, (wx - cam_ox, wy - cam_oy))
                         wy += th
                     wx += tw
