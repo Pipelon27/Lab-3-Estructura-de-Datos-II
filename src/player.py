@@ -381,3 +381,34 @@ class Lena(Player):
         super().__init__(x, y, Character.LENA, LENA_COLOR, LENA_OUTLINE)
         self.hack_time_bonus = 2         # starts with small bonus
         self.skill_tree      = build_lena_tree()
+        self._load_sprites()
+
+    def _load_sprites(self):
+        """Extract idle and walk frames from the spritesheet."""
+        base_dir = os.path.dirname(os.path.dirname(__file__))
+        path = os.path.join(base_dir, "assets", "Characters BEHIND THE SMILE", "PROTAGONISTS", "Lena Parker.png")
+        if not os.path.exists(path):
+            print(f"Warning: Lena spritesheet not found at {path}")
+            return
+
+        sheet = pygame.image.load(path).convert_alpha()
+        frame_w, frame_h = 32, 64
+
+        def get_frame(col, row):
+            rect = pygame.Rect(col * frame_w, row * frame_h, frame_w, frame_h)
+            return sheet.subsurface(rect).copy()
+
+        # Row 1 (Fila 2) (Idle): Right (0-5), Up (6-11), Left (12-17), Down (18-23)
+        self.animations["idle_right"] = [get_frame(c, 1) for c in range(0, 6)]
+        self.animations["idle_up"]    = [get_frame(c, 1) for c in range(6, 12)]
+        self.animations["idle_left"]  = [get_frame(c, 1) for c in range(12, 18)]
+        self.animations["idle_down"]  = [get_frame(c, 1) for c in range(18, 24)]
+
+        # Row 2 (Fila 3) (Walk/Run): Right (0-5), Up (6-11), Left (12-17), Down (18-23)
+        self.animations["walk_right"] = [get_frame(c, 2) for c in range(0, 6)]
+        self.animations["walk_up"]    = [get_frame(c, 2) for c in range(6, 12)]
+        self.animations["walk_left"]  = [get_frame(c, 2) for c in range(12, 18)]
+        self.animations["walk_down"]  = [get_frame(c, 2) for c in range(18, 24)]
+
+        # Set default image
+        self.image = self.animations["idle_down"][0]

@@ -297,76 +297,6 @@ class Game:
                 obs.rect.centerx = oscar.rect.centerx + int(math.cos(angle) * radius)
                 obs.rect.centery = oscar.rect.centery + int(math.sin(angle) * radius)
 
-        # Create additional random NPCs across all floors
-        random_names = [
-            ("Alex", "male"), ("Jordan", "male"), ("Taylor", "female"), ("Morgan", "female"),
-            ("Casey", "female"), ("Riley", "male"), ("Sam", "male"), ("Jamie", "female"),
-            ("Drew", "male"), ("Avery", "female"), ("Cameron", "male"), ("Dakota", "female"),
-            ("Quinn", "female"), ("Skyler", "male"), ("Harper", "female"), ("Finley", "male")
-        ]
-        groups = list(SocialGroup)
-        for floor_id, floor in self.school_map.floors.items():
-            rooms = list(floor.rooms.values())
-            # Increase population on 1F (35) and 2F (25) for more natural room entry/exit
-            limit = 35 if floor_id == FLOOR_1F else (25 if floor_id == FLOOR_2F else 10)
-            
-            # Exclude cafeteria from random spawns so only Gordon starts there
-            valid_rooms = [r for r in rooms if r.id != "f1_cafeteria"]
-            if not valid_rooms: valid_rooms = rooms
-            
-            for i in range(limit):
-                room = random.choice(valid_rooms)
-                nid = f"npc_rnd_{floor_id}_{i}"
-                npc_name, gender = random.choice(random_names)
-                npc_group = random.choice(groups)
-                npc = NPC(nid, npc_name, npc_group, "Walking", "Walking", gender=gender)
-                npc.current_floor = floor_id
-                npc.ai_enabled = True
-                npc.speed_multiplier = 2.5 # Make them move faster
-                for _ in range(10):
-                    if room.rect.width > 60 and room.rect.height > 60:
-                        npc.rect.x = room.rect.x + random.randint(30, room.rect.width - 60)
-                        npc.rect.y = room.rect.y + random.randint(30, room.rect.height - 60)
-                    else:
-                        npc.rect.x = room.rect.x
-                        npc.rect.y = room.rect.y
-                    if not any(npc.rect.colliderect(w) for w in floor.walls):
-                        break
-                self.npc_manager.npcs[nid] = npc
-                self.npc_manager.relationships.add_node(nid)
-
-        # Dedicated bathroom occupants to reinforce gender-specific presence
-        floor1 = self.school_map.get_floor(FLOOR_1F)
-        if floor1:
-            men_room = floor1.rooms.get("f1_men_bath")
-            women_room = floor1.rooms.get("f1_women_bath")
-            if men_room:
-                male_attendant = NPC(
-                    "npc_bath_m_attendant", "Leo",
-                    SocialGroup.OUTSIDERS,
-                    "Friendly classmate", "Just hanging out",
-                    gender="male",
-                )
-                male_attendant.current_floor = FLOOR_1F
-                male_attendant.rect.center = men_room.rect.center
-                male_attendant.bound_rect = men_room.rect.inflate(-160, -160)
-                male_attendant.ignore_schedule = True
-                self.npc_manager.npcs[male_attendant.id] = male_attendant
-                self.npc_manager.relationships.add_node(male_attendant.id)
-            if women_room:
-                female_attendant = NPC(
-                    "npc_bath_f_attendant", "Lia",
-                    SocialGroup.OUTSIDERS,
-                    "Friendly classmate", "Just hanging out",
-                    gender="female",
-                )
-                female_attendant.current_floor = FLOOR_1F
-                female_attendant.rect.center = women_room.rect.center
-                female_attendant.bound_rect = women_room.rect.inflate(-160, -160)
-                female_attendant.ignore_schedule = True
-                self.npc_manager.npcs[female_attendant.id] = female_attendant
-                self.npc_manager.relationships.add_node(female_attendant.id)
-
         # ── Gordon Ramsay (The Chef) ──
         f1 = self.school_map.get_floor(FLOOR_1F)
         caf = f1.rooms.get("f1_cafeteria")
@@ -2313,7 +2243,7 @@ class Game:
                 msg = f"📅 Day {self.day_number} — {phase_label}"
                 
             self.ui.show_notification(msg, NOTIF_INFO)
-            self.npc_manager.update_schedules(self.current_phase)
+            self.npc_manager.update_schedules(self.current_phase, self.school_map)
             if random.random() < 0.3:
                 self._random_event()
         else:
@@ -3034,7 +2964,7 @@ class Game:
         self._advance_phase() # Triggers notifications
         
         # Re-init NPCs for the new day positions
-        self.npc_manager.update_schedules(self.current_phase)
+        self.npc_manager.update_schedules(self.current_phase, self.school_map)
         
         # Close cafeteria
         floor1 = self.school_map.get_floor(FLOOR_1F)

@@ -187,18 +187,82 @@ class NPC:
         self.ai_enabled    = True
         self.show_name     = True
 
+        # Animation state
+        self.animations = {}
+        self.state = "idle"
+        self.frame_index = 0
+        self.animation_timer = 0.0
+        self.image: pygame.Surface | None = None
+        self._load_sprites()
+
+    def _load_sprites(self):
+        """Extract idle and walk frames from the spritesheet."""
+        base_dir = os.path.dirname(os.path.dirname(__file__))
+        folder_map = {
+            "academics": "ACADEMICS",
+            "athletes": "ATHLETES",
+            "populars": "POPULARS",
+            "rebels": "REBELS",
+            "tech_club": "TECH CLUB",
+        }
+        folder = folder_map.get(self.group.value)
+        if not folder:
+            return
+
+        path = os.path.join(base_dir, "assets", "Characters BEHIND THE SMILE", folder, f"{self.name}.png")
+        if not os.path.exists(path):
+            return
+
+        sheet = pygame.image.load(path).convert_alpha()
+        frame_w, frame_h = 32, 64
+
+        def get_frame(col, row):
+            rect = pygame.Rect(col * frame_w, row * frame_h, frame_w, frame_h)
+            return sheet.subsurface(rect).copy()
+
+        # Row 1 (Fila 2) (Idle): Right (0-5), Up (6-11), Left (12-17), Down (18-23)
+        self.animations["idle_right"] = [get_frame(c, 1) for c in range(0, 6)]
+        self.animations["idle_up"]    = [get_frame(c, 1) for c in range(6, 12)]
+        self.animations["idle_left"]  = [get_frame(c, 1) for c in range(12, 18)]
+        self.animations["idle_down"]  = [get_frame(c, 1) for c in range(18, 24)]
+
+        # Row 2 (Fila 3) (Walk/Run): Right (0-5), Up (6-11), Left (12-17), Down (18-23)
+        self.animations["walk_right"] = [get_frame(c, 2) for c in range(0, 6)]
+        self.animations["walk_up"]    = [get_frame(c, 2) for c in range(6, 12)]
+        self.animations["walk_left"]  = [get_frame(c, 2) for c in range(12, 18)]
+        self.animations["walk_down"]  = [get_frame(c, 2) for c in range(18, 24)]
+
+        # Set default image
+        self.image = self.animations["idle_down"][0]
+
     # ── schedule ──────────────────────────────────────────────
 
     def get_zone_for_phase(self, phase: DayPhase) -> int:
         """Return zone id this NPC should be in during *phase*."""
         return self.schedule.get(phase.value, 0)
 
-    def move_to_zone(self, zone_id: int):
+    def move_to_zone(self, zone_id: int, school_map=None):
         """Teleport NPC to a new zone (resets position randomly)."""
         from settings import ZONE_TO_FLOOR
         self.current_zone = zone_id
         entry = ZONE_TO_FLOOR.get(zone_id, (1, 400, 400))
         self.current_floor = entry[0]
+        
+        if school_map:
+            floor = school_map.get_floor(self.current_floor)
+            if floor and floor.rooms:
+                room = random.choice(list(floor.rooms.values()))
+                for _ in range(10):
+                    if room.rect.width > 60 and room.rect.height > 60:
+                        self.rect.x = room.rect.x + random.randint(30, room.rect.width - 60)
+                        self.rect.y = room.rect.y + random.randint(30, room.rect.height - 60)
+                    else:
+                        self.rect.x = room.rect.x
+                        self.rect.y = room.rect.y
+                    if not any(self.rect.colliderect(w) for w in floor.walls):
+                        break
+                return
+
         # Spawn near the mapped spawn point with some randomness
         sx, sy = entry[1], entry[2]
         self.rect.x = sx + random.randint(-80, 80)
@@ -317,6 +381,24 @@ class NPC:
             max_y = getattr(self, '_floor_h', 2400) - NPC_SIZE - 30
             self.rect.clamp_ip(pygame.Rect(30, 30, max_x, max_y))
 
+        # Animation state update
+        if abs(self._wander_dx) > 0 or abs(self._wander_dy) > 0:
+            self.state = "walk"
+        else:
+            self.state = "idle"
+
+        if self.animations:
+            fps = 10.0 if self.state == "walk" else 6.0
+            self.animation_timer += dt * fps
+            if self.animation_timer >= 1.0:
+                self.animation_timer = 0.0
+                self.frame_index = (self.frame_index + 1) % 6
+
+            key = f"{self.state}_{self.direction.value}"
+            frames = self.animations.get(key)
+            if frames:
+                self.image = frames[self.frame_index % len(frames)]
+
     def _collide(self, walls: list[pygame.Rect], dx: float, dy: float):
         """Slide the NPC along walls instead of teleporting - prevents jitter."""
         # Separate axis handling for smoother sliding
@@ -349,21 +431,38 @@ class NPC:
     # ── drawing ───────────────────────────────────────────────
 
     def draw(self, screen: pygame.Surface, camera):
-        """Draw NPC as a coloured square with group-tinted outline."""
+        """Draw NPC as a sprite or fallback to coloured square."""
         dr = camera.apply(self)
-        pygame.draw.rect(screen, self.color, dr, border_radius=4)
-        pygame.draw.rect(screen, WHITE, dr, 1, border_radius=4)
+        
+        if self.image:
+            # The sprite is 32x64, we draw it so its bottom-center aligns with the collision rect bottom-center
+            draw_rect = self.image.get_rect(midbottom=dr.midbottom)
+            screen.blit(self.image, draw_rect)
+            
+            # Name label (can be hidden for observers)
+            if getattr(self, 'show_name', True):
+                font = pygame.font.SysFont("arial", 13)
+                label = font.render(self.name, True, WHITE)
+                screen.blit(label, label.get_rect(center=(draw_rect.centerx, draw_rect.top - 10)))
+                
+            # Bad-day indicator
+            if self.having_bad_day:
+                ind = font.render("😟", True, WHITE)
+                screen.blit(ind, (draw_rect.right + 2, draw_rect.top))
+        else:
+            pygame.draw.rect(screen, self.color, dr, border_radius=4)
+            pygame.draw.rect(screen, WHITE, dr, 1, border_radius=4)
 
-        # Name label (can be hidden for observers)
-        if getattr(self, 'show_name', True):
-            font = pygame.font.SysFont("arial", 13)
-            label = font.render(self.name, True, WHITE)
-            screen.blit(label, label.get_rect(center=(dr.centerx, dr.top - 10)))
+            # Name label (can be hidden for observers)
+            if getattr(self, 'show_name', True):
+                font = pygame.font.SysFont("arial", 13)
+                label = font.render(self.name, True, WHITE)
+                screen.blit(label, label.get_rect(center=(dr.centerx, dr.top - 10)))
 
-        # Bad-day indicator
-        if self.having_bad_day:
-            ind = font.render("😟", True, WHITE)
-            screen.blit(ind, (dr.right + 2, dr.top))
+            # Bad-day indicator
+            if self.having_bad_day:
+                ind = font.render("😟", True, WHITE)
+                screen.blit(ind, (dr.right + 2, dr.top))
 
     # ── serialisation ─────────────────────────────────────────
 
@@ -535,14 +634,56 @@ class NPCManager:
 
     # ── schedule update ───────────────────────────────────────
 
-    def update_schedules(self, phase: DayPhase):
+    def update_schedules(self, phase: DayPhase, school_map=None):
         """Move every NPC to the zone their schedule dictates."""
+        from settings import FLOOR_CAMPUS, FLOOR_1F, FLOOR_2F
+        special_ids = {"npc_director", "npc_oscar", "npc_noah_carter", "npc_gordon",
+                       "npc_oscar_obs1", "npc_oscar_obs2", "npc_oscar_obs3", "npc_oscar_obs4",
+                       "npc_bath_m_attendant", "npc_bath_f_attendant"}
+
         for npc in self.npcs.values():
             if getattr(npc, "ignore_schedule", False):
                 continue
+                
             target_zone = npc.get_zone_for_phase(phase)
             if npc.current_zone != target_zone:
-                npc.move_to_zone(target_zone)
+                npc.move_to_zone(target_zone, school_map)
+
+            # Natural behavior for generic NPCs: scatter within valid rooms on their current floor
+            if npc.id not in special_ids and school_map:
+                floor = school_map.get_floor(npc.current_floor)
+                if floor and floor.rooms:
+                    # Filter out 'c_building' on campus as it is just an exterior facade
+                    valid_rooms = [r for r in floor.rooms.values() if r.id != "c_building"]
+                    if valid_rooms:
+                        room = random.choice(valid_rooms)
+                        placed = False
+                        for _ in range(20):
+                            if room.rect.width > 60 and room.rect.height > 60:
+                                rx = room.rect.x + random.randint(30, room.rect.width - 60)
+                                ry = room.rect.y + random.randint(30, room.rect.height - 60)
+                            else:
+                                rx = room.rect.x
+                                ry = room.rect.y
+                            
+                            npc.rect.x = rx
+                            npc.rect.y = ry
+                            if not any(npc.rect.colliderect(w) for w in floor.walls):
+                                placed = True
+                                break
+                        
+                        if placed:
+                            # Natural movement: Give them a target inside the room to walk towards
+                            if random.random() < 0.6:
+                                npc.target_pos = (
+                                    room.rect.x + random.randint(30, max(31, room.rect.width - 30)),
+                                    room.rect.y + random.randint(30, max(31, room.rect.height - 30))
+                                )
+                                npc.target_queue = []
+                                npc.stop_at_target = False
+                            else:
+                                npc.target_pos = None
+
             npc.having_bad_day = False      # reset each phase
 
     # ── per-frame update ──────────────────────────────────────
