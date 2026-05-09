@@ -1,0 +1,110 @@
+{
+  "room_id": "rt_benches",
+  "props": [
+    {
+      "sprite": "Classroom_and_Library_Singles_32x32_1.png",
+      "gx": 2,
+      "gy": 2,
+      "collision": "solid",
+      "layer": "below"
+    },
+    {
+      "sprite": "Classroom_and_Library_Singles_32x32_10.png",
+      "gx": 5,
+      "gy": 2,
+      "collision": "solid",
+      "layer": "below"
+    },
+    {
+      "sprite": "Classroom_and_Library_Singles_32x32_100.png",
+      "gx": 8,
+      "gy": 2,
+      "collision": "none",
+      "layer": "below"
+    },
+    {
+      "sprite": "Classroom_and_Library_Singles_32x32_101.png",
+      "gx": 11,
+      "gy": 2,
+      "collision": "none",
+      "layer": "below"
+    },
+    {
+      "sprite": "Classroom_and_Library_Singles_32x32_102.png",
+      "gx": 14,
+      "gy": 2,
+      "collision": "none",
+      "layer": "below"
+    },
+    {
+      "sprite": "Classroom_and_Library_Singles_32x32_103.png",
+      "gx": 17,
+      "gy": 2,
+      "collision": "none",
+      "layer": "below"
+    },
+    {
+      "sprite": "Classroom_and_Library_Singles_32x32_104.png",
+      "gx": 2,
+      "gy": 5,
+      "collision": "none",
+      "layer": "below"
+    },
+    {
+      "sprite": "Classroom_and_Library_Singles_32x32_105.png",
+      "gx": 5,
+      "gy": 5,
+      "collision": "none",
+      "layer": "below"
+    },
+    {
+      "sprite": "Classroom_and_Library_Singles_32x32_106.png",
+      "gx": 8,
+      "gy": 5,
+      "collision": "none",
+      "layer": "below"
+    },
+    {
+      "sprite": "Classroom_and_Library_Singles_32x32_107.png",
+      "gx": 11,
+      "gy": 5,
+      "collision": "none",
+      "layer": "below"
+    },
+    {
+      "sprite": "Classroom_and_Library_Singles_32x32_108.png",
+      "gx": 14,
+      "gy": 5,
+      "collision": "solid",
+      "layer": "below"
+    },
+    {
+      "sprite": "Classroom_and_Library_Singles_32x32_109.png",
+      "gx": 17,
+      "gy": 5,
+      "collision": "solid",
+      "layer": "below"
+    },
+    {
+      "sprite": "Classroom_and_Library_Singles_32x32_11.png",
+      "gx": 2,
+      "gy": 6,
+      "collision": "solid",
+      "layer": "below"
+    },
+    {
+      "sprite": "Classroom_and_Library_Singles_32x32_110.png",
+      "gx": 5,
+      "gy": 7,
+      "collision": "solid",
+      "layer": "below"
+    },
+    {
+      "sprite": "Classroom_and_Library_Singles_32x32_111.png",
+      "gx": 8,
+      "gy": 7,
+      "collision": "solid",
+      "layer": "below"
+    }
+  ]
+}

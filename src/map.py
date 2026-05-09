@@ -1277,8 +1277,10 @@ class SchoolMap:
             (_upper_door_y(by), DW),
         ]))
         # Right divider (x=2150) — 2F stair door in LOWER corridor
+        # Library door at y=300 (center of library room y=16+584/2=308)
         f.walls.extend(_vwall_gaps(2150, 16, sy + sh, [
-            (250, DW), (780 - DW, 3 * DW), (1250, DW),
+            (250, DW), (300, 3 * DW),  # Library door - wider (3x)
+            (780 - DW, 3 * DW), (1250, DW),
             (_lower_door_y(sy, sh), DW),
         ]))
         # Cafeteria door object (Triple size)

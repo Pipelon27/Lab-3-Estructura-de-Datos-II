@@ -1,0 +1,1 @@
+Behind the Smile curated assets pack organized by zones. Use 32x32 grid.\n

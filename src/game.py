@@ -381,13 +381,10 @@ class Game:
             # Place Gordon at the bottom-right corner of the cafeteria
             gordon.rect.x = caf.rect.right  - NPC_SIZE - 40
             gordon.rect.y = caf.rect.bottom - NPC_SIZE - 40
-            gordon.bound_rect = pygame.Rect(
-                caf.rect.right  - NPC_SIZE - 80,
-                caf.rect.bottom - NPC_SIZE - 80,
-                60, 60,
-            )
+            # Gordon walks around the entire cafeteria area (not just a small corner)
+            gordon.bound_rect = caf.rect.inflate(-60, -60)
             gordon.ignore_schedule = True  # He belongs in the kitchen
-            gordon.ai_enabled = False
+            gordon.ai_enabled = True  # Enable AI so he can walk around
             self.npc_manager.npcs[gordon.id] = gordon
             self.npc_manager.relationships.add_node(gordon.id)
 
@@ -2177,6 +2174,7 @@ class Game:
         if not floor1: return
         npcs = self.npc_manager.get_npcs_on_floor(FLOOR_1F)
         caf_room = floor1.rooms.get("f1_cafeteria")
+        library_room = floor1.rooms.get("f1_library")
         if not caf_room: return
 
         # Cafeteria layout: tables at y=720..1020. Door at (2210, 780).
@@ -2187,14 +2185,33 @@ class Game:
         for npc in npcs:
             if npc.id.startswith("npc_rnd_") and not getattr(npc, "ignore_schedule", False):
                 seat = self._get_cafeteria_seat()
-                # Route: main hall → door → below tables corridor → seat
-                npc.target_pos = (1600, 800 + random.randint(-50, 50))
-                npc.target_queue = [
-                    (2210, 780 + random.randint(-15, 15)),         # through door
-                    (2210 + random.randint(20, 60), below_tables_y),  # go below tables
-                    (seat[0], below_tables_y),                     # align x with seat
-                    seat,                                          # final seat
-                ]
+                
+                # Check if NPC is in library - if so, route through main hall
+                in_library = library_room and library_room.rect.collidepoint(npc.rect.centerx, npc.rect.centery)
+                
+                if in_library:
+                    # Route: Library → Library Door (x=2150, y=420 center) → Main Hall → Cafeteria door → seat
+                    # Library door is at x=2150, y=300 to y=540 (3*DW wide, centered at y=420)
+                    door_y = 420 + random.randint(-30, 30)  # Center of library door gap
+                    npc.target_pos = (2180, door_y)  # Inside library, near the door
+                    npc.target_queue = [
+                        (2140, door_y),                                # At library door (inside)
+                        (2100, door_y),                                # Exit to Main Hall corridor
+                        (2100, 780 + random.randint(-15, 15)),         # Go down to cafeteria door level
+                        (2210, 780 + random.randint(-15, 15)),         # Through cafeteria door
+                        (2210 + random.randint(20, 60), below_tables_y),  # go below tables
+                        (seat[0], below_tables_y),                     # align x with seat
+                        seat,                                          # final seat
+                    ]
+                else:
+                    # Default route: main hall → door → below tables corridor → seat
+                    npc.target_pos = (1600, 800 + random.randint(-50, 50))
+                    npc.target_queue = [
+                        (2210, 780 + random.randint(-15, 15)),         # through door
+                        (2210 + random.randint(20, 60), below_tables_y),  # go below tables
+                        (seat[0], below_tables_y),                     # align x with seat
+                        seat,                                          # final seat
+                    ]
                 npc.start_delay = count * 0.6
                 npc.stop_at_target = True
                 npc.ai_enabled = True
@@ -2207,11 +2224,11 @@ class Game:
         """Build a collision-free waypoint list from an NPC's seat to the door.
 
         Tables span x 2300-2430, 2560-2690, 2860-2990  /  y 720-1020.
-        Strategy: move to the nearest clear lane first, then go below
-        all tables, then slide left and exit through the door.
+        Strategy: move to the nearest clear lane first, then go ABOVE
+        all tables (exit via top), then slide left and exit through the door.
         """
         nx, ny = npc.rect.centerx, npc.rect.centery
-        BELOW_Y = 1062
+        ABOVE_Y = 680  # Above all tables (tables start at y=720)
         DOOR_X  = 2200
         DOOR_Y  = 780 + random.randint(-15, 15)
 
@@ -2225,9 +2242,9 @@ class Game:
         if 700 < ny < 1040 and abs(lane_x - nx) > 25:
             wps.append((lane_x, ny))           # sidestep to gap
 
-        wps.append((lane_x, BELOW_Y))          # down through gap
-        wps.append((DOOR_X, BELOW_Y))          # slide left below tables
-        wps.append((DOOR_X, DOOR_Y))           # up to door height
+        wps.append((lane_x, ABOVE_Y))          # up through gap (exit via top)
+        wps.append((DOOR_X, ABOVE_Y))          # slide left above tables
+        wps.append((DOOR_X, DOOR_Y))           # down to door height
         wps.append((2130, DOOR_Y))             # clear of door wall
         return wps
 
@@ -2473,28 +2490,52 @@ class Game:
 
     def _draw_world(self):
         """Render floor, NPCs, player."""
+        # Smooth camera zoom
+        target_zoom = 1.0 if self.current_floor == FLOOR_CAMPUS else 1.5
+        current_zoom = getattr(self.camera, 'zoom', 1.0)
+        if abs(current_zoom - target_zoom) > 0.01:
+            new_zoom = current_zoom + (target_zoom - current_zoom) * 0.05
+        else:
+            new_zoom = target_zoom
+            
+        self.camera.set_zoom(new_zoom)
+        
+        if self.camera.zoom != 1.0:
+            view_w, view_h = self.camera.view_w, self.camera.view_h
+            if not hasattr(self, '_zoom_surface') or self._zoom_surface.get_size() != (view_w, view_h):
+                self._zoom_surface = pygame.Surface((view_w, view_h))
+            target_surf = self._zoom_surface
+            target_surf.fill(BLACK)
+        else:
+            target_surf = self.screen
+
         floor = self.school_map.get_floor(self.current_floor)
         if floor:
-            floor.draw(self.screen, self.camera)
+            floor.draw(target_surf, self.camera)
 
         # Draw parked car on campus
         if self.current_floor == FLOOR_CAMPUS:
-            self._draw_parked_car()
-            self._draw_extra_parked_cars()
+            self._draw_parked_car(target_surf)
+            self._draw_extra_parked_cars(target_surf)
 
         if floor and hasattr(floor, 'draw_foreground'):
-            floor.draw_foreground(self.screen, self.camera, self.player)
+            floor.draw_foreground(target_surf, self.camera, self.player)
 
         for npc in self.npc_manager.get_npcs_on_floor(self.current_floor):
-            npc.draw(self.screen, self.camera)
+            npc.draw(target_surf, self.camera)
 
         # Hide player sprite during drive_away phase (player is "inside" the car)
         if not (self._car_departure_active and self._car_depart_phase == "drive_away"):
-            self.player.draw(self.screen, self.camera)
+            self.player.draw(target_surf, self.camera)
 
         # ── Draw Top Layer (Trees, etc.) ──
         if floor and hasattr(floor, 'draw_top_layer'):
-            floor.draw_top_layer(self.screen, self.camera)
+            floor.draw_top_layer(target_surf, self.camera)
+            
+        if self.camera.zoom != 1.0:
+            # Scale up to screen size and blit
+            scaled = pygame.transform.scale(target_surf, (SCREEN_WIDTH, SCREEN_HEIGHT))
+            self.screen.blit(scaled, (0, 0))
 
     def _draw_entry_prompt(self, building_name: str):
         panel_w, panel_h = 520, 54
@@ -2664,6 +2705,8 @@ class Game:
                 corridor = floor2.rooms.get("f2_corridor")
                 if corridor:
                     noah.bound_rect = corridor.rect.inflate(-40, -40)
+                    # Place Noah in the corridor away from doors (center-left of corridor)
+                    noah.rect.center = (corridor.rect.centerx - 200, corridor.rect.centery)
         # Ensure player is placed at entrance if still off-screen
         if not self._player_spawned or self.player.rect.x < 0:
             f0 = self.school_map.get_floor(0)
@@ -3080,7 +3123,8 @@ class Game:
         pygame.draw.rect(surf, (20, 20, 20), (0, 60, w, 6))
         return surf
 
-    def _draw_parked_car(self):
+    def _draw_parked_car(self, surface=None):
+        surface = surface or self.screen
         """Draw the parked car in the campus parking lot (facing left)."""
         car_surf = self._build_car_surface()
         # Flip horizontally so the car faces left
@@ -3089,10 +3133,10 @@ class Game:
         if self._car_departure_active and self._car_depart_phase == "drive_away":
             sx, sy = self.camera.apply_pos(self._car_depart_wx, self._car_depart_wy)
             rect = car_surf.get_rect(center=(sx, sy))
-            self.screen.blit(car_surf, rect)
+            surface.blit(car_surf, rect)
         else:
             cr = self.camera.apply_rect(self._parked_car_rect)
-            self.screen.blit(car_surf, (cr.x, cr.y - 10))
+            surface.blit(car_surf, (cr.x, cr.y - 10))
 
     def _build_regular_car_surface(self, color: tuple) -> pygame.Surface:
         """Create a regular car sprite surface (200x90)."""
@@ -3117,7 +3161,8 @@ class Game:
         pygame.draw.rect(surf, (220, 40, 40), (0, 55, 6, 12), border_radius=2)
         return surf
 
-    def _draw_extra_parked_cars(self):
+    def _draw_extra_parked_cars(self, surface=None):
+        surface = surface or self.screen
         """Draw additional cars parked in the lot."""
         if self.current_floor != 0:
             return
@@ -3128,7 +3173,7 @@ class Game:
             elif angle != 0:
                 car_surf = pygame.transform.rotate(car_surf, angle)
             cr = self.camera.apply_rect(rect)
-            self.screen.blit(car_surf, (cr.x, cr.y - 10))
+            surface.blit(car_surf, (cr.x, cr.y - 10))
 
     def _draw_car_panel(self):
         """Draw the 'End the day?' confirmation panel overlay."""

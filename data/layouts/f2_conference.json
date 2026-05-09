@@ -1,0 +1,110 @@
+{
+  "room_id": "f2_conference",
+  "props": [
+    {
+      "sprite": "Conference_Hall_Singles_32x32_1.png",
+      "gx": 2,
+      "gy": 2,
+      "collision": "solid",
+      "layer": "below"
+    },
+    {
+      "sprite": "Conference_Hall_Singles_32x32_10.png",
+      "gx": 5,
+      "gy": 2,
+      "collision": "none",
+      "layer": "below"
+    },
+    {
+      "sprite": "Conference_Hall_Singles_32x32_11.png",
+      "gx": 8,
+      "gy": 2,
+      "collision": "none",
+      "layer": "below"
+    },
+    {
+      "sprite": "Conference_Hall_Singles_32x32_12.png",
+      "gx": 11,
+      "gy": 2,
+      "collision": "none",
+      "layer": "below"
+    },
+    {
+      "sprite": "Conference_Hall_Singles_32x32_13.png",
+      "gx": 14,
+      "gy": 2,
+      "collision": "none",
+      "layer": "below"
+    },
+    {
+      "sprite": "Conference_Hall_Singles_32x32_14.png",
+      "gx": 17,
+      "gy": 2,
+      "collision": "solid",
+      "layer": "below"
+    },
+    {
+      "sprite": "Conference_Hall_Singles_32x32_15.png",
+      "gx": 20,
+      "gy": 2,
+      "collision": "solid",
+      "layer": "below"
+    },
+    {
+      "sprite": "Conference_Hall_Singles_32x32_16.png",
+      "gx": 23,
+      "gy": 2,
+      "collision": "solid",
+      "layer": "below"
+    },
+    {
+      "sprite": "Conference_Hall_Singles_32x32_17.png",
+      "gx": 2,
+      "gy": 5,
+      "collision": "solid",
+      "layer": "below"
+    },
+    {
+      "sprite": "Conference_Hall_Singles_32x32_18.png",
+      "gx": 5,
+      "gy": 5,
+      "collision": "none",
+      "layer": "below"
+    },
+    {
+      "sprite": "Conference_Hall_Singles_32x32_19.png",
+      "gx": 8,
+      "gy": 5,
+      "collision": "none",
+      "layer": "below"
+    },
+    {
+      "sprite": "Conference_Hall_Singles_32x32_2.png",
+      "gx": 11,
+      "gy": 5,
+      "collision": "solid",
+      "layer": "below"
+    },
+    {
+      "sprite": "Conference_Hall_Singles_32x32_20.png",
+      "gx": 14,
+      "gy": 5,
+      "collision": "solid",
+      "layer": "below"
+    },
+    {
+      "sprite": "Conference_Hall_Singles_32x32_21.png",
+      "gx": 17,
+      "gy": 5,
+      "collision": "none",
+      "layer": "below"
+    },
+    {
+      "sprite": "Conference_Hall_Singles_32x32_22.png",
+      "gx": 20,
+      "gy": 5,
+      "collision": "none",
+      "layer": "below"
+    }
+  ]
+}
