@@ -3220,8 +3220,8 @@ class Game:
         pygame.draw.rect(self.screen, can_outline, cancel_rect, 3, border_radius=10)
 
         font = pygame.font.SysFont("Arial", 20, bold=True)
-        acc_text = font.render("\u24B6 Aceptar" if controller_connected and sel == "accept" else "Aceptar", True, WHITE)
-        can_text = font.render("\u24B7 Cancelar" if controller_connected and sel == "cancel" else "Cancelar", True, WHITE)
+        acc_text = font.render("\u24B6 Accept" if controller_connected and sel == "accept" else "Accept", True, WHITE)
+        can_text = font.render("\u24B7 Cancel" if controller_connected and sel == "cancel" else "Cancel", True, WHITE)
 
         self.screen.blit(acc_text, acc_text.get_rect(center=accept_rect.center))
         self.screen.blit(can_text, can_text.get_rect(center=cancel_rect.center))

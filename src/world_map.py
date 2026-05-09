@@ -437,12 +437,15 @@ class WorldMap:
                     screen.blit(lock, (rx + 4, ry + 18))
 
         # Walls
-        wall_col = (90, 90, 100)
         for wall in floor.walls:
             wx, wy = self._world_to_screen(wall.x, wall.y)
             ww = max(1, int(wall.width * z))
             wh = max(1, int(wall.height * z))
-            pygame.draw.rect(screen, wall_col, (wx, wy, ww, wh))
+            wall_rect = pygame.Rect(wx, wy, ww, wh)
+            if hasattr(floor, "_draw_topdown_wall"):
+                floor._draw_topdown_wall(screen, wall_rect)
+            else:
+                pygame.draw.rect(screen, (90, 90, 100), wall_rect)
 
         door_col = (200, 200, 230)
         for door in getattr(floor, "doors", []):
