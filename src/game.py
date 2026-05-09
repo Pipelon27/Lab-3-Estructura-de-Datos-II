@@ -19,7 +19,7 @@ from collections import deque
 from settings import (
     SCREEN_WIDTH, SCREEN_HEIGHT, FPS,
     BLACK, WHITE,
-    FLOOR_1F, FLOOR_2F, FLOOR_CAMPUS, FLOOR_SIZES, ZONE_TO_FLOOR,
+    FLOOR_1F, FLOOR_2F, FLOOR_CAMPUS, FLOOR_BASEMENT, FLOOR_ROOFTOP, FLOOR_SIZES, ZONE_TO_FLOOR,
     PLAYER_SIZE, NPC_INTERACTION_RANGE, ATTACK_RANGE, NPC_SPEED,
     GameState, Character, DayPhase, ItemCategory, Ending, SocialGroup, Direction,
     NOTIF_SUCCESS, NOTIF_WARNING, NOTIF_ERROR, NOTIF_INFO,
@@ -124,7 +124,7 @@ class Game:
 
         # In-game clock (starts at 07:00 AM)
         self.time_of_day_minutes: float = 7 * 60
-        self._time_scale: float = 2.0   # minutes advanced per real-time second
+        self._time_scale: float = 1.2   # minutes advanced per real-time second (was 2.0)
         self._last_time_minutes: float = self.time_of_day_minutes
 
         # Classroom simulation state
@@ -548,12 +548,14 @@ class Game:
                     self.state = self.previous_state
                     if self.phone.is_visible:
                         self.phone.close()
-                    if getattr(self.world_map, 'teleport_requested', False):
+                    did_request_teleport = getattr(self.world_map, 'teleport_requested', False)
+                    if did_request_teleport:
                         self.world_map.teleport_requested = False
                         tfloor = self.world_map.teleport_floor
                         tx, ty = self.world_map.teleport_pos
                         if not self._try_teleport_to(tfloor, int(tx), int(ty)):
                             continue
+                    self.world_map.reset_teleport_state()
                 continue
             if event.type == pygame.KEYDOWN:
                 self._on_key_down(event)
@@ -717,9 +719,11 @@ class Game:
             map_floor = self.current_floor if self.current_floor in FLOOR_SIZES else FLOOR_CAMPUS
             self.world_map.current_tab = map_floor
             self.world_map._centre_on_floor(map_floor)
+            self.world_map.reset_teleport_state()
             self.world_map._refresh_room_selection(reset_index=True)
         elif self.state == GameState.MAP:
             self.state = self.previous_state
+            self.world_map.reset_teleport_state()
             if self.phone.is_visible:
                 self.phone.close()
 
@@ -917,11 +921,13 @@ class Game:
             self.state = self.previous_state
             if self.phone.is_visible:
                 self.phone.close()
-            if getattr(self.world_map, 'teleport_requested', False):
+            did_request_teleport = getattr(self.world_map, 'teleport_requested', False)
+            if did_request_teleport:
                 self.world_map.teleport_requested = False
                 tfloor = self.world_map.teleport_floor
                 tx, ty = self.world_map.teleport_pos
                 self._try_teleport_to(tfloor, int(tx), int(ty))
+            self.world_map.reset_teleport_state()
 
     def _handle_controller_combat(self, controller):
         """Handle controller input during COMBAT state."""
@@ -2034,6 +2040,118 @@ class Game:
                 npc.stop_at_target = True
                 npc.speed_multiplier = 1.3
 
+    def _spread_first_floor_npcs(self):
+        """Scatter normal first-floor NPCs across the larger school map."""
+        if self.current_phase not in (DayPhase.ARRIVAL, DayPhase.CLASS_1, DayPhase.CLASS_2):
+            return
+
+        floors = {
+            FLOOR_CAMPUS: self.school_map.get_floor(FLOOR_CAMPUS),
+            FLOOR_1F: self.school_map.get_floor(FLOOR_1F),
+            FLOOR_2F: self.school_map.get_floor(FLOOR_2F),
+            FLOOR_BASEMENT: self.school_map.get_floor(FLOOR_BASEMENT),
+            FLOOR_ROOFTOP: self.school_map.get_floor(FLOOR_ROOFTOP),
+            FLOOR_COLISEUM_INTERIOR: self.school_map.get_floor(FLOOR_COLISEUM_INTERIOR),
+        }
+        if any(floor is None for floor in floors.values()):
+            return
+
+        scatter_areas = [
+            (FLOOR_CAMPUS, pygame.Rect(180, 180, 1050, 900), None),       # green zones / gardens
+            (FLOOR_CAMPUS, pygame.Rect(2780, 1080, 980, 650), None),      # Athletic Coliseum campus side
+            (FLOOR_COLISEUM_INTERIOR, pygame.Rect(320, 260, 1160, 650), None),
+            (FLOOR_1F, pygame.Rect(1120, 120, 960, 1650), None),          # 1F main hall
+            (FLOOR_ROOFTOP, pygame.Rect(1250, 50, 1100, 900), None),      # ROOFTOP (favoring rooftop over reception)
+            (FLOOR_ROOFTOP, pygame.Rect(1250, 50, 1100, 900), None),      # ROOFTOP (double weight)
+            (FLOOR_1F, pygame.Rect(120, 1780, 820, 420), "male"),         # men's bathroom
+            (FLOOR_1F, pygame.Rect(2260, 2020, 780, 300), "female"),      # women's bathroom
+            (FLOOR_1F, pygame.Rect(120, 120, 850, 720), None),            # lab / infirmary side
+            (FLOOR_1F, pygame.Rect(2260, 120, 780, 480), None),           # library wing
+            (FLOOR_2F, pygame.Rect(1120, 120, 960, 1650), None),          # 2F corridor
+            (FLOOR_2F, pygame.Rect(120, 420, 850, 1300), None),           # 2F art/music/science wing
+            (FLOOR_2F, pygame.Rect(2260, 120, 780, 1320), None),          # 2F admin wing
+            (FLOOR_BASEMENT, pygame.Rect(360, 260, 680, 420), None),
+            (FLOOR_BASEMENT, pygame.Rect(1210, 260, 680, 420), None),
+            (FLOOR_BASEMENT, pygame.Rect(2050, 260, 560, 420), None),
+            (FLOOR_1F, pygame.Rect(1180, 2020, 860, 280), None),          # reception (moved to end, less priority)
+        ]
+
+        from settings import NPC_SIZE
+        blocked_ids = {
+            "npc_noah_carter",
+            "npc_gordon",
+            "npc_director",
+            "npc_oscar",
+            "npc_oscar_obs1",
+            "npc_oscar_obs2",
+            "npc_oscar_obs3",
+            "npc_oscar_obs4",
+            "npc_bath_m_attendant",
+            "npc_bath_f_attendant",
+        }
+        candidates = [
+            npc for npc in self.npc_manager.npcs.values()
+            if npc.id not in blocked_ids
+            and not npc.id.startswith("npc_class_")
+            and not getattr(npc, "ignore_schedule", False)
+            and npc.current_zone != 3  # Don't teleport people heading to/in cafeteria
+        ]
+
+        occupied_by_floor = {
+            floor_id: [
+                npc.rect.copy()
+                for npc in self.npc_manager.get_npcs_on_floor(floor_id)
+                if npc.id not in blocked_ids and npc not in candidates
+            ]
+            for floor_id in floors
+        }
+
+        def choose_area(npc, start_idx):
+            for offset in range(len(scatter_areas)):
+                floor_id, area, allowed_gender = scatter_areas[(start_idx + offset) % len(scatter_areas)]
+                if allowed_gender is None or getattr(npc, "gender", "unspecified") == allowed_gender:
+                    return floor_id, area
+            floor_id, area, _ = scatter_areas[start_idx % len(scatter_areas)]
+            return floor_id, area
+
+        for idx, npc in enumerate(sorted(candidates, key=lambda n: n.id)):
+            floor_id, area = choose_area(npc, idx)
+            floor = floors[floor_id]
+            inner = area.inflate(-70, -70)
+
+            placed = False
+            for attempt in range(40):
+                cols = 4
+                rows = max(2, (len(candidates) // max(1, len(scatter_areas) * cols)) + 2)
+                half = NPC_SIZE // 2
+                cell_x = attempt % cols
+                cell_y = (attempt // cols) % rows
+                base_x = inner.left + int((cell_x + 0.5) * inner.width / cols)
+                base_y = inner.top + int((cell_y + 0.5) * inner.height / rows)
+                npc.rect.center = (
+                    max(inner.left + half, min(base_x + random.randint(-24, 24), inner.right - half)),
+                    max(inner.top + half, min(base_y + random.randint(-24, 24), inner.bottom - half)),
+                )
+                blockers = floor.walls + occupied_by_floor[floor_id]
+                if not any(npc.rect.colliderect(w) for w in blockers):
+                    placed = True
+                    break
+
+            if not placed:
+                npc.rect.center = inner.center
+
+            npc.current_floor = floor_id
+            npc.current_zone = -1
+            occupied_by_floor[floor_id].append(npc.rect.copy())
+            npc.bound_rect = None
+            npc.ai_enabled = True
+            npc.stop_at_target = False
+            npc.target_queue = []
+            npc.target_pos = (
+                random.randint(inner.left, inner.right),
+                random.randint(inner.top, inner.bottom),
+            ) if random.random() < 0.75 else None
+
     def _clear_bus_path(self):
         """Ensure no NPCs block the road during the bus cinematic and departure."""
         safe_road = pygame.Rect(-200, 2300, 1500, 300)
@@ -2103,54 +2221,73 @@ class Game:
         return (sx + random.randint(-12, 12), sy + random.randint(-12, 12))
 
     def _move_random_npcs_to_cafeteria(self):
-        """Make random NPCs on Floor 1 head to the cafeteria and sit at tables."""
+        """Make random NPCs head to the cafeteria and sit at tables (walking, no teleport)."""
         self._caf_seat_pool = []  # reset pool so seats are freshly shuffled
         floor1 = self.school_map.get_floor(FLOOR_1F)
         if not floor1: return
-        npcs = self.npc_manager.get_npcs_on_floor(FLOOR_1F)
+        
+        # Take all generic NPCs that are supposed to be in the cafeteria (Zone 3)
+        npcs = [n for n in self.npc_manager.npcs.values() 
+                if n.id.startswith("npc_rnd_") and n.current_zone == 3
+                and not getattr(n, "ignore_schedule", False)]
+        
         caf_room = floor1.rooms.get("f1_cafeteria")
         library_room = floor1.rooms.get("f1_library")
         if not caf_room: return
 
         # Cafeteria layout: tables at y=720..1020. Door at (2210, 780).
-        # Route NPCs BELOW the tables (y~1050) before reaching seats.
-        below_tables_y = caf_room.rect.bottom - 40  # ~1060, below all table bottoms
+        below_tables_y = caf_room.rect.bottom - 40
         
         count = 0
         for npc in npcs:
-            if npc.id.startswith("npc_rnd_") and not getattr(npc, "ignore_schedule", False):
-                seat = self._get_cafeteria_seat()
-                
-                # Check if NPC is in library - if so, route through main hall
+            seat = self._get_cafeteria_seat()
+            
+            # Floor 2 to Floor 1 transition via stairs
+            if npc.current_floor == FLOOR_2F:
+                # Stairs on 2F are at (2150, 1720)
+                npc.target_pos = (2100, 1720) # Near stairs
+                npc.target_queue = [
+                    (2150, 1720),      # At stairs
+                    "SWITCH_TO_F1",    # Teleport to 1F stairs
+                    (2100, 1720),      # At 1F stairs (outside)
+                    (2100, 780),       # To cafeteria door level
+                    (2210, 780),       # Through door
+                    (2210 + random.randint(20, 60), below_tables_y),
+                    (seat[0], below_tables_y),
+                    seat
+                ]
+            else:
+                # Floor 1 logic
                 in_library = library_room and library_room.rect.collidepoint(npc.rect.centerx, npc.rect.centery)
                 
                 if in_library:
-                    # Route: Library → Library Door (x=2150, y=420 center) → Main Hall → Cafeteria door → seat
-                    # Library door is at x=2150, y=300 to y=540 (3*DW wide, centered at y=420)
-                    door_y = 420 + random.randint(-30, 30)  # Center of library door gap
-                    npc.target_pos = (2180, door_y)  # Inside library, near the door
+                    door_y = 420 + random.randint(-30, 30)
+                    npc.target_pos = (2180, door_y)
                     npc.target_queue = [
-                        (2140, door_y),                                # At library door (inside)
-                        (2100, door_y),                                # Exit to Main Hall corridor
-                        (2100, 780 + random.randint(-15, 15)),         # Go down to cafeteria door level
-                        (2210, 780 + random.randint(-15, 15)),         # Through cafeteria door
-                        (2210 + random.randint(20, 60), below_tables_y),  # go below tables
-                        (seat[0], below_tables_y),                     # align x with seat
-                        seat,                                          # final seat
+                        (2140, door_y),
+                        (2100, door_y),
+                        (2100, 780 + random.randint(-15, 15)),
+                        (2210, 780 + random.randint(-15, 15)),
+                        (2210 + random.randint(20, 60), below_tables_y),
+                        (seat[0], below_tables_y),
+                        seat,
                     ]
                 else:
-                    # Default route: main hall → door → below tables corridor → seat
-                    npc.target_pos = (1600, 800 + random.randint(-50, 50))
+                    # Default corridor walk
+                    npc.target_pos = (npc.rect.centerx, npc.rect.centery) # start moving from where they are
                     npc.target_queue = [
+                        (2100, npc.rect.centery),                      # move to center corridor
+                        (2100, 780 + random.randint(-15, 15)),         # to door level
                         (2210, 780 + random.randint(-15, 15)),         # through door
-                        (2210 + random.randint(20, 60), below_tables_y),  # go below tables
-                        (seat[0], below_tables_y),                     # align x with seat
-                        seat,                                          # final seat
+                        (2210 + random.randint(20, 60), below_tables_y),
+                        (seat[0], below_tables_y),
+                        seat,
                     ]
-                npc.start_delay = count * 0.6
-                npc.stop_at_target = True
-                npc.ai_enabled = True
-                count += 1
+            
+            npc.start_delay = count * 0.4
+            npc.stop_at_target = True
+            npc.ai_enabled = True
+            count += 1
 
     # Clear vertical lanes between cafeteria tables (gap centres)
     _CAF_EXIT_LANES = [2233, 2495, 2775, 3067]
@@ -2249,6 +2386,7 @@ class Game:
                 
             self.ui.show_notification(msg, NOTIF_INFO)
             self.npc_manager.update_schedules(self.current_phase, self.school_map)
+            self._spread_first_floor_npcs()
             if random.random() < 0.3:
                 self._random_event()
         else:
@@ -2539,11 +2677,41 @@ class Game:
     #  INTRO CINEMATIC
     # ──────────────────────────────────────────────────────────
 
+    def _keep_noah_front_idle_at_entrance(self):
+        """Keep Noah facing the camera while the intro is still at the entrance."""
+        if self._cine_phase not in ("car", "exit", "dialogue"):
+            return
+        noah = self.npc_manager.get_npc_by_id("npc_noah_carter")
+        if not noah or noah.current_floor != FLOOR_CAMPUS:
+            return
+        if abs(noah.rect.centerx - 2000) > 80 or abs(noah.rect.centery - 2650) > 80:
+            return
+        noah.direction = Direction.DOWN
+        noah.state = "idle"
+        noah._wander_dx = 0
+        noah._wander_dy = 0
+        if noah.animations.get("idle_down"):
+            noah.image = noah.animations["idle_down"][noah.frame_index % len(noah.animations["idle_down"])]
+
+    def _force_player_walk_up_animation(self, dt: float):
+        """Show the player walking away from the bus during the intro exit."""
+        self.player.direction = Direction.UP
+        self.player.state = "walk"
+        frames = self.player.animations.get("walk_up", [])
+        if not frames:
+            return
+        self.player.animation_timer += dt * 12.0
+        if self.player.animation_timer >= len(frames):
+            self.player.animation_timer = 0.0
+        self.player.frame_index = int(self.player.animation_timer) % len(frames)
+        self.player.image = frames[self.player.frame_index]
+
     def _update_cinematic(self, dt: float):
         """Advance the intro-cinematic state machine."""
         # Do NOT advance in-game time during the cinematic
         phase = self._cine_phase
 
+        self._keep_noah_front_idle_at_entrance()
         self._clear_noah_area()
         self._clear_bus_path()
 
@@ -2573,6 +2741,7 @@ class Game:
             self._exit_car_timer += dt
             self._exit_car_player_y -= 60 * dt  # walk up slowly
             self.player.rect.centery = int(self._exit_car_player_y)
+            self._force_player_walk_up_animation(dt)
             # Car keeps driving away to the left
             self._car_x -= self._car_speed * dt
             self.camera.update(self.player)
@@ -2704,6 +2873,7 @@ class Game:
             dist = ((px - nx)**2 + (py - ny)**2) ** 0.5
             if dist > 250 and noah.current_floor == self.current_floor:
                 self._noah_wait_for_player = True
+                noah.state = "idle"
                 return
             self._noah_wait_for_player = False
 
@@ -2713,6 +2883,7 @@ class Game:
             # Teleport Noah to 1F reception
             noah.current_floor = FLOOR_1F
             noah.rect.center = (1600, 2200)
+            noah.state = "idle"
             self._go_to_floor(FLOOR_1F, 1600, 2200)
             self._noah_route_idx += 1
             return
@@ -2722,10 +2893,12 @@ class Game:
             # Noah will switch to 2F when the player transitions via
             # seamless stairs (handled in the guide movement block).
             self._cinematic_stairs_unlocked = True
+            noah.state = "idle"
             self._noah_route_idx += 1
             return
 
         if tag == "final":
+            noah.state = "idle"
             self._cine_phase = "final_dialogue"
             self._noah_final_dlg_index = 0
             self._noah_final_dialogue = True
@@ -2741,6 +2914,9 @@ class Game:
             speed = NPC_SPEED * 2.5 * 30 * dt
             noah.rect.centerx += int((dx_r / dist) * speed)
             noah.rect.centery += int((dy_r / dist) * speed)
+            noah.state = "walk"
+            noah._wander_dx = dx_r / dist
+            noah._wander_dy = dy_r / dist
             # Update facing direction
             if abs(dx_r) > abs(dy_r):
                 noah.direction = Direction.RIGHT if dx_r > 0 else Direction.LEFT
@@ -2748,6 +2924,9 @@ class Game:
                 noah.direction = Direction.DOWN if dy_r > 0 else Direction.UP
         else:
             noah.rect.center = pos
+            noah.state = "idle"
+            noah._wander_dx = 0
+            noah._wander_dy = 0
             self._noah_route_idx += 1
 
     def _draw_cinematic(self):
@@ -2968,6 +3147,7 @@ class Game:
         
         # Re-init NPCs for the new day positions
         self.npc_manager.update_schedules(self.current_phase, self.school_map)
+        self._spread_first_floor_npcs()
         
         # Close cafeteria
         floor1 = self.school_map.get_floor(FLOOR_1F)

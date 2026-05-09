@@ -371,6 +371,9 @@ class Floor:
             fr = camera.apply_rect(furn["rect"])
             if fr.right < 0 or fr.left > sw or fr.bottom < 0 or fr.top > sh:
                 continue
+            if furn.get("type") == "bookshelf":
+                self._draw_bookshelf(screen, fr)
+                continue
             pygame.draw.rect(screen, furn["color"], fr)
             outline = furn.get("outline")
             if outline:
@@ -381,12 +384,11 @@ class Floor:
             if wr.right < 0 or wr.left > sw or wr.bottom < 0 or wr.top > sh:
                 continue
             
-            # Special case for the ping pong table
-            if getattr(self, 'ping_pong_table', None) and wall == self.ping_pong_table:
-                pygame.draw.rect(screen, (30, 100, 40), wr)  # Ping pong green/blue
-                pygame.draw.rect(screen, WHITE, wr, 2)       # Outline
-                net = pygame.Rect(wr.centerx - 2, wr.y, 4, wr.height)
-                pygame.draw.rect(screen, WHITE, net)
+            # Special case for ping pong tables
+            if wall in getattr(self, 'ping_pong_tables', []):
+                self._draw_ping_pong_table(screen, wr)
+            elif getattr(self, 'ping_pong_table', None) and wall == self.ping_pong_table:
+                self._draw_ping_pong_table(screen, wr)
             # Skip drawing fountain collision rect (it's invisible, only for collision)
             elif getattr(self, 'fountain_rect', None) and wall == self.fountain_rect:
                 continue
@@ -662,6 +664,40 @@ class Floor:
             )
 
         pygame.draw.rect(screen, self.WALL_EDGE_COLOR, rect, 2)
+
+    def _draw_ping_pong_table(self, screen: pygame.Surface, rect: pygame.Rect):
+        """Draw a top-down ping pong table."""
+        pygame.draw.rect(screen, (24, 105, 40), rect)
+        pygame.draw.rect(screen, WHITE, rect, 3)
+        pygame.draw.line(screen, WHITE, (rect.centerx, rect.top + 3), (rect.centerx, rect.bottom - 3), 3)
+        pygame.draw.line(screen, WHITE, (rect.left + 3, rect.centery), (rect.right - 3, rect.centery), 2)
+        net = pygame.Rect(rect.centerx - 3, rect.top - 5, 6, rect.height + 10)
+        pygame.draw.rect(screen, (225, 235, 245), net)
+        pygame.draw.rect(screen, (55, 65, 75), net, 1)
+
+    def _draw_bookshelf(self, screen: pygame.Surface, rect: pygame.Rect):
+        """Draw a compact library bookshelf with colored books."""
+        pygame.draw.rect(screen, (92, 58, 34), rect)
+        pygame.draw.rect(screen, (55, 34, 22), rect, 2)
+        shelf_count = 3 if rect.height >= 58 else 2
+        book_colors = [
+            (150, 45, 55), (45, 90, 150), (60, 130, 75),
+            (185, 150, 55), (115, 70, 145),
+        ]
+        pad = 6
+        shelf_h = max(10, (rect.height - pad * 2) // shelf_count)
+        for row in range(shelf_count):
+            y = rect.top + pad + row * shelf_h
+            pygame.draw.line(screen, (50, 30, 20), (rect.left + 4, y + shelf_h), (rect.right - 4, y + shelf_h), 2)
+            x = rect.left + pad
+            c_idx = row
+            while x < rect.right - pad - 6:
+                w = 5 + ((x + row * 3) % 5)
+                h = max(8, shelf_h - 5 - ((x + row) % 4))
+                color = book_colors[c_idx % len(book_colors)]
+                pygame.draw.rect(screen, color, pygame.Rect(x, y + shelf_h - h - 1, w, h))
+                x += w + 3
+                c_idx += 1
 
     def draw_foreground(self, screen, camera, player):
         sw, sh = screen.get_width(), screen.get_height()
@@ -1319,6 +1355,18 @@ class SchoolMap:
                         tile_path="data/tiles/piso_blancobaldosa.png"))
         women_door_rect = (2150, women_bath_y + 139, WT, DW)
         f.add_door(Door("f1_women_bath_door", *women_door_rect, color=(200, 140, 200)))
+
+        # Library bookshelves - repositioned to corners flush with walls
+        library_shelves = [
+            pygame.Rect(2166, 32, 400, 56),        # Top-Left corner (horizontal)
+            pygame.Rect(3168 - 400, 32, 400, 56),  # Top-Right corner (horizontal)
+            pygame.Rect(2166, 584 - 56, 400, 56),  # Bottom-Left corner (horizontal)
+            pygame.Rect(3168 - 400, 584 - 56, 400, 56), # Bottom-Right corner (horizontal)
+            pygame.Rect(3168 - 56, 32, 56, 552),   # Right wall (vertical, full height minus wall)
+        ]
+        for shelf in library_shelves:
+            f.furniture.append({"rect": shelf, "type": "bookshelf", "color": (92, 58, 34), "outline": (55, 34, 22)})
+            f.walls.append(shelf)
 
         # Outer boundary
         f.walls.extend([

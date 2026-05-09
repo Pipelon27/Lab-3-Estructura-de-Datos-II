@@ -195,6 +195,22 @@ class NPC:
         self.image: pygame.Surface | None = None
         self._load_sprites()
 
+    def _advance_animation(self, dt: float):
+        """Advance sprite frames independently from AI movement."""
+        if not self.animations:
+            return
+
+        fps = 10.0 if self.state == "walk" else 6.0
+        self.animation_timer += dt * fps
+        if self.animation_timer >= 1.0:
+            self.animation_timer = 0.0
+            self.frame_index = (self.frame_index + 1) % 6
+
+        key = f"{self.state}_{self.direction.value}"
+        frames = self.animations.get(key)
+        if frames:
+            self.image = frames[self.frame_index % len(frames)]
+
     def _load_sprites(self):
         """Extract idle and walk frames from the spritesheet."""
         base_dir = os.path.dirname(os.path.dirname(__file__))
@@ -292,6 +308,7 @@ class NPC:
     def update(self, dt: float, walls: list[pygame.Rect] | None = None):
         """Update AI and movement."""
         if not self.ai_enabled:
+            self._advance_animation(dt)
             return
             
         if self.start_delay > 0:
@@ -363,11 +380,12 @@ class NPC:
         dx = int(self._wander_dx * dt * 30)
         dy = int(self._wander_dy * dt * 30)
 
+        collided = False
         if walls:
             self.rect.x += dx
-            self._collide(walls, dx, 0)
+            collided = self._collide(walls, dx, 0) or collided
             self.rect.y += dy
-            self._collide(walls, 0, dy)
+            collided = self._collide(walls, 0, dy) or collided
         else:
             self.rect.x += dx
             self.rect.y += dy
@@ -375,11 +393,20 @@ class NPC:
         # Stay within zone bounds (uses floor bounds if available)
         bound_rect = getattr(self, 'bound_rect', None)
         if bound_rect:
+            before_clamp = self.rect.copy()
             self.rect.clamp_ip(bound_rect)
+            collided = collided or self.rect.topleft != before_clamp.topleft
         else:
+            before_clamp = self.rect.copy()
             max_x = getattr(self, '_floor_w', 3200) - NPC_SIZE - 30
             max_y = getattr(self, '_floor_h', 2400) - NPC_SIZE - 30
             self.rect.clamp_ip(pygame.Rect(30, 30, max_x, max_y))
+            collided = collided or self.rect.topleft != before_clamp.topleft
+
+        if collided:
+            self._wander_dx = 0
+            self._wander_dy = 0
+            self._wander_timer = min(self._wander_timer, 0.25)
 
         # Animation state update
         if abs(self._wander_dx) > 0 or abs(self._wander_dy) > 0:
@@ -387,25 +414,17 @@ class NPC:
         else:
             self.state = "idle"
 
-        if self.animations:
-            fps = 10.0 if self.state == "walk" else 6.0
-            self.animation_timer += dt * fps
-            if self.animation_timer >= 1.0:
-                self.animation_timer = 0.0
-                self.frame_index = (self.frame_index + 1) % 6
+        self._advance_animation(dt)
 
-            key = f"{self.state}_{self.direction.value}"
-            frames = self.animations.get(key)
-            if frames:
-                self.image = frames[self.frame_index % len(frames)]
-
-    def _collide(self, walls: list[pygame.Rect], dx: float, dy: float):
+    def _collide(self, walls: list[pygame.Rect], dx: float, dy: float) -> bool:
         """Slide the NPC along walls instead of teleporting - prevents jitter."""
+        collided = False
         # Separate axis handling for smoother sliding
         # First, handle X collisions
         if dx != 0:
             for wall in walls:
                 if self.rect.colliderect(wall):
+                    collided = True
                     if dx > 0:  # moving right
                         overlap = self.rect.right - wall.left
                         if overlap > 0 and overlap < self.rect.width:
@@ -419,6 +438,7 @@ class NPC:
         if dy != 0:
             for wall in walls:
                 if self.rect.colliderect(wall):
+                    collided = True
                     if dy > 0:  # moving down
                         overlap = self.rect.bottom - wall.top
                         if overlap > 0 and overlap < self.rect.height:
@@ -427,6 +447,7 @@ class NPC:
                         overlap = wall.bottom - self.rect.top
                         if overlap > 0 and overlap < self.rect.height:
                             self.rect.top = wall.bottom
+        return collided
 
     # ── drawing ───────────────────────────────────────────────
 
@@ -647,14 +668,19 @@ class NPCManager:
                 
             target_zone = npc.get_zone_for_phase(phase)
             if npc.current_zone != target_zone:
+                # If target is cafeteria (Zone 3), don't teleport - let game.py handle walking them in
+                if target_zone == 3:
+                    npc.current_zone = 3
+                    continue
                 npc.move_to_zone(target_zone, school_map)
 
             # Natural behavior for generic NPCs: scatter within valid rooms on their current floor
-            if npc.id not in special_ids and school_map:
+            # Only scatter if we JUST changed zone or if they aren't on any floor yet
+            if npc.id not in special_ids and school_map and (npc.current_zone != target_zone or npc.current_floor == -1):
                 floor = school_map.get_floor(npc.current_floor)
                 if floor and floor.rooms:
                     # Filter out 'c_building' on campus as it is just an exterior facade
-                    valid_rooms = [r for r in floor.rooms.values() if r.id != "c_building"]
+                    valid_rooms = [r for r in floor.rooms.values() if r.id != "c_building" and r.id != "f1_cafeteria"]
                     if valid_rooms:
                         room = random.choice(valid_rooms)
                         placed = False

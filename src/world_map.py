@@ -96,6 +96,12 @@ class WorldMap:
         self.player_x     = x
         self.player_y     = y
 
+    def reset_teleport_state(self):
+        """Clear any pending teleport confirmation/selection."""
+        self._confirm_teleport = False
+        self._teleport_target = None
+        self.teleport_requested = False
+
     # ── event handling ────────────────────────────────────────
 
     def handle_event(self, event: pygame.event.Event) -> bool:
@@ -110,7 +116,7 @@ class WorldMap:
                     self._confirm_teleport = False
                     return True
                 elif event.key == pygame.K_ESCAPE:
-                    self._confirm_teleport = False
+                    self.reset_teleport_state()
                     return False
             else:
                 if event.key in (KEY_MAP, KEY_PAUSE):
@@ -123,8 +129,7 @@ class WorldMap:
                 if tab is not None:
                     self.current_tab = tab
                     self._centre_on_floor(tab)
-                    self._confirm_teleport = False
-                    self._teleport_target = None
+                    self.reset_teleport_state()
                     self._refresh_room_selection(reset_index=True)
                     return False
                 # Start drag
@@ -195,8 +200,7 @@ class WorldMap:
                     self._confirm_teleport = False
                     return True
             elif controller.is_cancel_pressed():
-                self._confirm_teleport = False
-                self.teleport_requested = False
+                self.reset_teleport_state()
             return False
 
         # Floor tab navigation with LB/RB
@@ -218,7 +222,7 @@ class WorldMap:
             self.teleport_requested = False
 
         if controller.is_cancel_pressed():
-            self.teleport_requested = False
+            self.reset_teleport_state()
             return True
 
         return False
@@ -295,7 +299,13 @@ class WorldMap:
             self._teleport_target = None
             return
 
-        if reset_index or not (0 <= self._selected_room_index < len(rooms)):
+        if reset_index:
+            self._selected_room_index = -1
+            self._hovered_room = None
+            self._tooltip_pos = None
+            self._teleport_target = None
+            return
+        if not (0 <= self._selected_room_index < len(rooms)):
             self._selected_room_index = 0
 
         self._hovered_room = rooms[self._selected_room_index]
@@ -307,9 +317,7 @@ class WorldMap:
         n = len(FLOOR_NAMES)
         self.current_tab = (self.current_tab + delta) % n
         self._centre_on_floor(self.current_tab)
-        self._confirm_teleport = False
-        self._teleport_target = None
-        self.teleport_requested = False
+        self.reset_teleport_state()
         self._refresh_room_selection(reset_index=True)
 
     def _move_room_selection(self, step: int):
