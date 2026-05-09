@@ -219,6 +219,11 @@ class SeamlessStaircase:
 
 class Floor:
     WALL_COLOR       = (70, 70, 80)
+    WALL_TOP_COLOR   = (238, 240, 248)
+    WALL_FACE_COLOR  = (128, 126, 120)
+    WALL_SHADE_COLOR = (74, 70, 76)
+    WALL_EDGE_COLOR  = (48, 48, 70)
+    WALL_HILITE      = (255, 255, 255)
     TRANSITION_COLOR = (80, 160, 240)
     STAIR_STEP_A     = (55, 55, 68)
     STAIR_STEP_B     = (48, 48, 58)
@@ -384,7 +389,7 @@ class Floor:
             elif getattr(self, 'fountain_rect', None) and wall == self.fountain_rect:
                 continue
             else:
-                pygame.draw.rect(screen, self.WALL_COLOR, wr)
+                self._draw_topdown_wall(screen, wr)
 
         # Draw realistic fountain for Central Fountain room
         if self.id == 0:  # Campus floor
@@ -607,6 +612,54 @@ class Floor:
                 if tr.label and r.width > 20:
                     lbl = font_sm.render(tr.label, True, WHITE)
                     screen.blit(lbl, (r.x + 2, r.y - 16))
+
+    def _draw_topdown_wall(self, screen: pygame.Surface, rect: pygame.Rect):
+        """Draw a collision wall with a top-down 3D treatment."""
+        if rect.width <= 0 or rect.height <= 0:
+            return
+
+        horizontal = rect.width >= rect.height
+        thickness = rect.height if horizontal else rect.width
+        depth = max(6, min(26, int(thickness * 0.75)))
+        depth = min(depth, max(4, thickness))
+
+        shadow = rect.move(4, 5)
+        shadow_surf = pygame.Surface((shadow.width, shadow.height), pygame.SRCALPHA)
+        shadow_surf.fill((*BLACK, 45))
+        screen.blit(shadow_surf, shadow)
+
+        pygame.draw.rect(screen, self.WALL_FACE_COLOR, rect)
+
+        if horizontal:
+            face = pygame.Rect(rect.x, rect.bottom - depth, rect.width, depth)
+            cap_h = max(3, rect.height - depth)
+            cap = pygame.Rect(rect.x + 2, rect.y + 2, max(1, rect.width - 4), max(1, cap_h - 2))
+            pygame.draw.rect(screen, self.WALL_SHADE_COLOR, face)
+            pygame.draw.rect(screen, self.WALL_TOP_COLOR, cap)
+            pygame.draw.line(
+                screen, self.WALL_HILITE,
+                (rect.left + 1, rect.top + 1), (rect.right - 2, rect.top + 1), 2
+            )
+            pygame.draw.line(
+                screen, self.WALL_EDGE_COLOR,
+                (rect.left, rect.bottom - depth), (rect.right, rect.bottom - depth), 2
+            )
+        else:
+            face = pygame.Rect(rect.right - depth, rect.y, depth, rect.height)
+            cap_w = max(3, rect.width - depth)
+            cap = pygame.Rect(rect.x + 2, rect.y + 2, max(1, cap_w - 2), max(1, rect.height - 4))
+            pygame.draw.rect(screen, self.WALL_SHADE_COLOR, face)
+            pygame.draw.rect(screen, self.WALL_TOP_COLOR, cap)
+            pygame.draw.line(
+                screen, self.WALL_HILITE,
+                (rect.left + 1, rect.top + 1), (rect.left + 1, rect.bottom - 2), 2
+            )
+            pygame.draw.line(
+                screen, self.WALL_EDGE_COLOR,
+                (rect.right - depth, rect.top), (rect.right - depth, rect.bottom), 2
+            )
+
+        pygame.draw.rect(screen, self.WALL_EDGE_COLOR, rect, 2)
 
     def draw_foreground(self, screen, camera, player):
         sw, sh = screen.get_width(), screen.get_height()

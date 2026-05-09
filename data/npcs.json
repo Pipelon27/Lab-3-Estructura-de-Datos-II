@@ -1,104 +1,92 @@
 {
   "npcs": [
     {
-      "id": "npc_marcus",
-      "name": "Marcus Rivera",
-      "group": "athletes",
-      "public_personality": "Friendly team captain who welcomes everyone",
-      "private_personality": "Secretly being pressured by the Smile Club to bully weaker students",
-      "schedule": {
-        "arrival": 0, "class_1": 0, "break_1": 1, "class_2": 0,
-        "lunch": 3, "activities": 1, "departure": 0, "night": 5
-      },
-      "dialogue_ids": {
-        "aiden": "dlg_marcus_aiden",
-        "lena": "dlg_marcus_lena"
-      }
-    },
-    {
-      "id": "npc_sophie",
-      "name": "Sophie Chen",
-      "group": "tech_club",
-      "public_personality": "Quiet coder who keeps to herself",
-      "private_personality": "Runs an anonymous anti-bullying blog exposing the Smile Club",
-      "schedule": {
-        "arrival": 0, "class_1": 2, "break_1": 4, "class_2": 2,
-        "lunch": 3, "activities": 2, "departure": 0, "night": 2
-      },
-      "dialogue_ids": {
-        "aiden": "dlg_sophie_aiden",
-        "lena": "dlg_sophie_lena"
-      }
-    },
-    {
-      "id": "npc_dylan",
-      "name": "Dylan Brooks",
-      "group": "populars",
-      "public_personality": "Charming influencer loved by everyone",
-      "private_personality": "Core enforcer of the Smile Club — organises harassment campaigns",
-      "schedule": {
-        "arrival": 0, "class_1": 0, "break_1": 3, "class_2": 0,
-        "lunch": 3, "activities": 5, "departure": 0, "night": 5
-      },
-      "dialogue_ids": {
-        "aiden": "dlg_dylan_aiden",
-        "lena": "dlg_dylan_lena"
-      }
-    },
-    {
-      "id": "npc_emma",
-      "name": "Emma Torres",
-      "group": "academics",
-      "public_personality": "Studious valedictorian focused on grades",
-      "private_personality": "Being blackmailed by the Smile Club to write essays for members",
-      "schedule": {
-        "arrival": 0, "class_1": 4, "break_1": 4, "class_2": 4,
-        "lunch": 3, "activities": 4, "departure": 0, "night": 4
-      },
-      "dialogue_ids": {
-        "aiden": "dlg_emma_aiden",
-        "lena": "dlg_emma_lena"
-      }
-    },
-    {
-      "id": "npc_jake",
-      "name": "Jake Morrison",
-      "group": "rebels",
-      "public_personality": "Known troublemaker who skips class",
-      "private_personality": "Has photographic evidence against the Smile Club but is afraid to share",
-      "schedule": {
-        "arrival": 0, "class_1": 0, "break_1": 5, "class_2": 0,
-        "lunch": 3, "activities": 5, "departure": 0, "night": 5
-      },
-      "dialogue_ids": {
-        "aiden": "dlg_jake_aiden",
-        "lena": "dlg_jake_lena"
-      }
-    },
-    {
-      "id": "npc_mia",
-      "name": "Mia Nakamura",
+      "id": "npc_oscar_obs1",
+      "name": "Watcher 1",
       "group": "outsiders",
-      "public_personality": "Shy transfer student who avoids crowds",
-      "private_personality": "Current victim of a coordinated cyberbullying campaign by Ava",
+      "public_personality": "Quiet observer",
+      "private_personality": "",
       "schedule": {
-        "arrival": 0, "class_1": 0, "break_1": 4, "class_2": 0,
-        "lunch": 3, "activities": 4, "departure": 0, "night": 0
+        "arrival": 0,
+        "class_1": 0,
+        "break_1": 0,
+        "class_2": 0,
+        "lunch": 0,
+        "activities": 0,
+        "departure": 0,
+        "night": 0
       },
-      "dialogue_ids": {
-        "aiden": "dlg_mia_aiden",
-        "lena": "dlg_mia_lena"
-      }
+      "dialogue_ids": {}
+    },
+    {
+      "id": "npc_oscar_obs2",
+      "name": "Watcher 2",
+      "group": "outsiders",
+      "public_personality": "Quiet observer",
+      "private_personality": "",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 0,
+        "break_1": 0,
+        "class_2": 0,
+        "lunch": 0,
+        "activities": 0,
+        "departure": 0,
+        "night": 0
+      },
+      "dialogue_ids": {}
+    },
+    {
+      "id": "npc_oscar_obs3",
+      "name": "Watcher 3",
+      "group": "outsiders",
+      "public_personality": "Quiet observer",
+      "private_personality": "",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 0,
+        "break_1": 0,
+        "class_2": 0,
+        "lunch": 0,
+        "activities": 0,
+        "departure": 0,
+        "night": 0
+      },
+      "dialogue_ids": {}
+    },
+    {
+      "id": "npc_oscar_obs4",
+      "name": "Watcher 4",
+      "group": "outsiders",
+      "public_personality": "Quiet observer",
+      "private_personality": "",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 0,
+        "break_1": 0,
+        "class_2": 0,
+        "lunch": 0,
+        "activities": 0,
+        "departure": 0,
+        "night": 0
+      },
+      "dialogue_ids": {}
     },
     {
       "id": "npc_director",
       "name": "Director Walsh",
       "group": "academics",
-      "public_personality": "Respected principal who promotes anti-bullying",
-      "private_personality": "Created the Smile Club as a tool for social control of students",
+      "public_personality": "Respected principal",
+      "private_personality": "Created the Smile Club for social control",
       "schedule": {
-        "arrival": 0, "class_1": 0, "break_1": 0, "class_2": 0,
-        "lunch": 0, "activities": 0, "departure": 0, "night": 6
+        "arrival": 0,
+        "class_1": 0,
+        "break_1": 0,
+        "class_2": 0,
+        "lunch": 0,
+        "activities": 0,
+        "departure": 0,
+        "night": 6
       },
       "dialogue_ids": {
         "aiden": "dlg_walsh_aiden",
@@ -106,156 +94,2082 @@
       }
     },
     {
-      "id": "npc_tyler",
-      "name": "Tyler Dunn",
+      "id": "npc_alexander_hill",
+      "name": "Alexander Hill",
+      "group": "academics",
+      "public_personality": "A typical student from the ACADEMICS group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 4,
+        "break_1": 1,
+        "class_2": 4,
+        "lunch": 3,
+        "activities": 1,
+        "departure": 0,
+        "night": 2
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_amelia_clark",
+      "name": "Amelia Clark",
+      "group": "academics",
+      "public_personality": "A typical student from the ACADEMICS group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 2,
+        "break_1": 1,
+        "class_2": 2,
+        "lunch": 3,
+        "activities": 1,
+        "departure": 0,
+        "night": 5
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_andrew_collins",
+      "name": "Andrew Collins",
+      "group": "academics",
+      "public_personality": "A typical student from the ACADEMICS group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 2,
+        "break_1": 4,
+        "class_2": 2,
+        "lunch": 3,
+        "activities": 1,
+        "departure": 0,
+        "night": 2
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_benjamin_hall",
+      "name": "Benjamin Hall",
+      "group": "academics",
+      "public_personality": "A typical student from the ACADEMICS group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 2,
+        "break_1": 4,
+        "class_2": 2,
+        "lunch": 3,
+        "activities": 2,
+        "departure": 0,
+        "night": 4
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_charles_barnes",
+      "name": "Charles Barnes",
+      "group": "academics",
+      "public_personality": "A typical student from the ACADEMICS group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 4,
+        "break_1": 5,
+        "class_2": 0,
+        "lunch": 3,
+        "activities": 2,
+        "departure": 0,
+        "night": 2
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_charlotte_green",
+      "name": "Charlotte Green",
+      "group": "academics",
+      "public_personality": "A typical student from the ACADEMICS group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 0,
+        "break_1": 4,
+        "class_2": 4,
+        "lunch": 3,
+        "activities": 1,
+        "departure": 0,
+        "night": 0
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_clara_mitchell",
+      "name": "Clara Mitchell",
+      "group": "academics",
+      "public_personality": "A typical student from the ACADEMICS group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 2,
+        "break_1": 3,
+        "class_2": 4,
+        "lunch": 3,
+        "activities": 5,
+        "departure": 0,
+        "night": 5
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_daniel_hayes",
+      "name": "Daniel Hayes",
+      "group": "academics",
+      "public_personality": "A typical student from the ACADEMICS group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 0,
+        "break_1": 3,
+        "class_2": 4,
+        "lunch": 3,
+        "activities": 4,
+        "departure": 0,
+        "night": 2
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_edward_ross",
+      "name": "Edward Ross",
+      "group": "academics",
+      "public_personality": "A typical student from the ACADEMICS group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 4,
+        "break_1": 3,
+        "class_2": 2,
+        "lunch": 3,
+        "activities": 5,
+        "departure": 0,
+        "night": 0
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_emma_watson",
+      "name": "Emma Watson",
+      "group": "academics",
+      "public_personality": "A typical student from the ACADEMICS group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 2,
+        "break_1": 1,
+        "class_2": 0,
+        "lunch": 3,
+        "activities": 2,
+        "departure": 0,
+        "night": 4
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_grace_white",
+      "name": "Grace White",
+      "group": "academics",
+      "public_personality": "A typical student from the ACADEMICS group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 4,
+        "break_1": 3,
+        "class_2": 2,
+        "lunch": 3,
+        "activities": 2,
+        "departure": 0,
+        "night": 5
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_hannah_scott",
+      "name": "Hannah Scott",
+      "group": "academics",
+      "public_personality": "A typical student from the ACADEMICS group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 4,
+        "break_1": 1,
+        "class_2": 2,
+        "lunch": 3,
+        "activities": 1,
+        "departure": 0,
+        "night": 4
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_henry_wright",
+      "name": "Henry Wright",
+      "group": "academics",
+      "public_personality": "A typical student from the ACADEMICS group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 2,
+        "break_1": 3,
+        "class_2": 2,
+        "lunch": 3,
+        "activities": 2,
+        "departure": 0,
+        "night": 4
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_james_baker",
+      "name": "James Baker",
+      "group": "academics",
+      "public_personality": "A typical student from the ACADEMICS group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 4,
+        "break_1": 5,
+        "class_2": 0,
+        "lunch": 3,
+        "activities": 5,
+        "departure": 0,
+        "night": 0
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_joseph_cox",
+      "name": "Joseph Cox",
+      "group": "academics",
+      "public_personality": "A typical student from the ACADEMICS group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 2,
+        "break_1": 1,
+        "class_2": 0,
+        "lunch": 3,
+        "activities": 2,
+        "departure": 0,
+        "night": 0
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_lily_evans",
+      "name": "Lily Evans",
+      "group": "academics",
+      "public_personality": "A typical student from the ACADEMICS group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 4,
+        "break_1": 1,
+        "class_2": 2,
+        "lunch": 3,
+        "activities": 1,
+        "departure": 0,
+        "night": 4
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_michael_ward",
+      "name": "Michael Ward",
+      "group": "academics",
+      "public_personality": "A typical student from the ACADEMICS group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 2,
+        "break_1": 3,
+        "class_2": 4,
+        "lunch": 3,
+        "activities": 2,
+        "departure": 0,
+        "night": 2
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_olivia_stone",
+      "name": "Olivia Stone",
+      "group": "academics",
+      "public_personality": "A typical student from the ACADEMICS group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 0,
+        "break_1": 5,
+        "class_2": 4,
+        "lunch": 3,
+        "activities": 2,
+        "departure": 0,
+        "night": 2
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_paula_simmons",
+      "name": "Paula Simmons",
+      "group": "academics",
+      "public_personality": "A typical student from the ACADEMICS group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 4,
+        "break_1": 5,
+        "class_2": 0,
+        "lunch": 3,
+        "activities": 5,
+        "departure": 0,
+        "night": 5
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_samuel_perry",
+      "name": "Samuel Perry",
+      "group": "academics",
+      "public_personality": "A typical student from the ACADEMICS group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 4,
+        "break_1": 2,
+        "class_2": 4,
+        "lunch": 3,
+        "activities": 4,
+        "departure": 0,
+        "night": 2
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_sophie_turner",
+      "name": "Sophie Turner",
+      "group": "academics",
+      "public_personality": "A typical student from the ACADEMICS group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 0,
+        "break_1": 4,
+        "class_2": 2,
+        "lunch": 3,
+        "activities": 4,
+        "departure": 0,
+        "night": 2
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_thomas_butler",
+      "name": "Thomas Butler",
+      "group": "academics",
+      "public_personality": "A typical student from the ACADEMICS group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 4,
+        "break_1": 2,
+        "class_2": 0,
+        "lunch": 3,
+        "activities": 4,
+        "departure": 0,
+        "night": 0
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_william_king",
+      "name": "William King",
+      "group": "academics",
+      "public_personality": "A typical student from the ACADEMICS group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 2,
+        "break_1": 1,
+        "class_2": 2,
+        "lunch": 3,
+        "activities": 2,
+        "departure": 0,
+        "night": 2
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_aaron_scott",
+      "name": "Aaron Scott",
       "group": "athletes",
-      "public_personality": "Star quarterback — aggressive but popular",
-      "private_personality": "Bullies weaker students to maintain social dominance",
+      "public_personality": "A typical student from the ATHLETES group.",
+      "private_personality": "Has their own secrets.",
       "schedule": {
-        "arrival": 0, "class_1": 0, "break_1": 1, "class_2": 0,
-        "lunch": 3, "activities": 1, "departure": 0, "night": 5
+        "arrival": 0,
+        "class_1": 4,
+        "break_1": 1,
+        "class_2": 0,
+        "lunch": 3,
+        "activities": 2,
+        "departure": 0,
+        "night": 2
       },
-      "dialogue_ids": {
-        "aiden": "dlg_tyler_aiden",
-        "lena": "dlg_tyler_lena"
-      }
+      "dialogue_ids": {},
+      "gender": "unspecified"
     },
     {
-      "id": "npc_ava",
-      "name": "Ava Patel",
+      "id": "npc_brandon_cole",
+      "name": "Brandon Cole",
+      "group": "athletes",
+      "public_personality": "A typical student from the ATHLETES group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 0,
+        "break_1": 4,
+        "class_2": 4,
+        "lunch": 3,
+        "activities": 2,
+        "departure": 0,
+        "night": 4
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_caleb_ross",
+      "name": "Caleb Ross",
+      "group": "athletes",
+      "public_personality": "A typical student from the ATHLETES group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 0,
+        "break_1": 3,
+        "class_2": 0,
+        "lunch": 3,
+        "activities": 4,
+        "departure": 0,
+        "night": 5
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_connor_hayes",
+      "name": "Connor Hayes",
+      "group": "athletes",
+      "public_personality": "A typical student from the ATHLETES group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 4,
+        "break_1": 3,
+        "class_2": 2,
+        "lunch": 3,
+        "activities": 2,
+        "departure": 0,
+        "night": 2
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_dylan_price",
+      "name": "Dylan Price",
+      "group": "athletes",
+      "public_personality": "A typical student from the ATHLETES group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 4,
+        "break_1": 1,
+        "class_2": 2,
+        "lunch": 3,
+        "activities": 1,
+        "departure": 0,
+        "night": 2
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_eric_stone",
+      "name": "Eric Stone",
+      "group": "athletes",
+      "public_personality": "A typical student from the ATHLETES group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 4,
+        "break_1": 5,
+        "class_2": 2,
+        "lunch": 3,
+        "activities": 4,
+        "departure": 0,
+        "night": 4
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_hunter_blake",
+      "name": "Hunter Blake",
+      "group": "athletes",
+      "public_personality": "A typical student from the ATHLETES group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 0,
+        "break_1": 1,
+        "class_2": 2,
+        "lunch": 3,
+        "activities": 4,
+        "departure": 0,
+        "night": 5
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_jake_turner",
+      "name": "Jake Turner",
+      "group": "athletes",
+      "public_personality": "A typical student from the ATHLETES group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 2,
+        "break_1": 5,
+        "class_2": 4,
+        "lunch": 3,
+        "activities": 4,
+        "departure": 0,
+        "night": 4
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_jason_miller",
+      "name": "Jason Miller",
+      "group": "athletes",
+      "public_personality": "A typical student from the ATHLETES group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 2,
+        "break_1": 2,
+        "class_2": 2,
+        "lunch": 3,
+        "activities": 1,
+        "departure": 0,
+        "night": 5
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_justin_cole",
+      "name": "Justin Cole",
+      "group": "athletes",
+      "public_personality": "A typical student from the ATHLETES group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 4,
+        "break_1": 5,
+        "class_2": 0,
+        "lunch": 3,
+        "activities": 2,
+        "departure": 0,
+        "night": 5
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_kevin_brooks",
+      "name": "Kevin Brooks",
+      "group": "athletes",
+      "public_personality": "A typical student from the ATHLETES group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 0,
+        "break_1": 5,
+        "class_2": 2,
+        "lunch": 3,
+        "activities": 2,
+        "departure": 0,
+        "night": 4
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_kyle_bennett",
+      "name": "Kyle Bennett",
+      "group": "athletes",
+      "public_personality": "A typical student from the ATHLETES group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 0,
+        "break_1": 2,
+        "class_2": 0,
+        "lunch": 3,
+        "activities": 5,
+        "departure": 0,
+        "night": 4
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_leo_carter",
+      "name": "Leo Carter",
+      "group": "athletes",
+      "public_personality": "A typical student from the ATHLETES group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 4,
+        "break_1": 5,
+        "class_2": 0,
+        "lunch": 3,
+        "activities": 4,
+        "departure": 0,
+        "night": 0
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_marcus_green",
+      "name": "Marcus Green",
+      "group": "athletes",
+      "public_personality": "A typical student from the ATHLETES group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 0,
+        "break_1": 4,
+        "class_2": 4,
+        "lunch": 3,
+        "activities": 1,
+        "departure": 0,
+        "night": 2
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_matthew_cruz",
+      "name": "Matthew Cruz",
+      "group": "athletes",
+      "public_personality": "A typical student from the ATHLETES group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 0,
+        "break_1": 2,
+        "class_2": 0,
+        "lunch": 3,
+        "activities": 1,
+        "departure": 0,
+        "night": 5
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_nathan_brooks",
+      "name": "Nathan Brooks",
+      "group": "athletes",
+      "public_personality": "A typical student from the ATHLETES group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 0,
+        "break_1": 1,
+        "class_2": 0,
+        "lunch": 3,
+        "activities": 2,
+        "departure": 0,
+        "night": 5
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_owen_parker",
+      "name": "Owen Parker",
+      "group": "athletes",
+      "public_personality": "A typical student from the ATHLETES group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 0,
+        "break_1": 2,
+        "class_2": 2,
+        "lunch": 3,
+        "activities": 1,
+        "departure": 0,
+        "night": 0
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_ryan_holt",
+      "name": "Ryan Holt",
+      "group": "athletes",
+      "public_personality": "A typical student from the ATHLETES group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 4,
+        "break_1": 3,
+        "class_2": 4,
+        "lunch": 3,
+        "activities": 4,
+        "departure": 0,
+        "night": 4
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_sean_walker",
+      "name": "Sean Walker",
+      "group": "athletes",
+      "public_personality": "A typical student from the ATHLETES group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 0,
+        "break_1": 3,
+        "class_2": 4,
+        "lunch": 3,
+        "activities": 5,
+        "departure": 0,
+        "night": 0
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_trevor_adams",
+      "name": "Trevor Adams",
+      "group": "athletes",
+      "public_personality": "A typical student from the ATHLETES group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 4,
+        "break_1": 2,
+        "class_2": 2,
+        "lunch": 3,
+        "activities": 4,
+        "departure": 0,
+        "night": 4
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_tyler_grant",
+      "name": "Tyler Grant",
+      "group": "athletes",
+      "public_personality": "A typical student from the ATHLETES group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 4,
+        "break_1": 5,
+        "class_2": 0,
+        "lunch": 3,
+        "activities": 1,
+        "departure": 0,
+        "night": 2
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_tyler_woods",
+      "name": "Tyler Woods",
+      "group": "athletes",
+      "public_personality": "A typical student from the ATHLETES group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 2,
+        "break_1": 3,
+        "class_2": 4,
+        "lunch": 3,
+        "activities": 1,
+        "departure": 0,
+        "night": 0
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_zachary_cole",
+      "name": "Zachary Cole",
+      "group": "athletes",
+      "public_personality": "A typical student from the ATHLETES group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 4,
+        "break_1": 4,
+        "class_2": 0,
+        "lunch": 3,
+        "activities": 5,
+        "departure": 0,
+        "night": 5
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_ava_thompson",
+      "name": "Ava Thompson",
       "group": "populars",
-      "public_personality": "Social media queen with thousands of followers",
-      "private_personality": "Manages the anonymous harassment accounts for the Smile Club",
+      "public_personality": "A typical student from the POPULARS group.",
+      "private_personality": "Has their own secrets.",
       "schedule": {
-        "arrival": 0, "class_1": 0, "break_1": 3, "class_2": 0,
-        "lunch": 3, "activities": 2, "departure": 0, "night": 5
+        "arrival": 0,
+        "class_1": 0,
+        "break_1": 2,
+        "class_2": 4,
+        "lunch": 3,
+        "activities": 1,
+        "departure": 0,
+        "night": 2
       },
-      "dialogue_ids": {
-        "aiden": "dlg_ava_aiden",
-        "lena": "dlg_ava_lena"
-      }
+      "dialogue_ids": {},
+      "gender": "unspecified"
     },
     {
-      "id": "npc_lucas",
-      "name": "Lucas Kim",
-      "group": "tech_club",
-      "public_personality": "Hardware enthusiast who builds custom PCs",
-      "private_personality": "Unknowingly maintains the Smile Club servers in the basement",
+      "id": "npc_caleb_scott",
+      "name": "Caleb Scott",
+      "group": "populars",
+      "public_personality": "A typical student from the POPULARS group.",
+      "private_personality": "Has their own secrets.",
       "schedule": {
-        "arrival": 0, "class_1": 2, "break_1": 2, "class_2": 2,
-        "lunch": 3, "activities": 2, "departure": 0, "night": 2
+        "arrival": 0,
+        "class_1": 2,
+        "break_1": 5,
+        "class_2": 2,
+        "lunch": 3,
+        "activities": 1,
+        "departure": 0,
+        "night": 0
       },
-      "dialogue_ids": {
-        "aiden": "dlg_lucas_aiden",
-        "lena": "dlg_lucas_lena"
-      }
+      "dialogue_ids": {},
+      "gender": "unspecified"
     },
     {
-      "id": "npc_zoe",
-      "name": "Zoe Martin",
-      "group": "rebels",
-      "public_personality": "Graffiti artist and general provocateur",
-      "private_personality": "Leaves coded messages around the school hinting at the Smile Club",
+      "id": "npc_camila_reyes",
+      "name": "Camila Reyes",
+      "group": "populars",
+      "public_personality": "A typical student from the POPULARS group.",
+      "private_personality": "Has their own secrets.",
       "schedule": {
-        "arrival": 0, "class_1": 0, "break_1": 5, "class_2": 0,
-        "lunch": 3, "activities": 5, "departure": 0, "night": 5
+        "arrival": 0,
+        "class_1": 2,
+        "break_1": 3,
+        "class_2": 0,
+        "lunch": 3,
+        "activities": 2,
+        "departure": 0,
+        "night": 4
       },
-      "dialogue_ids": {
-        "aiden": "dlg_zoe_aiden",
-        "lena": "dlg_zoe_lena"
-      }
+      "dialogue_ids": {},
+      "gender": "unspecified"
     },
     {
-      "id": "npc_noah",
-      "name": "Noah Harris",
-      "group": "outsiders",
-      "public_personality": "Shy bookworm always in the library",
-      "private_personality": "Knows the full history of the original anti-bullying system before Walsh corrupted it",
+      "id": "npc_chloe_adams",
+      "name": "Chloe Adams",
+      "group": "populars",
+      "public_personality": "A typical student from the POPULARS group.",
+      "private_personality": "Has their own secrets.",
       "schedule": {
-        "arrival": 0, "class_1": 4, "break_1": 4, "class_2": 4,
-        "lunch": 3, "activities": 4, "departure": 0, "night": 4
+        "arrival": 0,
+        "class_1": 2,
+        "break_1": 4,
+        "class_2": 2,
+        "lunch": 3,
+        "activities": 1,
+        "departure": 0,
+        "night": 0
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_dylan_shaw",
+      "name": "Dylan Shaw",
+      "group": "populars",
+      "public_personality": "A typical student from the POPULARS group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 4,
+        "break_1": 1,
+        "class_2": 4,
+        "lunch": 3,
+        "activities": 5,
+        "departure": 0,
+        "night": 5
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_emily_carter",
+      "name": "Emily Carter",
+      "group": "populars",
+      "public_personality": "A typical student from the POPULARS group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 0,
+        "break_1": 4,
+        "class_2": 4,
+        "lunch": 3,
+        "activities": 1,
+        "departure": 0,
+        "night": 4
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_ethan_walker",
+      "name": "Ethan Walker",
+      "group": "populars",
+      "public_personality": "A typical student from the POPULARS group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 4,
+        "break_1": 1,
+        "class_2": 4,
+        "lunch": 3,
+        "activities": 2,
+        "departure": 0,
+        "night": 0
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_grace_foster",
+      "name": "Grace Foster",
+      "group": "populars",
+      "public_personality": "A typical student from the POPULARS group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 4,
+        "break_1": 3,
+        "class_2": 2,
+        "lunch": 3,
+        "activities": 4,
+        "departure": 0,
+        "night": 2
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_isabella_moore",
+      "name": "Isabella Moore",
+      "group": "populars",
+      "public_personality": "A typical student from the POPULARS group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 2,
+        "break_1": 1,
+        "class_2": 2,
+        "lunch": 3,
+        "activities": 1,
+        "departure": 0,
+        "night": 5
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_jacob_turner",
+      "name": "Jacob Turner",
+      "group": "populars",
+      "public_personality": "A typical student from the POPULARS group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 4,
+        "break_1": 1,
+        "class_2": 4,
+        "lunch": 3,
+        "activities": 5,
+        "departure": 0,
+        "night": 2
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_jason_reed",
+      "name": "Jason Reed",
+      "group": "populars",
+      "public_personality": "A typical student from the POPULARS group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 2,
+        "break_1": 2,
+        "class_2": 0,
+        "lunch": 3,
+        "activities": 1,
+        "departure": 0,
+        "night": 5
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_liam_hayes",
+      "name": "Liam Hayes",
+      "group": "populars",
+      "public_personality": "A typical student from the POPULARS group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 0,
+        "break_1": 3,
+        "class_2": 2,
+        "lunch": 3,
+        "activities": 5,
+        "departure": 0,
+        "night": 5
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_logan_brooks",
+      "name": "Logan Brooks",
+      "group": "populars",
+      "public_personality": "A typical student from the POPULARS group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 4,
+        "break_1": 3,
+        "class_2": 0,
+        "lunch": 3,
+        "activities": 4,
+        "departure": 0,
+        "night": 4
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_lucas_gray",
+      "name": "Lucas Gray",
+      "group": "populars",
+      "public_personality": "A typical student from the POPULARS group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 2,
+        "break_1": 4,
+        "class_2": 2,
+        "lunch": 3,
+        "activities": 1,
+        "departure": 0,
+        "night": 2
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_mason_carter",
+      "name": "Mason Carter",
+      "group": "populars",
+      "public_personality": "A typical student from the POPULARS group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 2,
+        "break_1": 5,
+        "class_2": 4,
+        "lunch": 3,
+        "activities": 4,
+        "departure": 0,
+        "night": 2
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_mia_collins",
+      "name": "Mia Collins",
+      "group": "populars",
+      "public_personality": "A typical student from the POPULARS group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 4,
+        "break_1": 2,
+        "class_2": 4,
+        "lunch": 3,
+        "activities": 5,
+        "departure": 0,
+        "night": 0
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_nicholas_vega",
+      "name": "Nicholas Vega",
+      "group": "populars",
+      "public_personality": "A typical student from the POPULARS group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 0,
+        "break_1": 4,
+        "class_2": 2,
+        "lunch": 3,
+        "activities": 1,
+        "departure": 0,
+        "night": 0
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_noah_carter",
+      "name": "Noah Carter",
+      "group": "populars",
+      "public_personality": "Warm and welcoming student guide",
+      "private_personality": "Genuinely kind",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 0,
+        "break_1": 0,
+        "class_2": 0,
+        "lunch": 0,
+        "activities": 0,
+        "departure": 0,
+        "night": 0
       },
       "dialogue_ids": {
-        "aiden": "dlg_noah_aiden",
-        "lena": "dlg_noah_lena"
-      }
-    }
-    ,
+        "aiden": "dlg_noah_carter_aiden",
+        "lena": "dlg_noah_carter_lena"
+      },
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_olivia_bennett",
+      "name": "Olivia Bennett",
+      "group": "populars",
+      "public_personality": "A typical student from the POPULARS group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 2,
+        "break_1": 3,
+        "class_2": 0,
+        "lunch": 3,
+        "activities": 4,
+        "departure": 0,
+        "night": 0
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
     {
       "id": "npc_oscar",
       "name": "Oscar Jimenez",
       "group": "populars",
       "public_personality": "New kid. Ping pong. Now.",
       "private_personality": "Challenger who thrives on attention",
-      "schedule": { "arrival": 0, "class_1": 0, "break_1": 0, "class_2": 0, "lunch": 0, "activities": 0, "departure": 0, "night": 0 },
+      "schedule": {
+        "arrival": 0,
+        "class_1": 0,
+        "break_1": 0,
+        "class_2": 0,
+        "lunch": 0,
+        "activities": 0,
+        "departure": 0,
+        "night": 0
+      },
       "dialogue_ids": {
         "aiden": "dlg_oscar_aiden",
         "lena": "dlg_oscar_aiden"
-      }
-    },
-    {
-      "id": "npc_oscar_obs1",
-      "name": "Watcher One",
-      "group": "outsiders",
-      "public_personality": "Quiet observer",
-      "private_personality": "",
-      "schedule": { "arrival": 0, "class_1": 0, "break_1": 0, "class_2": 0, "lunch": 0, "activities": 0, "departure": 0, "night": 0 },
-      "dialogue_ids": {}
-    },
-    {
-      "id": "npc_oscar_obs2",
-      "name": "Watcher Two",
-      "group": "outsiders",
-      "public_personality": "Quiet observer",
-      "private_personality": "",
-      "schedule": { "arrival": 0, "class_1": 0, "break_1": 0, "class_2": 0, "lunch": 0, "activities": 0, "departure": 0, "night": 0 },
-      "dialogue_ids": {}
-    }
-    ,
-    {
-      "id": "npc_oscar_obs3",
-      "name": "Watcher Three",
-      "group": "outsiders",
-      "public_personality": "Quiet observer",
-      "private_personality": "",
-      "schedule": { "arrival": 0, "class_1": 0, "break_1": 0, "class_2": 0, "lunch": 0, "activities": 0, "departure": 0, "night": 0 },
-      "dialogue_ids": {}
-    },
-    {
-      "id": "npc_oscar_obs4",
-      "name": "Watcher Four",
-      "group": "outsiders",
-      "public_personality": "Quiet observer",
-      "private_personality": "",
-      "schedule": { "arrival": 0, "class_1": 0, "break_1": 0, "class_2": 0, "lunch": 0, "activities": 0, "departure": 0, "night": 0 },
-      "dialogue_ids": {}
-    },
-    {
-      "id": "npc_noah_carter",
-      "name": "Noah Carter",
-      "group": "faculty",
-      "public_personality": "Warm and welcoming student guide who shows newcomers around",
-      "private_personality": "Genuinely kind — one of the few who sees through the Smile Club facade",
-      "schedule": {
-        "arrival": 0, "class_1": 0, "break_1": 0, "class_2": 0,
-        "lunch": 0, "activities": 0, "departure": 0, "night": 0
       },
-      "dialogue_ids": {
-        "aiden": "dlg_noah_carter_aiden",
-        "lena": "dlg_noah_carter_lena"
-      }
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_ryan_mitchell",
+      "name": "Ryan Mitchell",
+      "group": "populars",
+      "public_personality": "A typical student from the POPULARS group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 0,
+        "break_1": 1,
+        "class_2": 2,
+        "lunch": 3,
+        "activities": 1,
+        "departure": 0,
+        "night": 5
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_sophia_harper",
+      "name": "Sophia Harper",
+      "group": "populars",
+      "public_personality": "A typical student from the POPULARS group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 0,
+        "break_1": 4,
+        "class_2": 4,
+        "lunch": 3,
+        "activities": 5,
+        "departure": 0,
+        "night": 0
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_valeria_torres",
+      "name": "Valeria Torres",
+      "group": "populars",
+      "public_personality": "A typical student from the POPULARS group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 4,
+        "break_1": 5,
+        "class_2": 2,
+        "lunch": 3,
+        "activities": 2,
+        "departure": 0,
+        "night": 5
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_adrian_torres",
+      "name": "Adrian Torres",
+      "group": "rebels",
+      "public_personality": "A typical student from the REBELS group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 4,
+        "break_1": 2,
+        "class_2": 0,
+        "lunch": 3,
+        "activities": 1,
+        "departure": 0,
+        "night": 0
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_axel_knight",
+      "name": "Axel Knight",
+      "group": "rebels",
+      "public_personality": "A typical student from the REBELS group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 4,
+        "break_1": 2,
+        "class_2": 2,
+        "lunch": 3,
+        "activities": 2,
+        "departure": 0,
+        "night": 2
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_carlos_vega",
+      "name": "Carlos Vega",
+      "group": "rebels",
+      "public_personality": "A typical student from the REBELS group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 0,
+        "break_1": 4,
+        "class_2": 0,
+        "lunch": 3,
+        "activities": 5,
+        "departure": 0,
+        "night": 5
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_damian_black",
+      "name": "Damian Black",
+      "group": "rebels",
+      "public_personality": "A typical student from the REBELS group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 4,
+        "break_1": 5,
+        "class_2": 4,
+        "lunch": 3,
+        "activities": 5,
+        "departure": 0,
+        "night": 5
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_dante_reyes",
+      "name": "Dante Reyes",
+      "group": "rebels",
+      "public_personality": "A typical student from the REBELS group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 4,
+        "break_1": 3,
+        "class_2": 2,
+        "lunch": 3,
+        "activities": 5,
+        "departure": 0,
+        "night": 5
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_diego_alvarez",
+      "name": "Diego Alvarez",
+      "group": "rebels",
+      "public_personality": "A typical student from the REBELS group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 4,
+        "break_1": 1,
+        "class_2": 2,
+        "lunch": 3,
+        "activities": 1,
+        "departure": 0,
+        "night": 2
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_javier_soto",
+      "name": "Javier Soto",
+      "group": "rebels",
+      "public_personality": "A typical student from the REBELS group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 4,
+        "break_1": 1,
+        "class_2": 4,
+        "lunch": 3,
+        "activities": 1,
+        "departure": 0,
+        "night": 5
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_jaxon_cruz",
+      "name": "Jaxon Cruz",
+      "group": "rebels",
+      "public_personality": "A typical student from the REBELS group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 2,
+        "break_1": 4,
+        "class_2": 4,
+        "lunch": 3,
+        "activities": 2,
+        "departure": 0,
+        "night": 5
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_kai_nakamura",
+      "name": "Kai Nakamura",
+      "group": "rebels",
+      "public_personality": "A typical student from the REBELS group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 4,
+        "break_1": 2,
+        "class_2": 0,
+        "lunch": 3,
+        "activities": 2,
+        "departure": 0,
+        "night": 4
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_leon_vargas",
+      "name": "Leon Vargas",
+      "group": "rebels",
+      "public_personality": "A typical student from the REBELS group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 2,
+        "break_1": 2,
+        "class_2": 0,
+        "lunch": 3,
+        "activities": 5,
+        "departure": 0,
+        "night": 0
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_luis_mendoza",
+      "name": "Luis Mendoza",
+      "group": "rebels",
+      "public_personality": "A typical student from the REBELS group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 4,
+        "break_1": 3,
+        "class_2": 2,
+        "lunch": 3,
+        "activities": 4,
+        "departure": 0,
+        "night": 0
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_marcus_blake",
+      "name": "Marcus Blake",
+      "group": "rebels",
+      "public_personality": "A typical student from the REBELS group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 4,
+        "break_1": 2,
+        "class_2": 2,
+        "lunch": 3,
+        "activities": 5,
+        "departure": 0,
+        "night": 4
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_mateo_rivera",
+      "name": "Mateo Rivera",
+      "group": "rebels",
+      "public_personality": "A typical student from the REBELS group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 2,
+        "break_1": 3,
+        "class_2": 0,
+        "lunch": 3,
+        "activities": 1,
+        "departure": 0,
+        "night": 5
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_rico_morales",
+      "name": "Rico Morales",
+      "group": "rebels",
+      "public_personality": "A typical student from the REBELS group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 4,
+        "break_1": 1,
+        "class_2": 4,
+        "lunch": 3,
+        "activities": 2,
+        "departure": 0,
+        "night": 4
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_rocco_silva",
+      "name": "Rocco Silva",
+      "group": "rebels",
+      "public_personality": "A typical student from the REBELS group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 2,
+        "break_1": 1,
+        "class_2": 4,
+        "lunch": 3,
+        "activities": 5,
+        "departure": 0,
+        "night": 4
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_victor_stone",
+      "name": "Victor Stone",
+      "group": "rebels",
+      "public_personality": "A typical student from the REBELS group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 0,
+        "break_1": 3,
+        "class_2": 2,
+        "lunch": 3,
+        "activities": 2,
+        "departure": 0,
+        "night": 4
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_zoe_ramirez",
+      "name": "Zoe Ramirez",
+      "group": "rebels",
+      "public_personality": "A typical student from the REBELS group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 2,
+        "break_1": 4,
+        "class_2": 4,
+        "lunch": 3,
+        "activities": 4,
+        "departure": 0,
+        "night": 5
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_aaron_choi",
+      "name": "Aaron Choi",
+      "group": "tech_club",
+      "public_personality": "A typical student from the TECH CLUB group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 4,
+        "break_1": 5,
+        "class_2": 0,
+        "lunch": 3,
+        "activities": 4,
+        "departure": 0,
+        "night": 4
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_alan_chen",
+      "name": "Alan Chen",
+      "group": "tech_club",
+      "public_personality": "A typical student from the TECH CLUB group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 2,
+        "break_1": 5,
+        "class_2": 4,
+        "lunch": 3,
+        "activities": 4,
+        "departure": 0,
+        "night": 0
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_bryan_hueng",
+      "name": "Bryan Hueng",
+      "group": "tech_club",
+      "public_personality": "A typical student from the TECH CLUB group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 2,
+        "break_1": 2,
+        "class_2": 0,
+        "lunch": 3,
+        "activities": 4,
+        "departure": 0,
+        "night": 4
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_daniel_kim",
+      "name": "Daniel Kim",
+      "group": "tech_club",
+      "public_personality": "A typical student from the TECH CLUB group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 4,
+        "break_1": 4,
+        "class_2": 0,
+        "lunch": 3,
+        "activities": 2,
+        "departure": 0,
+        "night": 2
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_daniel_wu",
+      "name": "Daniel Wu",
+      "group": "tech_club",
+      "public_personality": "A typical student from the TECH CLUB group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 2,
+        "break_1": 4,
+        "class_2": 2,
+        "lunch": 3,
+        "activities": 1,
+        "departure": 0,
+        "night": 0
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_david_nguyen",
+      "name": "David Nguyen",
+      "group": "tech_club",
+      "public_personality": "A typical student from the TECH CLUB group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 4,
+        "break_1": 3,
+        "class_2": 2,
+        "lunch": 3,
+        "activities": 1,
+        "departure": 0,
+        "night": 4
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_eric_zhao",
+      "name": "Eric Zhao",
+      "group": "tech_club",
+      "public_personality": "A typical student from the TECH CLUB group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 2,
+        "break_1": 1,
+        "class_2": 4,
+        "lunch": 3,
+        "activities": 4,
+        "departure": 0,
+        "night": 5
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_ethan_cross",
+      "name": "Ethan Cross",
+      "group": "tech_club",
+      "public_personality": "A typical student from the TECH CLUB group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 4,
+        "break_1": 3,
+        "class_2": 4,
+        "lunch": 3,
+        "activities": 4,
+        "departure": 0,
+        "night": 2
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_jason_koh",
+      "name": "Jason Koh",
+      "group": "tech_club",
+      "public_personality": "A typical student from the TECH CLUB group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 2,
+        "break_1": 1,
+        "class_2": 4,
+        "lunch": 3,
+        "activities": 4,
+        "departure": 0,
+        "night": 5
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_jason_lin",
+      "name": "Jason Lin",
+      "group": "tech_club",
+      "public_personality": "A typical student from the TECH CLUB group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 2,
+        "break_1": 1,
+        "class_2": 4,
+        "lunch": 3,
+        "activities": 4,
+        "departure": 0,
+        "night": 2
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_jonathan_streets",
+      "name": "Jonathan Streets",
+      "group": "tech_club",
+      "public_personality": "A typical student from the TECH CLUB group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 4,
+        "break_1": 3,
+        "class_2": 2,
+        "lunch": 3,
+        "activities": 1,
+        "departure": 0,
+        "night": 4
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_justin_tran",
+      "name": "Justin Tran",
+      "group": "tech_club",
+      "public_personality": "A typical student from the TECH CLUB group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 4,
+        "break_1": 3,
+        "class_2": 0,
+        "lunch": 3,
+        "activities": 1,
+        "departure": 0,
+        "night": 0
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_kevin_lee",
+      "name": "Kevin Lee",
+      "group": "tech_club",
+      "public_personality": "A typical student from the TECH CLUB group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 4,
+        "break_1": 4,
+        "class_2": 2,
+        "lunch": 3,
+        "activities": 1,
+        "departure": 0,
+        "night": 5
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_kevin_park",
+      "name": "Kevin Park",
+      "group": "tech_club",
+      "public_personality": "A typical student from the TECH CLUB group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 4,
+        "break_1": 3,
+        "class_2": 4,
+        "lunch": 3,
+        "activities": 2,
+        "departure": 0,
+        "night": 0
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_lucas_bennett",
+      "name": "Lucas Bennett",
+      "group": "tech_club",
+      "public_personality": "A typical student from the TECH CLUB group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 4,
+        "break_1": 5,
+        "class_2": 0,
+        "lunch": 3,
+        "activities": 5,
+        "departure": 0,
+        "night": 4
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_mark_tan",
+      "name": "Mark Tan",
+      "group": "tech_club",
+      "public_personality": "A typical student from the TECH CLUB group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 0,
+        "break_1": 3,
+        "class_2": 0,
+        "lunch": 3,
+        "activities": 4,
+        "departure": 0,
+        "night": 5
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_maya_chen",
+      "name": "Maya Chen",
+      "group": "tech_club",
+      "public_personality": "A typical student from the TECH CLUB group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 0,
+        "break_1": 3,
+        "class_2": 0,
+        "lunch": 3,
+        "activities": 1,
+        "departure": 0,
+        "night": 5
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_noah_patel",
+      "name": "Noah Patel",
+      "group": "tech_club",
+      "public_personality": "A typical student from the TECH CLUB group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 0,
+        "break_1": 4,
+        "class_2": 2,
+        "lunch": 3,
+        "activities": 2,
+        "departure": 0,
+        "night": 4
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_ryan_park",
+      "name": "Ryan Park",
+      "group": "tech_club",
+      "public_personality": "A typical student from the TECH CLUB group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 2,
+        "break_1": 3,
+        "class_2": 2,
+        "lunch": 3,
+        "activities": 4,
+        "departure": 0,
+        "night": 5
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_samuel_wong",
+      "name": "Samuel Wong",
+      "group": "tech_club",
+      "public_personality": "A typical student from the TECH CLUB group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 4,
+        "break_1": 5,
+        "class_2": 0,
+        "lunch": 3,
+        "activities": 2,
+        "departure": 0,
+        "night": 2
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_steven_ho",
+      "name": "Steven Ho",
+      "group": "tech_club",
+      "public_personality": "A typical student from the TECH CLUB group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 4,
+        "break_1": 5,
+        "class_2": 4,
+        "lunch": 3,
+        "activities": 2,
+        "departure": 0,
+        "night": 0
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_thomas_reed",
+      "name": "Thomas Reed",
+      "group": "tech_club",
+      "public_personality": "A typical student from the TECH CLUB group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 0,
+        "break_1": 4,
+        "class_2": 2,
+        "lunch": 3,
+        "activities": 1,
+        "departure": 0,
+        "night": 0
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
+    },
+    {
+      "id": "npc_victor_lim",
+      "name": "Victor Lim",
+      "group": "tech_club",
+      "public_personality": "A typical student from the TECH CLUB group.",
+      "private_personality": "Has their own secrets.",
+      "schedule": {
+        "arrival": 0,
+        "class_1": 2,
+        "break_1": 4,
+        "class_2": 4,
+        "lunch": 3,
+        "activities": 2,
+        "departure": 0,
+        "night": 4
+      },
+      "dialogue_ids": {},
+      "gender": "unspecified"
     }
   ],
-  "relationships": [
-    {"from": "npc_marcus", "to": "npc_tyler", "stats": {"friendship": 70, "respect": 60, "fear": 10, "trust": 40, "suspicion": 15}},
-    {"from": "npc_dylan", "to": "npc_ava", "stats": {"friendship": 80, "respect": 50, "fear": 0, "trust": 60, "suspicion": 10}},
-    {"from": "npc_sophie", "to": "npc_lucas", "stats": {"friendship": 75, "respect": 70, "fear": 0, "trust": 65, "suspicion": 5}},
-    {"from": "npc_jake", "to": "npc_zoe", "stats": {"friendship": 65, "respect": 55, "fear": 0, "trust": 55, "suspicion": 10}},
-    {"from": "npc_mia", "to": "npc_noah", "stats": {"friendship": 55, "respect": 50, "fear": 0, "trust": 45, "suspicion": 5}},
-    {"from": "npc_director", "to": "npc_dylan", "stats": {"friendship": 30, "respect": 20, "fear": 40, "trust": 20, "suspicion": 60}},
-    {"from": "npc_tyler", "to": "npc_mia", "stats": {"friendship": 10, "respect": 5, "fear": 0, "trust": 10, "suspicion": 20}},
-    {"from": "npc_ava", "to": "npc_mia", "stats": {"friendship": 5, "respect": 5, "fear": 0, "trust": 5, "suspicion": 30}},
-    {"from": "npc_emma", "to": "npc_director", "stats": {"friendship": 20, "respect": 60, "fear": 50, "trust": 15, "suspicion": 70}},
-    {"from": "npc_lucas", "to": "npc_director", "stats": {"friendship": 40, "respect": 55, "fear": 10, "trust": 30, "suspicion": 10}}
-  ]
+  "relationships": []
 }

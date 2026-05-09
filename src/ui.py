@@ -84,12 +84,11 @@ class UI:
         self.font_menu    = pygame.font.SysFont("arial", 30)
         self.font_hint    = pygame.font.SysFont("arial", 16)
         
-        # HUD icons: wallet + phone, right-anchored to the left of the minimap
-        # Minimap spans up to approx 160px from the right, so we offset by 170px
+        # HUD icons: wallet + phone, bottom-right.
         _icon_h    = 44
         _icon_w    = 40
         _icon_bot  = SCREEN_HEIGHT - 26          # bottom edge raised higher
-        _wallet_x  = SCREEN_WIDTH  - 170 - _icon_w # right margin 170px
+        _wallet_x  = SCREEN_WIDTH - 16 - _icon_w
         self.wallet_icon_rect = pygame.Rect(_wallet_x,  _icon_bot - _icon_h, _icon_w, _icon_h)
         self.phone_icon_rect  = pygame.Rect(_wallet_x - _icon_w - 8, _icon_bot - _icon_h, _icon_w, _icon_h)
         
@@ -269,7 +268,6 @@ class UI:
         screen.blit(zn, loc_rect)
 
         # ── circular minimap (bottom-right) ──
-        self._draw_minimap_circle(screen, floor, player, car_rect)
 
         # ── reputation bar (bottom-left) ──
         try:
@@ -282,7 +280,7 @@ class UI:
         self._bar(screen, rep_x, rep_y, 220, 14, rep_val, 100, UI_ACCENT, UI_PANEL, "Rep")
 
         if time_text:
-            time_surf = self.font_hud_time.render(time_text, True, UI_TEXT_DIM)
+            time_surf = self.font_hud_time.render(time_text, True, WHITE)
             time_rect = time_surf.get_rect(midleft=(rep_x + 220 + 24, rep_y + 7))
             screen.blit(time_surf, time_rect)
             
@@ -319,10 +317,10 @@ class UI:
         pygame.draw.rect(screen, (220, 185, 55),
                          (wr.centerx - 4, wr.y + 14, 8, 7), border_radius=2)
         # Label
-        w_lbl = self.font_hint.render("Wallet", True, UI_TEXT_DIM)
+        w_lbl = self.font_hint.render("Wallet", True, WHITE)
         screen.blit(w_lbl, w_lbl.get_rect(center=(wr.centerx, wr.top - 10)))
         # Key hint
-        k_lbl = self.font_hint.render("[I]", True, UI_TEXT_DIM)
+        k_lbl = self.font_hint.render("[I]", True, WHITE)
         screen.blit(k_lbl, k_lbl.get_rect(center=(wr.centerx, wr.bottom + 10)))
         wallet_hover = wr.collidepoint(pygame.mouse.get_pos())
         if wallet_hover or hud_focus == "wallet":
@@ -332,9 +330,9 @@ class UI:
         # Drawn by game.py via self.phone.draw_hud_icon(screen, self.ui.phone_icon_rect, unread)
         # But we still draw the label + key-hint here for consistency
         pr = self.phone_icon_rect
-        ph_lbl = self.font_hint.render("Phone", True, UI_TEXT_DIM)
+        ph_lbl = self.font_hint.render("Phone", True, WHITE)
         screen.blit(ph_lbl, ph_lbl.get_rect(center=(pr.centerx, pr.top - 10)))
-        ph_key = self.font_hint.render("[P]", True, UI_TEXT_DIM)
+        ph_key = self.font_hint.render("[P]", True, WHITE)
         screen.blit(ph_key, ph_key.get_rect(center=(pr.centerx, pr.bottom + 10)))
         phone_hover = pr.collidepoint(pygame.mouse.get_pos())
         if phone_hover or hud_focus == "phone":
