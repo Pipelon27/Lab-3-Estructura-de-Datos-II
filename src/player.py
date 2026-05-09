@@ -73,6 +73,7 @@ class Player:
         self.max_health  = PLAYER_MAX_HEALTH
         self.stamina     = PLAYER_MAX_STAMINA
         self.max_stamina = PLAYER_MAX_STAMINA
+        self.current_floor = 1
 
         # XP / levelling
         self.xp            = 0

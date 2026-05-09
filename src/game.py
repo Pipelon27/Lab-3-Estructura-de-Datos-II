@@ -1621,6 +1621,22 @@ class Game:
             for door in floor.doors:
                 if door.locked:
                     walls.append(door.rect)
+        
+        # Co-op: add remote player as a solid wall if they are on the same floor
+        if self.multiplayer and getattr(self, "remote_player", None):
+            if self.remote_player.current_floor == self.current_floor:
+                walls.append(self.remote_player.rect)
+                
+                # If they are already overlapping, apply a small repulsion to prevent getting stuck
+                if self.player.rect.colliderect(self.remote_player.rect):
+                    pdx = self.player.rect.centerx - self.remote_player.rect.centerx
+                    pdy = self.player.rect.centery - self.remote_player.rect.centery
+                    if abs(pdx) >= abs(pdy):
+                        if pdx >= 0: self.player.rect.x += 1
+                        else: self.player.rect.x -= 1
+                    else:
+                        if pdy >= 0: self.player.rect.y += 1
+                        else: self.player.rect.y -= 1
 
         # Parked car is solid on campus
         if self.current_floor == FLOOR_CAMPUS:
@@ -2505,6 +2521,7 @@ class Game:
             return
         try:
             player_data = self.player.to_dict()
+            player_data["floor"] = self.current_floor
             
             # Host: also send NPC data for synchronization
             if self.is_host:
@@ -2524,6 +2541,7 @@ class Game:
                 decay = 2 if in_main_building else 1
                 
                 self.remote_player.update_remote(remote, dt, trail_decay=decay)
+                self.remote_player.current_floor = remote.get("floor", 1)
                 
                 # Update health/stamina if provided
                 self.remote_player.health = remote.get("health", self.remote_player.health)
