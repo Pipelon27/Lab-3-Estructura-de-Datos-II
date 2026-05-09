@@ -19,6 +19,7 @@ from settings import DEFAULT_HOST, DEFAULT_PORT, BUFFER_SIZE
 from network.protocol import (
     encode_message, recv_message, MessageType,
 )
+from network.discovery import RoomBroadcaster
 
 
 class GameServer:
@@ -33,14 +34,19 @@ class GameServer:
     >>> server.stop()
     """
 
-    def __init__(self, host: str = DEFAULT_HOST, port: int = DEFAULT_PORT):
+    def __init__(self, host: str = DEFAULT_HOST, port: int = DEFAULT_PORT, room_code: str | None = None):
         self.host = host
         self.port = port
+        self.room_code = room_code
 
         self._sock:    socket.socket | None = None
         self._client:  socket.socket | None = None
         self._running  = False
         self._lock     = threading.Lock()
+
+        self._broadcaster: RoomBroadcaster | None = None
+        if self.room_code:
+            self._broadcaster = RoomBroadcaster(self.room_code, tcp_port=self.port)
 
         # Latest data received from the client (Lena)
         self._remote_data: dict | None = None
@@ -56,6 +62,9 @@ class GameServer:
         self._sock.settimeout(1.0)       # so we can check _running
         self._running = True
 
+        if self._broadcaster:
+            self._broadcaster.start()
+
         t = threading.Thread(target=self._accept_loop, daemon=True)
         t.start()
         print(f"[Server] Listening on {self.host}:{self.port}")
@@ -63,6 +72,8 @@ class GameServer:
     def stop(self):
         """Shutdown server and close sockets."""
         self._running = False
+        if self._broadcaster:
+            self._broadcaster.stop()
         try:
             if self._client:
                 self._client.close()
@@ -82,6 +93,12 @@ class GameServer:
                 print(f"[Server] Client connected: {addr}")
                 with self._lock:
                     self._client = client
+                
+                # Stop broadcasting once someone connects
+                if self._broadcaster:
+                    self._broadcaster.stop()
+                    self._broadcaster = None
+
                 # Send handshake
                 self._client.sendall(
                     encode_message(MessageType.HANDSHAKE, {"status": "ok"})

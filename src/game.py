@@ -95,12 +95,14 @@ class Game:
     def __init__(self, screen: pygame.Surface, *,
                  character: Character = Character.AIDEN,
                  multiplayer: bool = False,
-                 is_host: bool = True):
+                 is_host: bool = True,
+                 network_instance = None):
         self.screen      = screen
         self.clock       = pygame.time.Clock()
         self.character   = character
         self.multiplayer = multiplayer
         self.is_host     = is_host
+        self.network     = network_instance
 
         self.running        = True
         self.state          = GameState.INTRO_CINEMATIC
@@ -220,8 +222,7 @@ class Game:
         self._init_controller()
 
         # Network (optional)
-        self.network = None
-        if self.multiplayer:
+        if self.multiplayer and not self.network:
             self._init_network()
 
         # Kick off the first school day
@@ -246,10 +247,16 @@ class Game:
     def _init_players(self):
         # Hide player off-screen for intro cinematic; spawned after car arrives
         cx, cy = -200, -200
+        self.remote_player = None
+
         if self.character == Character.AIDEN:
             self.player = Aiden(cx, cy)
+            if self.multiplayer:
+                self.remote_player = Lena(cx, cy)
         else:
             self.player = Lena(cx, cy)
+            if self.multiplayer:
+                self.remote_player = Aiden(cx, cy)
 
         self.inventory = Inventory()
         # Starting items
@@ -1420,6 +1427,8 @@ class Game:
 
         if self.state == GameState.INTRO_CINEMATIC:
             self._update_cinematic(dt)
+            if self.multiplayer and self.network:
+                self._sync_network(dt)
 
             # NPCs keep moving normally during cinematic
             floor = self.school_map.get_floor(self.current_floor)
@@ -1556,7 +1565,7 @@ class Game:
 
         # Network sync
         if self.multiplayer and self.network:
-            self._sync_network()
+            self._sync_network(dt)
 
     def _update_playing(self, dt: float):
         # ── Fast Forward Detection ──
@@ -2474,14 +2483,37 @@ class Game:
 
     # ── network ───────────────────────────────────────────────
 
-    def _sync_network(self):
+    def _sync_network(self, dt: float = 0.016):
         if not self.network:
             return
         try:
             self.network.send_player_update(self.player.to_dict())
             remote = self.network.get_remote_data()
-            if remote:
-                pass  # TODO: render remote player sprite
+            if remote and self.remote_player:
+                px = getattr(self.remote_player, "_prev_x", self.remote_player.rect.x)
+                py = getattr(self.remote_player, "_prev_y", self.remote_player.rect.y)
+                
+                self.remote_player.rect.x = remote.get("x", self.remote_player.rect.x)
+                self.remote_player.rect.y = remote.get("y", self.remote_player.rect.y)
+                
+                direction_val = remote.get("direction")
+                if direction_val is not None:
+                    self.remote_player.direction = Direction(direction_val)
+                    
+                is_moving = (self.remote_player.rect.x != px) or (self.remote_player.rect.y != py)
+                self.remote_player.state = "walk" if is_moving else "idle"
+                
+                self.remote_player._prev_x = self.remote_player.rect.x
+                self.remote_player._prev_y = self.remote_player.rect.y
+                
+                anim_key = f"{self.remote_player.state}_{self.remote_player.direction.value}"
+                frames = self.remote_player.animations.get(anim_key, [])
+                if frames:
+                    self.remote_player.animation_timer += dt * (12.0 if is_moving else 6.0)
+                    if self.remote_player.animation_timer >= len(frames):
+                        self.remote_player.animation_timer = 0.0
+                    self.remote_player.frame_index = int(self.remote_player.animation_timer) % len(frames)
+                    self.remote_player.image = frames[self.remote_player.frame_index]
         except Exception:
             pass
 
@@ -2600,6 +2632,8 @@ class Game:
         # Hide player sprite during drive_away phase (player is "inside" the car)
         if not (self._car_departure_active and self._car_depart_phase == "drive_away"):
             self.player.draw(target_surf, self.camera)
+            if getattr(self, "remote_player", None):
+                self.remote_player.draw(target_surf, self.camera)
 
         # ── Draw Top Layer (Trees, etc.) ──
         if floor and hasattr(floor, 'draw_top_layer'):
@@ -2693,18 +2727,19 @@ class Game:
         if noah.animations.get("idle_down"):
             noah.image = noah.animations["idle_down"][noah.frame_index % len(noah.animations["idle_down"])]
 
-    def _force_player_walk_up_animation(self, dt: float):
+    def _force_player_walk_up_animation(self, dt: float, player_obj=None):
         """Show the player walking away from the bus during the intro exit."""
-        self.player.direction = Direction.UP
-        self.player.state = "walk"
-        frames = self.player.animations.get("walk_up", [])
+        p = player_obj if player_obj else self.player
+        p.direction = Direction.UP
+        p.state = "walk"
+        frames = p.animations.get("walk_up", [])
         if not frames:
             return
-        self.player.animation_timer += dt * 12.0
-        if self.player.animation_timer >= len(frames):
-            self.player.animation_timer = 0.0
-        self.player.frame_index = int(self.player.animation_timer) % len(frames)
-        self.player.image = frames[self.player.frame_index]
+        p.animation_timer += dt * 12.0
+        if p.animation_timer >= len(frames):
+            p.animation_timer = 0.0
+        p.frame_index = int(p.animation_timer) % len(frames)
+        p.image = frames[p.frame_index]
 
     def _update_cinematic(self, dt: float):
         """Advance the intro-cinematic state machine."""
@@ -2730,6 +2765,8 @@ class Game:
                 cam_y = 2700 - SCREEN_HEIGHT // 2
                 wy = int(self._car_y + 70 + cam_y)
                 self.player.rect.center = (2000, wy)
+                if self.remote_player:
+                    self.remote_player.rect.center = (2040, wy)
                 self._exit_car_player_y = float(wy)
                 self._player_spawned = True
                 # Stop vibration when car stops
@@ -2741,7 +2778,10 @@ class Game:
             self._exit_car_timer += dt
             self._exit_car_player_y -= 60 * dt  # walk up slowly
             self.player.rect.centery = int(self._exit_car_player_y)
-            self._force_player_walk_up_animation(dt)
+            self._force_player_walk_up_animation(dt, self.player)
+            if self.remote_player:
+                self.remote_player.rect.centery = int(self._exit_car_player_y)
+                self._force_player_walk_up_animation(dt, self.remote_player)
             # Car keeps driving away to the left
             self._car_x -= self._car_speed * dt
             self.camera.update(self.player)
@@ -2816,10 +2856,16 @@ class Game:
                 entrance = f0.rooms.get("campus_entrance_roundabout")
                 if entrance:
                     self.player.rect.center = entrance.rect.center
+                    if self.remote_player:
+                        self.remote_player.rect.center = (entrance.rect.centerx + 40, entrance.rect.centery)
                 else:
                     self.player.rect.center = (2000, 2650)
+                    if self.remote_player:
+                        self.remote_player.rect.center = (2040, 2650)
             else:
                 self.player.rect.center = (2000, 2650)
+                if self.remote_player:
+                    self.remote_player.rect.center = (2040, 2650)
             self._player_spawned = True
         self.camera.update(self.player)
 

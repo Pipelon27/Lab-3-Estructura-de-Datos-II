@@ -8,6 +8,9 @@ Run from the project root:  ``python main.py``
 
 import pygame
 import sys
+import random
+import string
+import threading
 
 from settings import (
     SCREEN_WIDTH, SCREEN_HEIGHT, FPS, TITLE,
@@ -17,6 +20,9 @@ from settings import (
 )
 from src.controller import ControllerManager, init_controller
 from src.phone import Phone
+from network.server import GameServer
+from network.client import GameClient
+from network.discovery import discover_room
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -226,6 +232,128 @@ class MainMenu:
         self.screen.blit(hint, hint_rect)
         pygame.display.flip()
 
+# ──────────────────────────────────────────────────────────────────
+class HostLobbyMenu:
+    """Screen that generates a room code and waits for Player 2."""
+    def __init__(self, screen: pygame.Surface):
+        self.screen = screen
+        self.clock = pygame.time.Clock()
+        self.running = True
+        self.server = None
+        self.room_code = ''.join(random.choices(string.ascii_uppercase, k=3)) + ''.join(random.choices(string.digits, k=3))
+        
+        self.font_title = pygame.font.SysFont("arial", 48, bold=True)
+        self.font_code = pygame.font.SysFont("courier", 72, bold=True)
+        self.font_status = pygame.font.SysFont("arial", 24)
+
+    def run(self):
+        self.server = GameServer(room_code=self.room_code)
+        self.server.start()
+
+        while self.running:
+            self.clock.tick(FPS)
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    self.server.stop()
+                    return None
+                elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+                    self.server.stop()
+                    return None
+            
+            if self.server.is_connected:
+                pygame.time.wait(500) # give it a moment
+                return self.server
+
+            self.screen.fill(UI_BG)
+            
+            title = self.font_title.render("Host Co-op (Aiden)", True, WHITE)
+            self.screen.blit(title, title.get_rect(center=(SCREEN_WIDTH//2, 150)))
+            
+            code_surf = self.font_code.render(self.room_code, True, UI_ACCENT)
+            self.screen.blit(code_surf, code_surf.get_rect(center=(SCREEN_WIDTH//2, SCREEN_HEIGHT//2 - 50)))
+            
+            dots = "." * ((pygame.time.get_ticks() // 500) % 4)
+            status = self.font_status.render(f"Waiting for Player 2 - Lena to join{dots}", True, UI_TEXT_DIM)
+            self.screen.blit(status, status.get_rect(center=(SCREEN_WIDTH//2, SCREEN_HEIGHT//2 + 50)))
+            
+            hint = self.font_status.render("ESC to Cancel", True, UI_TEXT_DIM)
+            self.screen.blit(hint, hint.get_rect(center=(SCREEN_WIDTH//2, SCREEN_HEIGHT - 50)))
+
+            pygame.display.flip()
+
+        self.server.stop()
+        return None
+
+# ──────────────────────────────────────────────────────────────────
+class JoinLobbyMenu:
+    """Screen to enter a room code and connect to the host."""
+    def __init__(self, screen: pygame.Surface):
+        self.screen = screen
+        self.clock = pygame.time.Clock()
+        self.running = True
+        self.client = None
+        self.input_text = ""
+        self.status_text = "Enter the 6-character room code:"
+        self.searching = False
+        
+        self.font_title = pygame.font.SysFont("arial", 48, bold=True)
+        self.font_input = pygame.font.SysFont("courier", 72, bold=True)
+        self.font_status = pygame.font.SysFont("arial", 24)
+
+    def _discover_and_connect(self):
+        ip_port = discover_room(self.input_text, timeout=3.0)
+        if ip_port:
+            ip, port = ip_port
+            try:
+                client = GameClient(host=ip, port=port)
+                client.connect()
+                self.client = client
+            except Exception as e:
+                self.status_text = f"Connection failed: {e}"
+        else:
+            self.status_text = "Room not found. Check code and try again."
+        self.searching = False
+
+    def run(self):
+        while self.running:
+            self.clock.tick(FPS)
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    return None
+                elif event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_ESCAPE:
+                        return None
+                    elif event.key in (pygame.K_RETURN, pygame.K_SPACE) and len(self.input_text) == 6 and not self.searching:
+                        self.searching = True
+                        self.status_text = "Searching for room..."
+                        threading.Thread(target=self._discover_and_connect, daemon=True).start()
+                    elif event.key == pygame.K_BACKSPACE:
+                        self.input_text = self.input_text[:-1]
+                    elif event.unicode.isalnum() and len(self.input_text) < 6 and not self.searching:
+                        self.input_text += event.unicode.upper()
+
+            if self.client and self.client.is_connected:
+                pygame.time.wait(500)
+                return self.client
+
+            self.screen.fill(UI_BG)
+            
+            title = self.font_title.render("Join Co-op (Lena)", True, WHITE)
+            self.screen.blit(title, title.get_rect(center=(SCREEN_WIDTH//2, 150)))
+            
+            status = self.font_status.render(self.status_text, True, UI_TEXT_DIM if not self.status_text.startswith("Room not") else (255, 100, 100))
+            self.screen.blit(status, status.get_rect(center=(SCREEN_WIDTH//2, SCREEN_HEIGHT//2 - 80)))
+
+            input_surf = self.font_input.render(self.input_text + ("_" if len(self.input_text) < 6 else ""), True, UI_ACCENT)
+            self.screen.blit(input_surf, input_surf.get_rect(center=(SCREEN_WIDTH//2, SCREEN_HEIGHT//2)))
+            
+            hint_str = "ENTER to Join  |  ESC to Cancel" if not self.searching else "ESC to Cancel"
+            hint = self.font_status.render(hint_str, True, UI_TEXT_DIM)
+            self.screen.blit(hint, hint.get_rect(center=(SCREEN_WIDTH//2, SCREEN_HEIGHT - 50)))
+
+            pygame.display.flip()
+
+        return None
 
 # ──────────────────────────────────────────────────────────────────
 def main():
@@ -261,8 +389,20 @@ def main():
 
         params = mode_map[choice]
 
+        network_instance = None
+        if choice == 2:  # Host Co-op
+            lobby = HostLobbyMenu(screen)
+            network_instance = lobby.run()
+            if not network_instance:
+                continue # User cancelled or failed
+        elif choice == 3:  # Join Co-op
+            lobby = JoinLobbyMenu(screen)
+            network_instance = lobby.run()
+            if not network_instance:
+                continue # User cancelled or failed
+
         while True:
-            game = Game(screen, **params)
+            game = Game(screen, network_instance=network_instance, **params)
             game.run()
 
             if game.return_to_menu:
