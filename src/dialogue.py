@@ -174,10 +174,11 @@ class DialogueSystem:
         self.player   = None
         self.reputation = None
 
-        self._choice_index = 0
-        self._result:  dict | None = None    # cumulative consequences
-        self._all_consequences: list[dict] = []
         self._finished = False
+        
+        # NPC Avatars
+        self.avatars = {}
+        self._load_avatars()
 
     # ── loading ───────────────────────────────────────────────
 
@@ -363,6 +364,23 @@ class DialogueSystem:
             return r
         return None
 
+        return None
+
+    def _load_avatars(self):
+        """Pre-load realistic NPC portraits."""
+        try:
+            path = "assets/Imagenes realistas personajes/"
+            # Scan directory for all PNGs
+            if os.path.exists(path):
+                for f in os.listdir(path):
+                    if f.endswith(".png"):
+                        name = f.replace(".png", "")
+                        # Store by name (e.g. "Oscar Jimenez")
+                        img = pygame.image.load(os.path.join(path, f)).convert_alpha()
+                        self.avatars[name] = img
+        except:
+            pass
+
     # ── drawing ───────────────────────────────────────────────
 
     def draw(self, screen: pygame.Surface):
@@ -377,9 +395,18 @@ class DialogueSystem:
         choices = self.active_tree.get_choices()
 
         # ── dialogue box (bottom of screen) ──
+        # Template for all NPCs: always show a portrait on the left if not the player
+        is_npc = speaker != "Player"
+        has_realistic = speaker in self.avatars
+        
+        box_w_offset = 140 if is_npc else 0
+        
         box_h = 180 if choices else 130
-        box = pygame.Rect(30, SCREEN_HEIGHT - box_h - 20,
-                          SCREEN_WIDTH - 60, box_h)
+        # If is NPC, move the box right to make room on the left
+        box_x = 30 + box_w_offset if is_npc else 30
+        # Move up (from -20 to -60)
+        box = pygame.Rect(box_x, SCREEN_HEIGHT - box_h - 60,
+                          SCREEN_WIDTH - 60 - box_w_offset, box_h)
         pygame.draw.rect(screen, UI_PANEL, box, border_radius=12)
         pygame.draw.rect(screen, UI_ACCENT, box, 2, border_radius=12)
 
@@ -390,6 +417,34 @@ class DialogueSystem:
         # Text (with word wrap)
         self._draw_wrapped(screen, font_text, text, UI_TEXT,
                            box.x + 18, box.y + 42, box.width - 36)
+
+        # NPC Portrait on the left (Template for all NPCs)
+        if is_npc:
+            av_radius = 72
+            # Positioned to the left of the box, attached
+            av_cx = box.left - 87
+            av_cy = box.centery
+            
+            # Circular frame (Light Blue UI_ACCENT)
+            pygame.draw.circle(screen, UI_ACCENT, (av_cx, av_cy), av_radius + 4)
+            pygame.draw.circle(screen, BLACK, (av_cx, av_cy), av_radius)
+            
+            if has_realistic:
+                # Draw realistic image
+                av_img = self.avatars[speaker]
+                size = av_radius * 2
+                av_surf = pygame.Surface((size, size), pygame.SRCALPHA)
+                pygame.draw.circle(av_surf, (255, 255, 255), (av_radius, av_radius), av_radius)
+                scaled = pygame.transform.smoothscale(av_img, (size, size))
+                av_surf.blit(scaled, (0, 0), special_flags=pygame.BLEND_RGBA_MIN)
+                screen.blit(av_surf, (av_cx - av_radius, av_cy - av_radius))
+            else:
+                # Fallback: Draw initials in a stylized circle
+                pygame.draw.circle(screen, (40, 50, 70), (av_cx, av_cy), av_radius - 2)
+                initial = speaker[0].upper() if speaker else "?"
+                f_init = pygame.font.SysFont("arial", 48, bold=True)
+                txt = f_init.render(initial, True, UI_ACCENT)
+                screen.blit(txt, txt.get_rect(center=(av_cx, av_cy)))
 
         # Choices
         if choices:

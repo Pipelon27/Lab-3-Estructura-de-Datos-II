@@ -104,11 +104,15 @@ PH_ANON_BD   = (90,  35,  35)
 PH_MENC_BG   = (14,  26,  38)
 PH_MENC_BD   = PH_CYAN
 
-PH_BUB_P     = (45, 100, 195)   # player bubble
-PH_BUB_N     = (32,  32,  52)   # NPC bubble
+PH_BUB_P     = ( 20,  60,  45)   # player bubble (Darker Neon Green)
+PH_BUB_N     = ( 40,  42,  56)   # NPC bubble (Darker Blue-Grey)
+WA_HEADER    = ( 15,  15,  22)   # Sleek Dark Header
+WA_BG        = PH_SCREEN         # Matches overall phone background
+WA_TEXT_P    = PH_TEXT           # White text on dark bubbles
+WA_TEXT_N    = PH_TEXT
 
 _SC = {"pending": PH_TEXT_D, "in_progress": PH_AMBER, "completed": PH_GREEN}
-_SL = {"pending": "Pendiente", "in_progress": "En progreso", "completed": "Completada"}
+_SL = {"pending": "Pending", "in_progress": "In Progress", "completed": "Completed"}
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -128,6 +132,8 @@ class SocialPost:
     image_tag: Optional[str] = None
     affects_reputation: bool = False
     reputation_target: Optional[str] = None
+    handle: str = ""
+    is_read: bool = True
     _liked: bool = False
 
 
@@ -226,6 +232,7 @@ class Phone:
         self.social_filter = "all"           # "all" | "anonymous" | "mentions"
         self.active_chat: Optional[str]    = None   # npc_id
         self.active_task: Optional[object] = None
+        self.active_post: Optional[SocialPost] = None
 
         self._hud_anchor: Optional[pygame.Rect] = None
         self._pending_teleport: Optional[tuple] = None
@@ -238,6 +245,15 @@ class Phone:
         self.schedule_events: list[ScheduleEvent]           = []
         self.unread_count     = 0
         self.show_unread      = False
+        self._social_notif_timer = 0.0
+        self._social_notif_interval = 20.0 # New post every 20s
+        self._social_likes_timer = 0.0
+        self._social_likes_interval = 5.0 # Update likes every 5s
+        self._notif_toast = None # {title, body, icon, t}
+        self._toast_duration = 4.0
+        
+        self._current_day_for_schedule = -1
+        self._refresh_weekly_schedule(1)
 
         # Off-screen surface for smooth animation
         self._surf = pygame.Surface((PHONE_W, PHONE_H))
@@ -250,7 +266,7 @@ class Phone:
         self._f_sub   = pygame.font.SysFont("arial", 10)
         self._f_badge = pygame.font.SysFont("arial",  9, bold=True)
         try:
-            self._f_ico = pygame.font.SysFont("seguiemj", 15)
+            self._f_ico = pygame.font.SysFont("segoeuiemoji", 15)
         except Exception:
             self._f_ico = self._f_sec
 
@@ -264,6 +280,11 @@ class Phone:
         self._filter_rects: list[tuple[pygame.Rect, str]]      = []
         self._reply_rects:  list[tuple[pygame.Rect, str]]      = []
         self._back_rect: Optional[pygame.Rect]                 = None
+        
+        self.avatars = {}
+        self._load_avatars()
+
+        self._load_initial_social_posts()
 
         self._map_transition_buf: Optional[pygame.Surface] = None
 
@@ -364,6 +385,15 @@ class Phone:
             self._view = "map_expand"
             self._map_expand_t = 0.0
             return
+        
+        # Clear notifications for the opened app
+        if app == PhoneApp.SOCIAL:
+            for p in self.social_posts:
+                if not p.is_read:
+                    p.is_read = True
+                    self.unread_count = max(0, self.unread_count - 1)
+            if self.unread_count == 0: self.show_unread = False
+
         self._pending_splash_app = app
         self._splash_t = 0.0
         self._splash_duration = random.uniform(_SPLASH_MIN, _SPLASH_MAX)
@@ -439,6 +469,29 @@ class Phone:
             if self._map_contract_t >= 1.0:
                 self.close()
 
+        # Update schedule if day changed
+        # We need to know the day_number. Since Phone doesn't own it, 
+        # we'll assume it's updated externally or we can add a check.
+        # For now, let's just make sure the method is available.
+
+        # Social notification system
+        self._social_notif_timer += dt
+        if self._social_notif_timer >= self._social_notif_interval:
+            self._social_notif_timer = 0.0
+            self._generate_random_social_post()
+
+        # Update likes over time
+        self._social_likes_timer += dt
+        if self._social_likes_timer >= self._social_likes_interval:
+            self._social_likes_timer = 0.0
+            self._simulate_social_engagement()
+
+        # Toast notification animation
+        if self._notif_toast:
+            self._notif_toast["t"] += dt
+            if self._notif_toast["t"] >= self._toast_duration:
+                self._notif_toast = None
+
     def consume_embedded_map_initial_sync(self) -> bool:
         if self._embedded_map_need_sync:
             self._embedded_map_need_sync = False
@@ -448,6 +501,16 @@ class Phone:
     # Data helpers
     def add_social_post(self, post: SocialPost):
         self.social_posts.insert(0, post)
+        if not post.is_read:
+            self.unread_count += 1
+            self.show_unread = True
+            # Trigger toast
+            self._notif_toast = {
+                "title": "Phone:",
+                "body": post.content[:40] + "...",
+                "icon": "X",
+                "t": 0.0
+            }
 
     def add_text_message(self, npc_id: str, msg: TextMessage):
         self.messages.setdefault(npc_id, []).append(msg)
@@ -469,6 +532,76 @@ class Phone:
     def set_schedule_events(self, events: list):
         self.schedule_events = events
 
+    def update_day_schedule(self, day_number: int):
+        """Update the internal schedule based on the game day (Monday-Friday cycle)."""
+        if day_number == self._current_day_for_schedule:
+            return
+        self._refresh_weekly_schedule(day_number)
+
+    def _refresh_weekly_schedule(self, day_number: int):
+        self._current_day_for_schedule = day_number
+        # cycle 1-5 (Mon-Fri)
+        idx = (day_number - 1) % 5
+        
+        schedules = [
+            # Monday
+            [
+                ScheduleEvent(7,  "Mathematics", "Room 201", "Advanced calculus and logic."),
+                ScheduleEvent(8,  "English", "Room 105", "Literary analysis and essay writing."),
+                ScheduleEvent(9,  "Science", "Lab A", "Physics and chemistry foundations."),
+                ScheduleEvent(9,  "Break Time", "Cafeteria", "30min morning break."), # overlapping 9am slots show correctly
+                ScheduleEvent(11, "History", "Room 203", "Modern world history."),
+                ScheduleEvent(12, "Computer Science", "Lab B", "Python programming and algorithms."),
+                ScheduleEvent(13, "Lunch Time", "Cafeteria", "Main lunch break."),
+                ScheduleEvent(15, "Art", "Studio", "Visual arts and design."),
+            ],
+            # Tuesday
+            [
+                ScheduleEvent(7,  "Biology", "Lab C", "Cellular structures and genetics."),
+                ScheduleEvent(8,  "Mathematics", "Room 201", "Statistics and probability."),
+                ScheduleEvent(9,  "Geography", "Room 108", "Global climates and ecosystems."),
+                ScheduleEvent(9,  "Break Time", "Cafeteria", "30min morning break."),
+                ScheduleEvent(11, "English", "Room 105", "Creative writing workshop."),
+                ScheduleEvent(12, "Music", "Music Room", "Theory and performance."),
+                ScheduleEvent(13, "Lunch Time", "Cafeteria", "Main lunch break."),
+                ScheduleEvent(15, "Physical Education", "Gym", "Team sports and fitness."),
+            ],
+            # Wednesday
+            [
+                ScheduleEvent(7,  "Chemistry", "Lab A", "Organic compounds and reactions."),
+                ScheduleEvent(8,  "History", "Room 203", "Ancient civilizations."),
+                ScheduleEvent(9,  "English", "Room 105", "Shakespearean studies."),
+                ScheduleEvent(9,  "Break Time", "Cafeteria", "30min morning break."),
+                ScheduleEvent(11, "Mathematics", "Room 201", "Geometry and trigonometry."),
+                ScheduleEvent(12, "Art", "Studio", "History of Art."),
+                ScheduleEvent(13, "Lunch Time", "Cafeteria", "Main lunch break."),
+                ScheduleEvent(15, "Computer Science", "Lab B", "Database systems."),
+            ],
+            # Thursday
+            [
+                ScheduleEvent(7,  "Physics", "Lab B", "Quantum mechanics intro."),
+                ScheduleEvent(8,  "Biology", "Lab C", "Human anatomy."),
+                ScheduleEvent(9,  "Mathematics", "Room 201", "Algebraic structures."),
+                ScheduleEvent(9,  "Break Time", "Cafeteria", "30min morning break."),
+                ScheduleEvent(11, "Music", "Music Room", "Music history."),
+                ScheduleEvent(12, "English", "Room 105", "Public speaking."),
+                ScheduleEvent(13, "Lunch Time", "Cafeteria", "Main lunch break."),
+                ScheduleEvent(15, "Geography", "Room 108", "Political geography."),
+            ],
+            # Friday
+            [
+                ScheduleEvent(7,  "English", "Room 105", "Modern literature."),
+                ScheduleEvent(8,  "Chemistry", "Lab A", "Lab experiments day."),
+                ScheduleEvent(9,  "History", "Room 203", "Local history project."),
+                ScheduleEvent(9,  "Break Time", "Cafeteria", "30min morning break."),
+                ScheduleEvent(11, "Physical Education", "Gym", "Outdoor activities."),
+                ScheduleEvent(12, "Computer Science", "Lab B", "Web development."),
+                ScheduleEvent(13, "Lunch Time", "Cafeteria", "Main lunch break."),
+                ScheduleEvent(15, "Music", "Music Room", "Ensemble practice."),
+            ]
+        ]
+        self.schedule_events = schedules[idx]
+
     def get_unread_messages_count(self) -> int:
         return sum(1 for ml in self.messages.values()
                    for m in ml if not m.is_read and not m.is_player)
@@ -482,6 +615,9 @@ class Phone:
     # ──────────────────────────────────────────────────────────
 
     def draw(self):
+        # Draw toast regardless of phone visibility
+        self._draw_notification_toast()
+
         if not self.is_visible and self.state == PhoneState.CLOSED:
             return
 
@@ -512,6 +648,8 @@ class Phone:
         if sw > 0 and sh > 0:
             scaled = pygame.transform.smoothscale(self._surf, (sw, sh))
             self.screen.blit(scaled, (sx, sy))
+
+
 
     def _draw_map_expand_transition(self):
         """HUD vertical → fullscreen mapa: un solo gesto (quint + back + crossfade)."""
@@ -723,11 +861,12 @@ class Phone:
             if app == PhoneApp.MESSAGES:
                 u = self.get_unread_messages_count()
                 if u > 0:
-                    self._badge(s, str(min(u, 9)), ir.right - 4, ir.y + 4)
+                    self._badge(s, str(u), ir.right - 4, ir.y + 4)
             if app == PhoneApp.SOCIAL:
-                mc = self._mention_post_count()
-                if mc > 0:
-                    self._badge(s, str(min(mc, 9)), ir.right - 4, ir.y + 4)
+                # Show badge for any unread post, not just mentions
+                sc = sum(1 for p in self.social_posts if not p.is_read)
+                if sc > 0:
+                    self._badge(s, str(sc), ir.right - 4, ir.y + 4)
 
     def _mention_post_count(self) -> int:
         player = self.player_name
@@ -976,16 +1115,20 @@ class Phone:
     # ══════════════════════════════════════════════════════════
 
     def _app_social(self, s, cx, cy, cw, ch):
+        if self.active_post:
+            self._app_social_detail(s, cx, cy, cw, ch, self.active_post)
+            return
+
         self._post_rects  = []
         self._like_rects  = []
         self._filter_rects= []
 
         y = cy + _PAD
-        self._text(s, "EscuelaNet", self._f_sec, PH_PINK, cx + _PAD, y)
+        self._text(s, "X - SchoolNet", self._f_sec, PH_PINK, cx + _PAD, y)
         y += 16
 
         # Filter tabs
-        filters = [("all", "Todo"), ("anonymous", "Anónimos"), ("mentions", "Menciones")]
+        filters = [("all", "All"), ("anonymous", "Anonymous"), ("mentions", "Mentions")]
         tw = (cw - _PAD * 2) // len(filters)
         for i, (fid, flbl) in enumerate(filters):
             tr = pygame.Rect(cx + _PAD + i * tw, y, tw - 2, 18)
@@ -1019,50 +1162,88 @@ class Phone:
             if yoff > cy + ch:
                 break
 
-            is_m = player in [m.lower() for m in post.mentions]
-            if is_m:
-                bg, bd = PH_MENC_BG, PH_MENC_BD
-            elif post.is_anonymous:
-                bg, bd = PH_ANON_BG, PH_ANON_BD
-            else:
-                bg, bd = PH_CARD, PH_BD
-
             card = pygame.Rect(cx + _PAD, yoff, cw - _PAD * 2, PH)
-            self._rrect(s, bg, card, 8, bd, 1)
+            self._rrect(s, PH_CARD, card, 0, PH_BD, 1) # Flat Twitter-like cards
 
-            # Author
-            a_str = "Anónimo" if post.is_anonymous else post.author
-            a_col = PH_TEXT_D if post.is_anonymous else PH_TEXT
-            at = self._f_title.render(a_str, True, a_col)
-            s.blit(at, (card.x + 8, card.y + 6))
+            # Profile Pic (Left)
+            av_radius = 16
+            av_center = (card.x + 24, card.y + 24)
+            p_name = post.author if not post.is_anonymous else "Anon"
+            self._draw_avatar(s, post.author_npc_id, p_name, av_center, av_radius)
 
-            # Timestamp
-            ts_s = self._f_sub.render(post.timestamp, True, PH_TEXT_D)
-            s.blit(ts_s, (card.right - ts_s.get_width() - 6, card.y + 7))
+            # Header: Name @handle · time
+            tx = card.x + 46
+            ty = card.y + 6
+            
+            # Name (Bold)
+            a_str = "Anonymous" if post.is_anonymous else post.author
+            name_t = self._f_title.render(a_str, True, PH_TEXT)
+            s.blit(name_t, (tx, ty))
+            
+            # Handle & Time
+            handle_str = f" @{post.handle or 'anon'} · {post.timestamp}"
+            ht_t = self._f_sub.render(handle_str, True, PH_TEXT_D)
+            s.blit(ht_t, (tx + name_t.get_width(), ty + 2))
 
             # Content
             self._clip_text(s, post.content, self._f_body, PH_TEXT,
-                            card.x + 8, card.y + 20, cw - _PAD * 2 - 16)
+                            tx, ty + 16, cw - _PAD * 2 - 54)
 
             # Second line of content
-            if len(post.content) > 38:
-                cont2 = post.content[38:72] + ("…" if len(post.content) > 72 else "")
+            if len(post.content) > 34:
+                cont2 = post.content[34:68] + ("..." if len(post.content) > 68 else "")
                 self._clip_text(s, cont2, self._f_body, PH_TEXT_S,
-                                card.x + 8, card.y + 32, cw - _PAD * 2 - 16)
+                                tx, ty + 28, cw - _PAD * 2 - 54)
 
-            # Like btn
+            # Action icons (Like only for now)
             lk_col = PH_PINK if post._liked else PH_TEXT_D
             lk = self._f_sub.render(f"♥ {post.likes}", True, lk_col)
-            lk_r = pygame.Rect(card.x + 8, card.bottom - 16, 48, 14)
+            lk_r = pygame.Rect(tx, card.bottom - 16, 48, 14)
             s.blit(lk, lk_r.topleft)
             self._like_rects.append((lk_r, post))
 
+            # Mentions tag
+            is_m = player in [m.lower() for m in post.mentions]
             if is_m:
-                mb = self._f_sub.render("@ te mencionó", True, PH_CYAN)
-                s.blit(mb, (card.right - mb.get_width() - 6, card.bottom - 16))
+                mb = self._f_sub.render("Mentioned you", True, PH_CYAN)
+                s.blit(mb, (card.right - mb.get_width() - 8, card.bottom - 16))
 
             self._post_rects.append((card, post))
             yoff += PH + _GAP
+
+    def _app_social_detail(self, s, cx, cy, cw, ch, post):
+        br = pygame.Rect(cx + _PAD, cy + _PAD, 54, 20)
+        self._rrect(s, PH_CARD2, br, 6)
+        bk = self._f_sub.render("← Back", True, PH_PINK)
+        s.blit(bk, bk.get_rect(center=br.center))
+        self._back_rect = br
+
+        y = cy + _PAD + 32
+        
+        # Profile Section
+        av_radius = 24
+        self._draw_avatar(s, post.author_npc_id, post.author, (cx + _PAD + av_radius, y + av_radius), av_radius)
+        
+        tx = cx + _PAD + av_radius * 2 + 10
+        self._text(s, post.author if not post.is_anonymous else "Anonymous", self._f_title, PH_TEXT, tx, y + 4)
+        self._text(s, f"@{post.handle or 'anon'}", self._f_sub, PH_TEXT_D, tx, y + 18)
+        
+        y += av_radius * 2 + 16
+        pygame.draw.line(s, PH_BD, (cx + _PAD, y), (cx + cw - _PAD, y))
+        y += _GAP
+        
+        y = self._wrap_text(s, post.content, self._f_body, PH_TEXT, cx + _PAD, y, cw - _PAD * 2, 14)
+        y += _GAP
+        
+        ts_s = self._f_sub.render(f"Posted {post.timestamp} ago · SchoolNet for Mobile", True, PH_TEXT_D)
+        s.blit(ts_s, (cx + _PAD, y))
+        y += 20
+        
+        pygame.draw.line(s, PH_BD, (cx + _PAD, y), (cx + cw - _PAD, y))
+        y += _GAP
+        
+        # Engagement
+        self._text(s, f"♥ {post.likes} Likes", self._f_title, PH_PINK, cx + _PAD, y)
 
     # ══════════════════════════════════════════════════════════
     #  APP — MESSAGES
@@ -1073,16 +1254,31 @@ class Phone:
         self._back_rect   = None
         self._reply_rects = []
 
-        y = cy + _PAD
-        self._text(s, "Mensajes", self._f_sec, PH_CYAN, cx + _PAD, y)
-        y += 16
-        pygame.draw.line(s, PH_BD, (cx + _PAD, y), (cx + cw - _PAD, y))
-        y += _GAP
+        # WhatsApp-style main screen
+        # Header (Top)
+        header_h = 54
+        header_rect = pygame.Rect(cx, cy, cw, header_h)
+        pygame.draw.rect(s, WA_HEADER, header_rect)
+        
+        self._text(s, "WhatsApp", self._f_sec, WHITE, cx + _PAD, cy + 12)
+        
+        # Tabs bar (Simulated)
+        tab_y = cy + header_h
+        tab_h = 32
+        pygame.draw.rect(s, WA_HEADER, (cx, tab_y, cw, tab_h))
+        self._text(s, "CHATS", self._f_badge, WHITE, cx + cw // 2 - 20, tab_y + 10)
+        pygame.draw.rect(s, PH_GREEN, (cx + cw // 2 - 30, tab_y + tab_h - 3, 60, 3)) # Active tab indicator (Green)
+        
+        y_list = tab_y + tab_h
+        avail_h = ch - (y_list - cy)
+
+        # White background for the list
+        pygame.draw.rect(s, WHITE, (cx, y_list, cw, avail_h))
 
         if self.active_chat is not None:
-            self._chat_view(s, cx, y, cw, cy + ch - y)
+            self._chat_view(s, cx, cy, cw, ch)
         else:
-            self._conv_list(s, cx, y, cw, cy + ch - y)
+            self._conv_list(s, cx, y_list, cw, avail_h)
 
     def _conv_list(self, s, cx, y, cw, avail_h):
         if not self.messages:
@@ -1090,35 +1286,56 @@ class Phone:
             return
 
         sc = self._scroll[PhoneApp.MESSAGES]
-        IH = 52
+        IH = 64 # Taller items for WhatsApp look
         yoff = y - sc
 
         for npc_id, msgs in self.messages.items():
             if not msgs:
                 continue
+            
+            # Find the contact name (the first message NOT from the player)
+            contact_name = "Contact"
+            for m in msgs:
+                if not m.is_player:
+                    contact_name = m.sender_name
+                    break
+            
             last   = msgs[-1]
             unread = sum(1 for m in msgs if not m.is_read and not m.is_player)
 
-            card = pygame.Rect(cx + _PAD, yoff, cw - _PAD * 2, IH)
+            card = pygame.Rect(cx, yoff, cw, IH)
             if card.bottom < y or card.top > y + avail_h:
-                yoff += IH + _GAP
+                yoff += IH
                 continue
 
-            self._rrect(s, PH_CARD2 if unread else PH_CARD, card, 8)
+            # Hover/Selected effect could go here, but WhatsApp is usually plain white
+            # Separator line
+            pygame.draw.line(s, (230, 230, 230), (cx + 70, card.bottom - 1), (cx + cw, card.bottom - 1))
 
             # Avatar
-            avc = (card.x + 22, card.centery)
-            pygame.draw.circle(s, PH_CYAN_DIM, avc, 16)
-            init = self._f_title.render(last.sender_name[0].upper(), True, PH_TEXT)
-            s.blit(init, init.get_rect(center=avc))
+            avc = (cx + 35, card.centery)
+            self._draw_avatar(s, npc_id, contact_name, avc, 24)
 
-            # Name + preview
-            self._text(s, last.sender_name, self._f_title, PH_TEXT, card.x + 44, card.y + 7)
-            prev = last.content[:24] + ("…" if len(last.content) > 24 else "")
-            self._text(s, prev, self._f_sub, PH_TEXT_S, card.x + 44, card.y + 22)
+            # Name (Contact Name, never "Tú")
+            self._text(s, contact_name, self._f_title, (10, 10, 10), cx + 70, card.y + 12)
+            
+            # Preview (Last message content)
+            prev_text = last.content
+            if last.is_player:
+                prev_text = "✓ " + prev_text # Checkmark for player messages
+            
+            prev = prev_text[:30] + ("…" if len(prev_text) > 30 else "")
+            self._text(s, prev, self._f_sub, (100, 100, 100), cx + 70, card.y + 32)
+
+            # Time on the right
+            time_s = self._f_badge.render(last.timestamp, True, (130, 130, 130))
+            s.blit(time_s, (cx + cw - time_s.get_width() - 12, card.y + 14))
 
             if unread > 0:
-                self._badge(s, str(min(unread, 9)), card.right - 18, card.y + 8)
+                self._badge(s, str(min(unread, 9)), cx + cw - 20, card.y + 38)
+
+            self._chat_rects.append((card, npc_id))
+            yoff += IH
 
             self._chat_rects.append((card, npc_id))
             yoff += IH + _GAP
@@ -1127,57 +1344,80 @@ class Phone:
         msgs = self.messages.get(self.active_chat, [])
         npc_name = msgs[0].sender_name if msgs else "Chat"
 
+        # Background
+        bg_rect = pygame.Rect(cx, y, cw, avail_h)
+        pygame.draw.rect(s, WA_BG, bg_rect)
+
+        # Header Bar (WhatsApp style)
+        header_h = 44
+        header_rect = pygame.Rect(cx, y, cw, header_h)
+        pygame.draw.rect(s, WA_HEADER, header_rect)
+
         # Back btn
-        br = pygame.Rect(cx + _PAD, y, 40, 18)
-        self._rrect(s, PH_CARD2, br, 5)
-        bk = self._f_sub.render("←", True, PH_CYAN)
+        br = pygame.Rect(cx + 8, y + (header_h - 22) // 2, 36, 22)
+        bk = self._f_sub.render("←", True, WHITE)
         s.blit(bk, bk.get_rect(center=br.center))
         self._back_rect = br
 
-        nm = self._f_title.render(npc_name, True, PH_TEXT)
-        s.blit(nm, nm.get_rect(midleft=(br.right + 6, br.centery)))
-        y += 26
+        # NPC Avatar in header
+        avc = (br.right + 20, y + header_h // 2)
+        self._draw_avatar(s, self.active_chat, npc_name, avc, 16)
 
-        pygame.draw.line(s, PH_BD, (cx + _PAD, y), (cx + cw - _PAD, y))
-        y += _GAP
+        nm = self._f_title.render(npc_name, True, WHITE)
+        s.blit(nm, (avc[0] + 20, y + 8))
+        st = self._f_sub.render("Online", True, PH_GREEN)
+        s.blit(st, (avc[0] + 20, y + 24))
+
+        y_content = y + header_h
+        avail_content_h = avail_h - header_h
 
         # Reply options at bottom
         reply_opts = []
         if msgs:
-            last_npc = [m for m in msgs if not m.is_player]
-            if last_npc:
-                reply_opts = last_npc[-1].reply_options or []
+            # Only show replies if the last message is NOT from the player
+            if not msgs[-1].is_player:
+                reply_opts = msgs[-1].reply_options or []
 
-        reply_h = (len(reply_opts) * 22 + _PAD) if reply_opts else 0
-        chat_area_h = avail_h - (y - (y)) - reply_h  # fix: use full remaining
-        chat_area_h = avail_h - reply_h
+        reply_h = (len(reply_opts) * 30 + _PAD) if reply_opts else 0
+        chat_area_h = avail_content_h - reply_h
 
         # Bubbles (scroll from bottom up)
         sc = self._scroll[PhoneApp.MESSAGES]
         BH = 30
-        total = len(msgs) * (BH + _GAP)
-        start_y = y + max(0, chat_area_h - total) - sc
-
+        total = 0
+        bubble_datas = []
+        
+        # Calculate heights for all bubbles first
         for msg in msgs:
-            my = start_y
-            mw = cw - _PAD * 2 - 16
-            is_p = msg.is_player
-            bg   = PH_BUB_P if is_p else PH_BUB_N
+            mw = cw - _PAD * 2 - 20
             words = msg.content.split()
             line, lines = "", []
             for w in words:
                 test = (line + " " + w).strip()
-                if self._f_body.size(test)[0] <= mw - 16:
+                if self._f_body.size(test)[0] <= mw - 20:
                     line = test
                 else:
-                    if line:
-                        lines.append(line)
+                    if line: lines.append(line)
                     line = w
-            if line:
-                lines.append(line)
+            if line: lines.append(line)
+            
+            bh = max(BH, len(lines) * 14 + 18)
+            bw = min(mw, max(60, max((self._f_body.size(l)[0] for l in lines), default=60) + 20))
+            bubble_datas.append((lines, bw, bh))
+            total += bh + _GAP
 
-            bh = max(BH, len(lines) * 13 + 10)
-            bw = min(mw, max(60, max((self._f_body.size(l)[0] for l in lines), default=60) + 16))
+        start_y = y_content + max(_GAP, chat_area_h - total) - sc
+        
+        # Clip chat area
+        old_clip = s.get_clip()
+        s.set_clip((cx, y_content, cw, chat_area_h))
+
+        for idx, msg in enumerate(msgs):
+            lines, bw, bh = bubble_datas[idx]
+            my = start_y
+            is_p = msg.is_player
+            bg   = PH_BUB_P if is_p else PH_BUB_N
+            tx_col = WA_TEXT_P if is_p else WA_TEXT_N
 
             if is_p:
                 bx = cx + cw - _PAD - bw
@@ -1185,31 +1425,36 @@ class Phone:
                 bx = cx + _PAD
 
             bub = pygame.Rect(bx, my, bw, bh)
-            corner = 10
-            self._rrect(s, bg, bub, corner)
+            if bub.bottom >= y_content and bub.top <= y_content + chat_area_h:
+                self._rrect(s, bg, bub, 10, (0,0,0,20), 1)
+                
+                # Bubble shadow/depth
+                pygame.draw.line(s, (0,0,0,30), (bub.left, bub.bottom), (bub.right, bub.bottom))
 
-            for li, ln in enumerate(lines):
-                lt = self._f_body.render(ln, True, PH_TEXT)
-                s.blit(lt, (bub.x + 8, bub.y + 5 + li * 13))
+                for li, ln in enumerate(lines):
+                    lt = self._f_body.render(ln, True, tx_col)
+                    s.blit(lt, (bub.x + 10, bub.y + 8 + li * 14))
 
-            # Timestamp
-            ts_s = self._f_sub.render(msg.timestamp, True, PH_TEXT_D)
-            if is_p:
-                s.blit(ts_s, (bub.left - ts_s.get_width() - 4, bub.centery))
-            else:
-                s.blit(ts_s, (bub.right + 4, bub.centery))
+                # Timestamp inside bubble
+                ts_s = self._f_badge.render(msg.timestamp, True, (120, 120, 120))
+                s.blit(ts_s, (bub.right - ts_s.get_width() - 8, bub.bottom - 12))
 
             start_y += bh + _GAP
+        
+        s.set_clip(old_clip)
 
-        # Reply options
+        # Reply options drawer
         if reply_opts:
-            ry = y + chat_area_h
+            ry = y_content + chat_area_h
+            pygame.draw.rect(s, PH_NAV_BG, (cx, ry, cw, reply_h))
+            pygame.draw.line(s, PH_BD, (cx, ry), (cx + cw, ry))
             self._reply_rects = []
-            for i, opt in enumerate(reply_opts[:3]):
-                rr = pygame.Rect(cx + _PAD, ry + i * 22, cw - _PAD * 2, 20)
-                self._rrect(s, PH_CARD2, rr, 5, PH_CYAN, 1)
-                ot = self._f_sub.render(opt[:38], True, PH_CYAN)
-                s.blit(ot, ot.get_rect(midleft=(rr.x + 6, rr.centery)))
+            for i, opt in enumerate(reply_opts):
+                rr = pygame.Rect(cx + _PAD, ry + 8 + i * 30, cw - _PAD * 2, 26)
+                is_hover = False # Could add hover effect if tracking mouse
+                self._rrect(s, PH_CARD, rr, 13, PH_GREEN, 1)
+                ot = self._f_sub.render(opt, True, PH_GREEN)
+                s.blit(ot, ot.get_rect(center=rr.center))
                 self._reply_rects.append((rr, opt))
 
     # ══════════════════════════════════════════════════════════
@@ -1218,8 +1463,16 @@ class Phone:
 
     def _app_schedule(self, s, cx, cy, cw, ch):
         y = cy + _PAD
-        self._text(s, "Horario Escolar", self._f_sec, PH_CYAN, cx + _PAD, y)
+        
+        # Day header logic
+        days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
+        day_idx = (max(1, self._current_day_for_schedule) - 1) % 5
+        day_name = days[day_idx]
+        
+        self._text(s, "School Schedule", self._f_sec, PH_CYAN, cx + _PAD, y)
         y += 16
+        self._text(s, f"Today: {day_name}", self._f_sub, PH_TEXT, cx + _PAD, y)
+        y += 13
         pygame.draw.line(s, PH_BD, (cx + _PAD, y), (cx + cw - _PAD, y))
         y += _GAP
 
@@ -1227,7 +1480,7 @@ class Phone:
         cur_h    = cur_mins // 60 if cur_mins >= 0 else -1
 
         if not self.schedule_events:
-            self._text(s, "Sin eventos programados.", self._f_body, PH_TEXT_D, cx + _PAD, y + 20)
+            self._text(s, "No events scheduled.", self._f_body, PH_TEXT_D, cx + _PAD, y + 20)
             return
 
         sc   = self._scroll[PhoneApp.SCHEDULE]
@@ -1275,10 +1528,10 @@ class Phone:
                                 card.x + 56, card.y + 34, cw - _PAD * 2 - 60)
 
             if is_cur:
-                tag = self._f_badge.render("AHORA", True, PH_CYAN)
+                tag = self._f_badge.render("NOW", True, PH_CYAN)
                 s.blit(tag, (card.right - tag.get_width() - 6, card.y + 6))
             elif is_next:
-                tag = self._f_badge.render("PRÓXIMO", True, PH_AMBER)
+                tag = self._f_badge.render("NEXT", True, PH_AMBER)
                 s.blit(tag, (card.right - tag.get_width() - 6, card.y + 6))
 
             yoff += EH + _GAP
@@ -1306,7 +1559,7 @@ class Phone:
             by = rect.top - 2
             pygame.draw.circle(screen, PH_RED, (bx, by), 7)
             bt = pygame.font.SysFont("arial", 9, bold=True).render(
-                str(min(unread, 9)), True, WHITE)
+                str(unread), True, WHITE)
             screen.blit(bt, bt.get_rect(center=(bx, by)))
         # Hover glow
         if rect.collidepoint(pygame.mouse.get_pos()):
@@ -1453,6 +1706,7 @@ class Phone:
             if self._back_rect and self._back_rect.collidepoint((lx, ly)):
                 self.active_task = None
                 self.active_chat = None
+                self.active_post = None
                 return True
 
             if self.current_app == PhoneApp.ACADEMIC:
@@ -1462,17 +1716,25 @@ class Phone:
                         return True
 
             elif self.current_app == PhoneApp.SOCIAL:
-                for rect, fid in self._filter_rects:
-                    if rect.collidepoint((lx, ly)):
-                        self.social_filter = fid
-                        self._scroll[PhoneApp.SOCIAL] = 0
-                        return True
-                for rect, post in self._like_rects:
-                    if rect.collidepoint((lx, ly)):
-                        if not post._liked:
-                            post._liked = True
-                            post.likes += 1
-                        return True
+                if self.active_post:
+                    # Already in detail, check back button handled above
+                    pass
+                else:
+                    for rect, fid in self._filter_rects:
+                        if rect.collidepoint((lx, ly)):
+                            self.social_filter = fid
+                            self._scroll[PhoneApp.SOCIAL] = 0
+                            return True
+                    for rect, post in self._like_rects:
+                        if rect.collidepoint((lx, ly)):
+                            if not post._liked:
+                                post._liked = True
+                                post.likes += 1
+                            return True
+                    for rect, post in self._post_rects:
+                        if rect.collidepoint((lx, ly)):
+                            self.active_post = post
+                            return True
 
             elif self.current_app == PhoneApp.MESSAGES:
                 for rect, npc_id in self._chat_rects:
@@ -1505,9 +1767,53 @@ class Phone:
         )
         self.messages.setdefault(self.active_chat, []).append(msg)
 
+    def _load_avatars(self):
+        """Pre-load NPC avatar images."""
+        import os
+        try:
+            # Noah Carter - Realistic image as requested
+            path = "assets/Imagenes realistas personajes/Noah Carter.png"
+            if os.path.exists(path):
+                img = pygame.image.load(path).convert_alpha()
+                self.avatars["npc_noah_carter"] = img
+        except Exception:
+            pass
+
+    def _draw_avatar(self, surf, npc_id, name, center, radius):
+        """Draw a circular avatar image or fallback to initials."""
+        if npc_id in self.avatars:
+            img = self.avatars[npc_id]
+            # Create a circular mask for the avatar
+            size = radius * 2
+            av_surf = pygame.Surface((size, size), pygame.SRCALPHA)
+            pygame.draw.circle(av_surf, (255, 255, 255), (radius, radius), radius)
+            scaled = pygame.transform.smoothscale(img, (size, size))
+            av_surf.blit(scaled, (0, 0), special_flags=pygame.BLEND_RGBA_MIN)
+            surf.blit(av_surf, (center[0] - radius, center[1] - radius))
+        else:
+            pygame.draw.circle(surf, (200, 210, 220), center, radius)
+            init_txt = name[0].upper() if name else "?"
+            init = self._f_title.render(init_txt, True, WHITE)
+            surf.blit(init, init.get_rect(center=center))
+
     # ══════════════════════════════════════════════════════════
     #  UTILITIES
     # ══════════════════════════════════════════════════════════
+
+    def _simulate_social_engagement(self):
+        """Randomly adds likes to existing posts to simulate virality."""
+        if not self.social_posts:
+            return
+        
+        # Pick up to 3 random posts to gain likes
+        # We prioritize recent posts (first 10)
+        sample_size = min(len(self.social_posts), 10)
+        targets = random.sample(self.social_posts[:sample_size], min(sample_size, 3))
+        
+        for post in targets:
+            # Random chance to gain 1-3 likes
+            if random.random() < 0.7:
+                post.likes += random.randint(1, 3)
 
     @staticmethod
     def _ease_out(t: float) -> float:
@@ -1555,6 +1861,37 @@ class Phone:
         else:
             surf.blit(t, (x, y))
 
+    def _draw_notification_toast(self):
+        if not self._notif_toast:
+            return
+        
+        t = self._notif_toast["t"]
+        dur = self._toast_duration
+        
+        # Slide down/up animation
+        y_off = -60
+        if t < 0.5: # slide down
+            y_off = -60 + (80 * (t/0.5))
+        elif t > dur - 0.5: # slide up
+            y_off = 20 - (80 * ((t - (dur-0.5))/0.5))
+        else:
+            y_off = 20
+            
+        tw, th = 240, 44
+        tx = (SCREEN_WIDTH - tw) // 2
+        rect = pygame.Rect(tx, y_off, tw, th)
+        
+        # Shadow
+        shadow_rect = rect.move(2, 2)
+        pygame.draw.rect(self.screen, (0, 0, 0, 80), shadow_rect, border_radius=10)
+        # Body
+        self._rrect(self.screen, (30, 32, 44), rect, 10, PH_CYAN, 1)
+        
+        # Content
+        self._text(self.screen, self._notif_toast["icon"], self._f_ico, PH_CYAN, tx + 10, y_off + 12)
+        self._text(self.screen, self._notif_toast["title"], self._f_badge, PH_PINK, tx + 32, y_off + 8)
+        self._clip_text(self.screen, self._notif_toast["body"], self._f_sub, WHITE, tx + 32, y_off + 22, tw - 42)
+
     def _wrap_text(self, surf, text, font, color, x, y, max_w, line_h) -> int:
         words = str(text).split()
         line = ""
@@ -1576,3 +1913,52 @@ class Phone:
         pygame.draw.circle(surf, PH_RED, (cx, cy), 7)
         t = self._f_badge.render(str(text), True, WHITE)
         surf.blit(t, t.get_rect(center=(cx, cy)))
+
+    def _load_initial_social_posts(self):
+        """Populate the social feed with initial gossip and bullying posts."""
+        gossip = [
+            SocialPost("g1", "Anonymous", None, "Did you see what happened in the cafeteria? Everyone was laughing at Alexander Hill.", "2m", True, 12, ["Alexander"], handle="anon_spy"),
+            SocialPost("g2", "Anonymous", None, "Look at this photo of Emma Watson crying in the art room. #losers", "5m", True, 45, ["Emma"], handle="shadow_hater"),
+            SocialPost("g3", "Brandon Cole", "npc_brandon_cole", "I heard Andrew Collins is getting kicked out of the team for being a fraud.", "15m", False, 8, handle="brandon_v"),
+            SocialPost("g4", "Anonymous", None, "Amelia Clark thinks she's so smart but everyone knows she cheated on the finals.", "1h", True, 22, handle="truth_seeker"),
+            SocialPost("g5", "Anonymous", None, "Hey James Baker, stop trying to fit in. Nobody wants you here.", "2h", True, 67, ["James"], handle="gatekeeper"),
+            SocialPost("g6", "Mia Thompson", "npc_mia", "Why is Hannah Scott even here? Her outfit is from like... three seasons ago. Eww.", "3h", False, 15, handle="mia_style"),
+            SocialPost("g7", "Anonymous", None, "Somebody should tell William King his 'hidden' talent is better off staying hidden. Forever.", "4h", True, 31, handle="savage_anon"),
+            SocialPost("g8", "Anonymous", None, "Oscar Jimenez is being watched. We see everything you do. 👁️", "5h", True, 99, handle="raven_eye"),
+        ]
+        self.social_posts.extend(gossip)
+
+    def _generate_random_social_post(self):
+        """Generates a random gossip post from the NPC pool."""
+        random_npc_names = [
+            ("Alexander Hill", "npc_alexander_hill", "alex_h"),
+            ("Emma Watson", "npc_emma_watson", "emma_w"),
+            ("Brandon Cole", "npc_brandon_cole", "brandon_c"),
+            ("Amelia Clark", "npc_amelia_clark", "amelia_sky"),
+            ("Dylan Price", "npc_dylan_price", "price_tag"),
+            ("Sophie Turner", "npc_sophie_turner", "sophie_t"),
+        ]
+        random_gossip = [
+            "I can't believe what I just heard about the Director. Is it true?",
+            "Did anyone else see that weird shadow in the basement?",
+            "Someone left a very strange note on my locker today...",
+            "Ravenside High is definitely hiding something. I'm sure of it.",
+            "I saw Marcus Green acting super suspicious near the library.",
+            "If you value your reputation, stay away from the Ping Pong court tonight.",
+        ]
+        
+        name, nid, handle = random.choice(random_npc_names)
+        content = random.choice(random_gossip)
+        is_anon = random.random() < 0.4
+        
+        post = SocialPost(
+            id=f"rnd_{pygame.time.get_ticks()}",
+            author="Anonymous" if is_anon else name,
+            author_npc_id=None if is_anon else nid,
+            content=content,
+            timestamp="1m",
+            is_anonymous=is_anon,
+            handle="anon_user" if is_anon else handle,
+            is_read=False
+        )
+        self.add_social_post(post)

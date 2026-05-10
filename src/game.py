@@ -2421,12 +2421,18 @@ class Game:
             self.day_timer      = 0.0
             phase_label = self.current_phase.value.replace("_", " ").title()
             # If it's Day 2+, hide the "Arrival" tag to keep the UI clean as requested
+            days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
+            day_name = days[(self.day_number - 1) % 5]
+            
+            # Ensure phone schedule is synced with current day number
+            self.phone.update_day_schedule(self.day_number)
+
+            # Silence "Arrival" notification for Day 2+ as requested
             if self.day_number > 1 and self.current_phase == DayPhase.ARRIVAL:
-                msg = f"📅 Day {self.day_number}"
+                pass
             else:
-                msg = f"📅 Day {self.day_number} — {phase_label}"
-                
-            self.ui.show_notification(msg, NOTIF_INFO)
+                msg = f"📅 {day_name} — {phase_label}"
+                self.ui.show_notification(msg, NOTIF_INFO)
             self.npc_manager.update_schedules(self.current_phase, self.school_map)
             self._spread_first_floor_npcs()
             if random.random() < 0.3:
@@ -2434,6 +2440,7 @@ class Game:
         else:
             self.day_number += 1
             self.event_queue.load_day_schedule()
+            self.phone.update_day_schedule(self.day_number)
             self.time_of_day_minutes = 7 * 60
             # Clear NPCs from cafeteria instantly before the new day
             self._move_npcs_out_of_cafeteria(instant=True)
@@ -2629,7 +2636,7 @@ class Game:
             self.phone.draw_hud_icon(
                 self.screen,
                 self.ui.phone_icon_rect,
-                unread=self.phone.get_unread_messages_count(),
+                unread=self.phone.unread_count,
             )
         # Notifications always on top
         self.ui.draw_notifications(self.screen)
@@ -2872,6 +2879,7 @@ class Game:
             if self._noah_final_dlg_index >= len(self._noah_final_dlg_lines):
                 # End cinematic → PLAYING
                 self.state = GameState.PLAYING
+                self._add_noah_contact()
                 self._noah_guide_active = False
                 self._cinematic_stairs_unlocked = False
                 noah = self.npc_manager.get_npc_by_id("npc_noah_carter")
@@ -2888,6 +2896,7 @@ class Game:
     def _skip_cinematic(self):
         """Immediately end the intro cinematic and jump to PLAYING state."""
         self.state = GameState.PLAYING
+        self._add_noah_contact()
         self._noah_guide_active = False
         self._cinematic_stairs_unlocked = False
         self._cine_phase = "done"
@@ -2922,6 +2931,21 @@ class Game:
                     self.remote_player.rect.center = (2040, 2650)
             self._player_spawned = True
         self.camera.update(self.player)
+
+    def _add_noah_contact(self):
+        """Add Noah Carter to the phone's message list with a welcome text."""
+        from src.phone import TextMessage
+        import uuid
+        msg = TextMessage(
+            id=str(uuid.uuid4()),
+            sender_npc_id="npc_noah_carter",
+            sender_name="Noah Carter",
+            content="Hey! Glad you're here. If you need anything during your first day, don't hesitate to ask. Good luck!",
+            timestamp=self._get_time_string(),
+            is_read=False,
+            reply_options=["Thanks Noah!", "Got it, thanks!", "Who are you exactly?"]
+        )
+        self.phone.add_text_message("npc_noah_carter", msg)
 
     def _start_noah_guide(self):
         """Set up Noah Carter's walking route through the school."""
@@ -3113,14 +3137,28 @@ class Game:
         pygame.draw.rect(surf, (255, 255, 255, 80), surf.get_rect(), 2, border_radius=14)
         self.screen.blit(surf, (bx, by))
 
-        # Portrait circle (white circle with initial)
+        # Portrait circle (Realistic avatar)
         portrait_cx = bx + 60
         portrait_cy = by + box_h // 2
         pygame.draw.circle(self.screen, (255, 255, 255), (portrait_cx, portrait_cy), 40, 3)
-        pygame.draw.circle(self.screen, (50, 80, 120), (portrait_cx, portrait_cy), 37)
-        init_font = pygame.font.SysFont("Arial", 30, bold=True)
-        init_txt = init_font.render(speaker[0], True, WHITE)
-        self.screen.blit(init_txt, init_txt.get_rect(center=(portrait_cx, portrait_cy)))
+        
+        avatar_drawn = False
+        if hasattr(self, "phone") and "npc_noah_carter" in self.phone.avatars:
+            img = self.phone.avatars["npc_noah_carter"]
+            radius = 37
+            size = radius * 2
+            av_surf = pygame.Surface((size, size), pygame.SRCALPHA)
+            pygame.draw.circle(av_surf, (255, 255, 255), (radius, radius), radius)
+            scaled = pygame.transform.smoothscale(img, (size, size))
+            av_surf.blit(scaled, (0, 0), special_flags=pygame.BLEND_RGBA_MIN)
+            self.screen.blit(av_surf, (portrait_cx - radius, portrait_cy - radius))
+            avatar_drawn = True
+            
+        if not avatar_drawn:
+            pygame.draw.circle(self.screen, (50, 80, 120), (portrait_cx, portrait_cy), 37)
+            init_font = pygame.font.SysFont("Arial", 30, bold=True)
+            init_txt = init_font.render(speaker[0], True, WHITE)
+            self.screen.blit(init_txt, init_txt.get_rect(center=(portrait_cx, portrait_cy)))
 
         # Speaker name
         name_font = pygame.font.SysFont("Arial", 18, bold=True)

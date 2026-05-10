@@ -116,6 +116,21 @@ class UI:
             self._bell_icon = pygame.transform.smoothscale(self._bell_icon, (80, 80))
         except:
             pass
+            
+        # Player Avatars
+        self.player_avatars = {}
+        try:
+            realistic_path = "assets/Imagenes realistas personajes/"
+            # Aiden
+            self.player_avatars[Character.AIDEN] = pygame.image.load(realistic_path + "Aiden Parker.png").convert_alpha()
+            # Lena - checking user path first, then fallback to what I saw
+            import os
+            lena_path = realistic_path + "Lena Parker.png"
+            if not os.path.exists(lena_path):
+                lena_path = realistic_path + "Lena Aiden.png" # Fallback to what exists
+            self.player_avatars[Character.LENA] = pygame.image.load(lena_path).convert_alpha()
+        except:
+            pass
 
     # ── notifications ─────────────────────────────────────────
 
@@ -232,13 +247,43 @@ class UI:
                  time_text: str | None = None, hud_focus: str | None = None,
                  car_rect: pygame.Rect | None = None):
         """Draw the in-game heads-up display."""
+        # ── player avatar ──
+        av_x, av_y = 16, 16
+        av_radius = 34
+        
+        # Determine current character's avatar
+        cur_char = getattr(player, "character", Character.AIDEN)
+        avatar_img = self.player_avatars.get(cur_char)
+
+        # Border color based on character
+        border_col = UI_ACCENT if cur_char == Character.AIDEN else (255, 180, 220) # Lighter Pink for Lena
+        
+        # Border round
+        pygame.draw.circle(screen, border_col, (av_x + av_radius, av_y + av_radius), av_radius + 2)
+        pygame.draw.circle(screen, BLACK, (av_x + av_radius, av_y + av_radius), av_radius)
+        
+        if avatar_img:
+            size = av_radius * 2
+            av_surf = pygame.Surface((size, size), pygame.SRCALPHA)
+            pygame.draw.circle(av_surf, (255, 255, 255), (av_radius, av_radius), av_radius)
+            scaled = pygame.transform.smoothscale(avatar_img, (size, size))
+            av_surf.blit(scaled, (0, 0), special_flags=pygame.BLEND_RGBA_MIN)
+            screen.blit(av_surf, (av_x, av_y))
+        else:
+            # Fallback circle
+            pygame.draw.circle(screen, (50, 50, 70), (av_x + av_radius, av_y + av_radius), av_radius)
+            init_char = "L" if cur_char == Character.LENA else "A"
+            init = self.font_hud_lg.render(init_char, True, WHITE)
+            screen.blit(init, init.get_rect(center=(av_x + av_radius, av_y + av_radius)))
+
         # ── health bar ──
-        self._bar(screen, 16, 16, 180, 14,
+        bars_x = av_x + av_radius * 2 + 12
+        self._bar(screen, bars_x, 16, 180, 14,
                   player.health, player.max_health,
                   HEALTH_RED, HEALTH_BG, "HP")
 
         # ── stamina bar ──
-        self._bar(screen, 16, 36, 180, 14,
+        self._bar(screen, bars_x, 36, 180, 14,
                   player.stamina, player.max_stamina,
                   STAMINA_YELLOW, STAMINA_BG, "SP")
 
@@ -247,15 +292,15 @@ class UI:
         total_xp = player.xp + (player.level - 1) * XP_PER_LEVEL
         MAX_LEVEL = 10
         max_total_xp = MAX_LEVEL * XP_PER_LEVEL
-        self._bar(screen, 16, 56, 180, 10,
+        self._bar(screen, bars_x, 56, 180, 10,
                   total_xp, max_total_xp,
                   XP_BLUE, XP_BG, f"Lv{player.level}")
 
         # ── day / phase ──
         phase_str = current_phase.value.replace("_", " ").title()
         day_text = f"Day {day_number}  —  {phase_str}"
-        screen.blit(self.font_hud_sm.render(day_text, True, UI_TEXT_DIM),
-                    (16, 76))
+        screen.blit(self.font_hud_sm.render(day_text, True, WHITE),
+                    (bars_x, 76))
 
         # ── location (top-right): floor name + room name ──
         floor_name = floor.name if floor else "Unknown"
@@ -346,7 +391,7 @@ class UI:
         pygame.draw.rect(screen, WHITE, (x, y, w, h), 1, border_radius=3)
         if label:
             lbl = self.font_hud_sm.render(f"{label} {int(cur)}/{int(mx)}", True, WHITE)
-            screen.blit(lbl, (x + 4, y - 1))
+            screen.blit(lbl, (x + 6, y - 2))
 
     def _draw_minimap_circle(self, screen, floor, player, car_rect=None):
         """Circular minimap in bottom-right that follows the player."""
