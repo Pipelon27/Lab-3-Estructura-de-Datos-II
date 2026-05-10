@@ -1406,10 +1406,11 @@ class Game:
     # ──────────────────────────────────────────────────────────
 
     def _update(self, dt: float):
-        self.phone.update(dt)
-        pt = self.phone.consume_pending_teleport()
-        if pt:
-            self._try_teleport_to(pt[0], pt[1], pt[2])
+        if self.state != GameState.INTRO_CINEMATIC:
+            self.phone.update(dt)
+            pt = self.phone.consume_pending_teleport()
+            if pt:
+                self._try_teleport_to(pt[0], pt[1], pt[2])
         # Always tick UI (notifications)
         self.ui.update(dt)
         if self._bathroom_block_timer > 0:
@@ -2638,8 +2639,9 @@ class Game:
                 self.ui.phone_icon_rect,
                 unread=self.phone.unread_count,
             )
-        # Notifications always on top
-        self.ui.draw_notifications(self.screen)
+        # Notifications always on top (suppress during cinematic)
+        if self.state != GameState.INTRO_CINEMATIC:
+            self.ui.draw_notifications(self.screen)
 
         self.phone.set_hud_anchor(self.ui.phone_icon_rect)
         self.phone.draw()
@@ -3126,64 +3128,78 @@ class Game:
         self._skip_btn_rect = skip_rect
 
     def _draw_cinematic_dialogue(self, text: str, speaker: str):
-        """Large dialogue box with NPC portrait circle."""
-        box_w, box_h = 700, 180
-        bx = (SCREEN_WIDTH - box_w) // 2
-        by = SCREEN_HEIGHT - box_h - 60
+        """Draw cinematic dialogue using the same template as regular NPC dialogue (Oscar Jimenez style)."""
+        from settings import UI_PANEL, UI_ACCENT, UI_TEXT, UI_TEXT_DIM, WHITE, BLACK
 
-        # Semi-transparent background
-        surf = pygame.Surface((box_w, box_h), pygame.SRCALPHA)
-        surf.fill((20, 20, 30, 230))
-        pygame.draw.rect(surf, (255, 255, 255, 80), surf.get_rect(), 2, border_radius=14)
-        self.screen.blit(surf, (bx, by))
+        # Same dimensions as regular NPC dialogue in dialogue.py
+        box_w_offset = 140  # Space for portrait on the left
+        box_h = 130
+        # Box positioned to the right to make room for portrait on the left
+        # Moved 50px to the right (was 30, now 80) as requested
+        box_x = 80 + box_w_offset
+        # Reduced width to match the shorter dialogue box style
+        box = pygame.Rect(box_x, SCREEN_HEIGHT - box_h - 60,
+                          SCREEN_WIDTH - 160 - box_w_offset, box_h)
 
-        # Portrait circle (Realistic avatar)
-        portrait_cx = bx + 60
-        portrait_cy = by + box_h // 2
-        pygame.draw.circle(self.screen, (255, 255, 255), (portrait_cx, portrait_cy), 40, 3)
-        
+        # Draw dialogue box background and border
+        pygame.draw.rect(self.screen, UI_PANEL, box, border_radius=12)
+        pygame.draw.rect(self.screen, UI_ACCENT, box, 2, border_radius=12)
+
+        # NPC Portrait on the left (Template matching Oscar Jimenez)
+        av_radius = 72
+        # Positioned to the left of the box, attached
+        av_cx = box.left - 87
+        av_cy = box.centery
+
+        # Circular frame (Light Blue UI_ACCENT)
+        pygame.draw.circle(self.screen, UI_ACCENT, (av_cx, av_cy), av_radius + 4)
+        pygame.draw.circle(self.screen, BLACK, (av_cx, av_cy), av_radius)
+
+        # Draw Noah Carter's avatar
         avatar_drawn = False
         if hasattr(self, "phone") and "npc_noah_carter" in self.phone.avatars:
             img = self.phone.avatars["npc_noah_carter"]
-            radius = 37
-            size = radius * 2
+            size = av_radius * 2
             av_surf = pygame.Surface((size, size), pygame.SRCALPHA)
-            pygame.draw.circle(av_surf, (255, 255, 255), (radius, radius), radius)
+            pygame.draw.circle(av_surf, (255, 255, 255), (av_radius, av_radius), av_radius)
             scaled = pygame.transform.smoothscale(img, (size, size))
             av_surf.blit(scaled, (0, 0), special_flags=pygame.BLEND_RGBA_MIN)
-            self.screen.blit(av_surf, (portrait_cx - radius, portrait_cy - radius))
+            self.screen.blit(av_surf, (av_cx - av_radius, av_cy - av_radius))
             avatar_drawn = True
-            
+
         if not avatar_drawn:
-            pygame.draw.circle(self.screen, (50, 80, 120), (portrait_cx, portrait_cy), 37)
-            init_font = pygame.font.SysFont("Arial", 30, bold=True)
-            init_txt = init_font.render(speaker[0], True, WHITE)
-            self.screen.blit(init_txt, init_txt.get_rect(center=(portrait_cx, portrait_cy)))
+            # Fallback: Draw initials in a stylized circle
+            pygame.draw.circle(self.screen, (40, 50, 70), (av_cx, av_cy), av_radius - 2)
+            initial = speaker[0].upper() if speaker else "?"
+            f_init = pygame.font.SysFont("arial", 48, bold=True)
+            txt = f_init.render(initial, True, UI_ACCENT)
+            self.screen.blit(txt, txt.get_rect(center=(av_cx, av_cy)))
 
-        # Speaker name
-        name_font = pygame.font.SysFont("Arial", 18, bold=True)
-        name_surf = name_font.render(speaker, True, (200, 220, 255))
-        self.screen.blit(name_surf, (bx + 110, by + 20))
+        # Speaker name (same style as dialogue.py)
+        font_name = pygame.font.SysFont("arial", 22, bold=True)
+        self.screen.blit(font_name.render(speaker, True, UI_ACCENT),
+                         (box.x + 18, box.y + 12))
 
-        # Dialogue text (word-wrapped)
-        dlg_font = pygame.font.SysFont("Arial", 20)
-        max_w = box_w - 130
-        words = text.split(" ")
-        lines = []
-        current = ""
-        for w in words:
-            test = (current + " " + w).strip()
-            if dlg_font.size(test)[0] <= max_w:
-                current = test
+        # Dialogue text (with word wrap, same as dialogue.py)
+        font_text = pygame.font.SysFont("arial", 20)
+        self._draw_cinematic_wrapped_text(text, font_text, UI_TEXT,
+                                           box.x + 18, box.y + 42, box.width - 36)
+
+    def _draw_cinematic_wrapped_text(self, text: str, font, colour, x: int, y: int, max_w: int):
+        """Render text with simple word-wrap for cinematic dialogue."""
+        words = text.split()
+        line = ""
+        for word in words:
+            test = f"{line} {word}".strip()
+            tw, _ = font.size(test)
+            if tw > max_w:
+                self.screen.blit(font.render(line, True, colour), (x, y))
+                y += font.get_linesize()
+                line = word
             else:
-                if current:
-                    lines.append(current)
-                current = w
-        if current:
-            lines.append(current)
-        for i, line in enumerate(lines):
-            dlg_surf = dlg_font.render(line, True, WHITE)
-            self.screen.blit(dlg_surf, (bx + 110, by + 50 + i * 26))
+                line = test
+        if line:
+            self.screen.blit(font.render(line, True, colour), (x, y))
 
     def _draw_mission_box(self, mission_text: str):
         """Draw a mission objective text box at the top of the screen."""

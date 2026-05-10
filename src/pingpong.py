@@ -115,10 +115,26 @@ class PingPongGame:
         self.super_shot_speed = 950.0
         # Super Shot (auto): unlocks every 6 player points
         self.super_points_spent = 0
+        # Character sprites for hit/attack animations
+        self._player_sprites = {}
+        self._opp_sprites = {}
+        self._player_hit_timer = 0.0
+        self._opp_hit_timer = 0.0
+        self._player_anim_timer = 0.0
+        self._opp_anim_timer = 0.0
+        self._sprite_disp_w = 64
+        self._sprite_disp_h = 128
+        self._sprites_loaded = False
+        # Ping pong racket vertical offset (pixels from top of sprite when drawn)
+        # Adjust this value if you want the racket higher or lower.
+        self.racket_offset = 110
+        self._bg = None
+        self._bg_loaded = False
 
     def start(self, player, opponent):
         self.player = player
         self.opponent = opponent
+        self._load_sprites(player, opponent)
         self.reset()
         # show start/menu first with controls and Start button
         self.show_menu = True
@@ -182,6 +198,10 @@ class PingPongGame:
         self.ball_dash_timer = 0.0
         self.ball_trail_color = (255, 140, 0)
         self.super_points_spent = 0
+        self._player_hit_timer = 0.0
+        self._opp_hit_timer = 0.0
+        self._player_anim_timer = 0.0
+        self._opp_anim_timer = 0.0
 
     def _get_oscar_spawn_center(self) -> tuple[int, int]:
         """Spawn from Oscar's live rendered position and keep the ball fully visible."""
@@ -197,6 +217,145 @@ class PingPongGame:
         spawn_x = max(radius, min(SCREEN_WIDTH - radius, spawn_x))
         spawn_y = max(radius, min(SCREEN_HEIGHT - radius, spawn_y))
         return spawn_x, spawn_y
+
+    def _load_sprites(self, player_obj, opponent_obj):
+        """Load idle and attack frames from spritesheets for the ping pong minigame."""
+        import os
+        try:
+            fw, fh = 32, 64
+            sw, sh = self._sprite_disp_w, self._sprite_disp_h
+
+            def get_frames(sheet, row, cols):
+                frames = []
+                for c in cols:
+                    rect = pygame.Rect(c * fw, row * fh, fw, fh)
+                    frame = sheet.subsurface(rect).copy()
+                    frames.append(pygame.transform.scale(frame, (sw, sh)))
+                return frames
+
+            char_name = player_obj.__class__.__name__
+            if char_name == "Lena":
+                p_path = os.path.join("assets", "Characters BEHIND THE SMILE", "PROTAGONISTS", "Lena Parker.png")
+            else:
+                p_path = os.path.join("assets", "Characters BEHIND THE SMILE", "PROTAGONISTS", "Aiden Parker.png")
+
+            p_sheet = pygame.image.load(p_path).convert_alpha()
+            # Player faces RIGHT → cols 0-5
+            self._player_sprites["idle"]   = get_frames(p_sheet, 1, range(0, 6))
+            self._player_sprites["attack"] = get_frames(p_sheet, 3, range(0, 6))
+
+            o_path = os.path.join("assets", "Characters BEHIND THE SMILE", "POPULARS", "Oscar Jimenez.png")
+            o_sheet = pygame.image.load(o_path).convert_alpha()
+            # Oscar faces LEFT → cols 12-17
+            self._opp_sprites["idle"]   = get_frames(o_sheet, 1, range(12, 18))
+            self._opp_sprites["attack"] = get_frames(o_sheet, 3, range(12, 18))
+
+            self._sprites_loaded = True
+        except Exception as e:
+            print(f"[PingPong] Sprite load failed: {e}")
+            self._sprites_loaded = False
+
+    def _draw_character_sprite(self, screen: pygame.Surface, x: int, y: int, is_player: bool):
+        """Draw idle sprite plus racket overlay."""
+        sprites = self._player_sprites if is_player else self._opp_sprites
+        hit_timer = self._player_hit_timer if is_player else self._opp_hit_timer
+        anim_timer = self._player_anim_timer if is_player else self._opp_anim_timer
+
+        frames = sprites.get("idle", []) if self._sprites_loaded else []
+        cx = x + self.sprite_size // 2
+        cy = y + self.sprite_size // 2
+
+        if frames:
+            idx = int(anim_timer * 8.0) % len(frames)
+            frame = frames[idx]
+            sw, sh = self._sprite_disp_w, self._sprite_disp_h
+            blit_x = cx - sw // 2
+            blit_y = cy - sh // 2
+            screen.blit(frame, (blit_x, blit_y))
+            self._draw_racket(screen, blit_x, blit_y, sw, sh,
+                              facing_right=is_player,
+                              is_hitting=(hit_timer > 0))
+        else:
+            color = (240, 200, 120) if is_player else UI_ACCENT
+            pygame.draw.rect(screen, color, (x, y, self.sprite_size, self.sprite_size))
+            self._draw_racket(screen, x, y, self.sprite_size, self.sprite_size,
+                              facing_right=is_player,
+                              is_hitting=(hit_timer > 0))
+
+    def _draw_racket(self, screen: pygame.Surface,
+                     sprite_left: int, sprite_top: int,
+                     sprite_w: int, sprite_h: int,
+                     facing_right: bool, is_hitting: bool = False):
+        """Draw a horizontal ping pong racket aligned to the sprite."""
+        handle_color = (60, 30, 10)
+        paddle_rim = (15, 15, 15)
+        paddle_face = (210, 35, 35)
+
+        swing = 8 if is_hitting else 0
+        hy_offset = getattr(self, "racket_offset", sprite_h // 2)
+        hy = sprite_top + hy_offset
+
+        # ── ADJUST HORIZONTAL OFFSET HERE ─────────────────────────
+        # Negative = closer to body, Positive = further from body
+        offset_right = -40   # Oscar (right side) - negative moves left toward body
+        offset_left = 40     # Player (left side) - positive moves right toward body
+        # Move paddle face forward (toward the table) - increase to extend further
+        paddle_forward = 40
+        # ────────────────────────────────────────────────────────────
+
+        if facing_right:
+            hx = sprite_left + sprite_w + swing + offset_right
+            handle_rect = pygame.Rect(hx, hy - 3, 22, 6)
+            px = hx + 22 + 12 + offset_right + paddle_forward
+        else:
+            hx = sprite_left - swing + offset_left
+            handle_rect = pygame.Rect(hx - 22, hy - 3, 22, 6)
+            px = hx - 22 - 12 + offset_left - paddle_forward
+        py = hy
+
+        pygame.draw.rect(screen, handle_color, handle_rect, border_radius=3)
+
+        # Horizontal paddle (wider than tall for ping pong racket look)
+        pr_x, pr_y = 17, 11
+        paddle_surf = pygame.Surface((pr_x * 2, pr_y * 2), pygame.SRCALPHA)
+        pygame.draw.ellipse(paddle_surf, paddle_rim, (0, 0, pr_x * 2, pr_y * 2))
+        pygame.draw.ellipse(paddle_surf, paddle_face, (2, 2, pr_x * 2 - 4, pr_y * 2 - 4))
+        screen.blit(paddle_surf, (px - pr_x, py - pr_y))
+
+    def _queue_oscar_extra_ball(self, player_rect: pygame.Rect, delay: float = 0.0, strong: bool = False):
+        """Spawn an extra ball from Oscar's current position."""
+        spawn_x, spawn_y = self._get_oscar_spawn_center()
+        court = self.court_rect()
+        dupe_rect = pygame.Rect(0, 0, self.ball.width, self.ball.height)
+        dupe_rect.center = (spawn_x, spawn_y)
+        px = player_rect.centerx
+        py = player_rect.centery
+        vx = px - dupe_rect.centerx
+        vy = py - dupe_rect.centery
+        mag = math.hypot(vx, vy) or 1.0
+        speed = max(300.0, min(820.0, math.hypot(self.ball_vel[0], self.ball_vel[1])))
+        if strong:
+            speed *= 1.35
+        trail = (220, 40, 40) if strong else (255, 140, 0)
+        dupe_vel = [-(abs(vx / mag) * speed), (vy / mag) * speed]
+        self._enforce_min_speed(dupe_vel, self.min_ball_speed * 0.95)
+        self._cap_speed(dupe_vel, self.max_return_speed * 0.95)
+        self._steer_for_first_bounce(dupe_rect, dupe_vel, "player", court)
+
+        self.spawn_queue.append({
+            "delay": delay,
+            "rect": dupe_rect,
+            "vel": dupe_vel,
+            "strong": strong,
+            "dash_timer": 0.0,
+            "trail_color": trail,
+            "z": 0.0,
+            "vz": 640.0,
+            "bounce_count": 0,
+            "first_bounce_side": "player",
+        })
+        # lock Oscar briefly so ball clearly appears from his current position
+        self.oscar_spawn_lock_timer = 0.15
 
     def _arm_ball_bounce(self, ball_state: dict | None = None, first_bounce_side: str | None = None):
         """Initialize a new arc so balls visually bounce over the table."""
@@ -461,6 +620,13 @@ class PingPongGame:
             return None
         if not self.active:
             return None
+        # Tick hit animation timers
+        if self._player_hit_timer > 0:
+            self._player_hit_timer = max(0.0, self._player_hit_timer - dt)
+        if self._opp_hit_timer > 0:
+            self._opp_hit_timer = max(0.0, self._opp_hit_timer - dt)
+        self._player_anim_timer += dt
+        self._opp_anim_timer += dt
         court = self.court_rect()
         self.match_elapsed += dt
         self.spawn_timer -= dt
@@ -624,6 +790,7 @@ class PingPongGame:
                         break
             if used:
                 self.super_points_spent += 6
+                self._player_hit_timer = 0.5
                 # Controller rumble feedback for Super Shot
                 controller = get_controller()
                 if controller.connected:
@@ -701,6 +868,7 @@ class PingPongGame:
             self._cap_speed(self.ball_vel)
             self._steer_for_first_bounce(self.ball, self.ball_vel, "oscar", court)
             self.last_touch = 'player'
+            self._player_hit_timer = 0.5
             # Light rumble for regular ball hit
             controller = get_controller()
             if controller.connected:
@@ -722,6 +890,7 @@ class PingPongGame:
                 self._cap_speed(self.ball_vel, self.max_return_speed * 0.95)
                 self._steer_for_first_bounce(self.ball, self.ball_vel, "player", court)
                 self.last_touch = 'opponent'
+                self._opp_hit_timer = 0.5
             # extra balls are now generated progressively by time (not instant volley bursts)
 
         # Side/top/bottom walls reflect
@@ -770,6 +939,7 @@ class PingPongGame:
                     b["dash_timer"] = 0.6
                     self._cap_speed(b["vel"], self.max_return_speed * 1.1)
                 self.last_touch = 'player'
+                self._player_hit_timer = 0.4
                 # Light rumble for extra ball hit
                 controller = get_controller()
                 if controller.connected:
@@ -788,6 +958,7 @@ class PingPongGame:
                     self._cap_speed(b["vel"], self.max_return_speed * 0.95)
                     self._steer_for_first_bounce(b["rect"], b["vel"], "player", court)
                     self.last_touch = 'opponent'
+                    self._opp_hit_timer = 0.4
 
         # handle taunt timer
         if self._taunt_timer > 0:
@@ -880,9 +1051,21 @@ class PingPongGame:
         # Allow drawing the end screen, menu, or countdown even when `active` is False
         if not self.active and not getattr(self, 'waiting_for_dismiss', False) and not getattr(self, 'show_menu', False) and not getattr(self, 'countdown_active', False):
             return
-        overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
-        overlay.fill((0, 0, 0, 160))
-        screen.blit(overlay, (0, 0))
+        # Background image (lazy load)
+        if not self._bg_loaded:
+            try:
+                import os
+                raw = pygame.image.load(
+                    os.path.join("assets", "UI", "ping pong.png")
+                ).convert()
+                self._bg = pygame.transform.scale(raw, (SCREEN_WIDTH, SCREEN_HEIGHT))
+            except Exception:
+                self._bg = None
+            self._bg_loaded = True
+        if self._bg:
+            screen.blit(self._bg, (0, 0))
+        else:
+            screen.fill((0, 0, 10))
 
         court = self.court_rect()
         if getattr(self, 'show_menu', False):
@@ -905,10 +1088,10 @@ class PingPongGame:
             # draw characters
             player_sprite_x = int(self.player_x - self.sprite_size // 2)
             player_sprite_y = int(self.player_y - self.sprite_size // 2)
-            pygame.draw.rect(screen, (240, 200, 120), (player_sprite_x, player_sprite_y, self.sprite_size, self.sprite_size))
+            self._draw_character_sprite(screen, player_sprite_x, player_sprite_y, is_player=True)
             opp_sprite_x = int(court.right + 12)
             opp_sprite_y = int(self.opp_y - self.sprite_size // 2)
-            pygame.draw.rect(screen, UI_ACCENT, (opp_sprite_x, opp_sprite_y, self.sprite_size, self.sprite_size))
+            self._draw_character_sprite(screen, opp_sprite_x, opp_sprite_y, is_player=False)
             # Blur/dim the background so this UI sits in front of the court and players
             snapshot = screen.copy()
             small = pygame.transform.smoothscale(snapshot, (max(1, SCREEN_WIDTH // 6), max(1, SCREEN_HEIGHT // 6)))
@@ -970,10 +1153,10 @@ class PingPongGame:
             # draw characters
             player_sprite_x = int(self.player_x - self.sprite_size // 2)
             player_sprite_y = int(self.player_y - self.sprite_size // 2)
-            pygame.draw.rect(screen, (240, 200, 120), (player_sprite_x, player_sprite_y, self.sprite_size, self.sprite_size))
+            self._draw_character_sprite(screen, player_sprite_x, player_sprite_y, is_player=True)
             opp_sprite_x = int(court.right + 12)
             opp_sprite_y = int(self.opp_y - self.sprite_size // 2)
-            pygame.draw.rect(screen, UI_ACCENT, (opp_sprite_x, opp_sprite_y, self.sprite_size, self.sprite_size))
+            self._draw_character_sprite(screen, opp_sprite_x, opp_sprite_y, is_player=False)
             # draw countdown number on top
             ctimer = max(0.0, self.countdown_timer)
             if getattr(self, 'countdown_go_shown', False):
@@ -1006,13 +1189,13 @@ class PingPongGame:
         pygame.draw.rect(screen, (220, 220, 220), (net_x - 4, top_l[1] - 6, 8, bot_l[1] - top_l[1] + 12))
         self._draw_table_legs(screen, bot_l, bot_r)
 
-        # draw characters as larger squares
+        # draw characters with sprite animations
         player_sprite_x = int(self.player_x - self.sprite_size // 2)
         player_sprite_y = int(self.player_y - self.sprite_size // 2)
-        pygame.draw.rect(screen, (240, 200, 120), (player_sprite_x, player_sprite_y, self.sprite_size, self.sprite_size))
+        self._draw_character_sprite(screen, player_sprite_x, player_sprite_y, is_player=True)
         opp_sprite_x = int(court.right + 12)
         opp_sprite_y = int(self.opp_y - self.sprite_size // 2)
-        pygame.draw.rect(screen, UI_ACCENT, (opp_sprite_x, opp_sprite_y, self.sprite_size, self.sprite_size))
+        self._draw_character_sprite(screen, opp_sprite_x, opp_sprite_y, is_player=False)
 
         # draw main ball trail
         ball_draw_y = int(self.ball.centery - self.ball_z * 0.22)
@@ -1105,14 +1288,6 @@ class PingPongGame:
         sw = sfont.size(st)[0]
         screen.blit(sfont.render(st, True, scol), (SCREEN_WIDTH // 2 - sw // 2, sy - 20))
 
-        # opponent name (above opponent sprite)
-        name_font = pygame.font.SysFont("arial", 18, bold=True)
-        opp_name = self.opponent.name if self.opponent else "Oscar"
-        screen.blit(name_font.render(opp_name, True, WHITE), (opp_sprite_x, opp_sprite_y - 20))
-        # player name (below player sprite)
-        player_name = self.player.__class__.__name__ if getattr(self, 'player', None) else "Aiden"
-        pw = name_font.size(player_name)[0]
-        screen.blit(name_font.render(player_name, True, WHITE), (player_sprite_x + (self.sprite_size - pw) // 2, player_sprite_y + self.sprite_size + 8))
 
         # taunt
         if self._taunt_msg:

@@ -397,16 +397,25 @@ class DialogueSystem:
         # ── dialogue box (bottom of screen) ──
         # Template for all NPCs: always show a portrait on the left if not the player
         is_npc = speaker != "Player"
-        has_realistic = speaker in self.avatars
         
-        box_w_offset = 140 if is_npc else 0
+        # Map speaker name to avatar filename (e.g., "Aiden" -> "Aiden Parker")
+        avatar_name = speaker
+        if speaker == "Aiden":
+            avatar_name = "Aiden Parker"
         
+        has_realistic = avatar_name in self.avatars
+        # Also show portrait for player if they have a realistic avatar
+        show_portrait = is_npc or (speaker == "Aiden" and has_realistic)
+        
+        box_w_offset = 140 if show_portrait else 0
+
         box_h = 180 if choices else 130
-        # If is NPC, move the box right to make room on the left
-        box_x = 30 + box_w_offset if is_npc else 30
+        # If is NPC or player has portrait, move the box right to make room on the left
+        box_x = 30 + box_w_offset if show_portrait else 30
         # Move up (from -20 to -60)
+        # Reduced width by ~100px to match UI layout (ending where purple line was)
         box = pygame.Rect(box_x, SCREEN_HEIGHT - box_h - 60,
-                          SCREEN_WIDTH - 60 - box_w_offset, box_h)
+                          SCREEN_WIDTH - 160 - box_w_offset, box_h)
         pygame.draw.rect(screen, UI_PANEL, box, border_radius=12)
         pygame.draw.rect(screen, UI_ACCENT, box, 2, border_radius=12)
 
@@ -418,8 +427,8 @@ class DialogueSystem:
         self._draw_wrapped(screen, font_text, text, UI_TEXT,
                            box.x + 18, box.y + 42, box.width - 36)
 
-        # NPC Portrait on the left (Template for all NPCs)
-        if is_npc:
+        # NPC/Player Portrait on the left (Template for all characters with avatars)
+        if show_portrait:
             av_radius = 72
             # Positioned to the left of the box, attached
             av_cx = box.left - 87
@@ -431,7 +440,7 @@ class DialogueSystem:
             
             if has_realistic:
                 # Draw realistic image
-                av_img = self.avatars[speaker]
+                av_img = self.avatars[avatar_name]
                 size = av_radius * 2
                 av_surf = pygame.Surface((size, size), pygame.SRCALPHA)
                 pygame.draw.circle(av_surf, (255, 255, 255), (av_radius, av_radius), av_radius)
@@ -441,7 +450,8 @@ class DialogueSystem:
             else:
                 # Fallback: Draw initials in a stylized circle
                 pygame.draw.circle(screen, (40, 50, 70), (av_cx, av_cy), av_radius - 2)
-                initial = speaker[0].upper() if speaker else "?"
+                display_name = speaker if is_npc else (avatar_name if avatar_name else speaker)
+                initial = display_name[0].upper() if display_name else "?"
                 f_init = pygame.font.SysFont("arial", 48, bold=True)
                 txt = f_init.render(initial, True, UI_ACCENT)
                 screen.blit(txt, txt.get_rect(center=(av_cx, av_cy)))
