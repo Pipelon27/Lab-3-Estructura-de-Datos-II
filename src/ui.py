@@ -296,6 +296,11 @@ class UI:
                   total_xp, max_total_xp,
                   XP_BLUE, XP_BG, f"Lv{player.level}")
 
+        # ── money (to the right of bars) ──
+        money_x = bars_x + 200
+        money_surf = self.font_hud_lg.render(f"${player.money}", True, (57, 255, 20))
+        screen.blit(money_surf, (money_x, 30))
+
         # ── day / phase ──
         phase_str = current_phase.value.replace("_", " ").title()
         day_text = f"Day {day_number}  —  {phase_str}"

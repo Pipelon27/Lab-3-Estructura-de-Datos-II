@@ -48,7 +48,7 @@ class PingPongGame:
         self._taunt_msg = ""
         self._taunt_timer = 0.0
         # characters are now square sprites (larger)
-        self.sprite_size = 64
+        self.sprite_size = 80
         # will be positioned relative to court in reset()
         self.opp_x = 0
         self.opp_y = 0
@@ -122,12 +122,12 @@ class PingPongGame:
         self._opp_hit_timer = 0.0
         self._player_anim_timer = 0.0
         self._opp_anim_timer = 0.0
-        self._sprite_disp_w = 64
-        self._sprite_disp_h = 128
+        self._sprite_disp_w = 80
+        self._sprite_disp_h = 160
         self._sprites_loaded = False
         # Ping pong racket vertical offset (pixels from top of sprite when drawn)
         # Adjust this value if you want the racket higher or lower.
-        self.racket_offset = 110
+        self.racket_offset = 138
         self._bg = None
         self._bg_loaded = False
 
@@ -311,16 +311,29 @@ class PingPongGame:
             hx = sprite_left - swing + offset_left
             handle_rect = pygame.Rect(hx - 22, hy - 3, 22, 6)
             px = hx - 22 - 12 + offset_left - paddle_forward
-        py = hy
+        
+        # Move paddle face upward (negative = up, positive = down)
+        paddle_up_offset = -6
+        py = hy + paddle_up_offset
 
-        pygame.draw.rect(screen, handle_color, handle_rect, border_radius=3)
+        pygame.draw.rect(screen, handle_color, handle_rect, border_radius=2)
 
-        # Horizontal paddle (wider than tall for ping pong racket look)
-        pr_x, pr_y = 17, 11
-        paddle_surf = pygame.Surface((pr_x * 2, pr_y * 2), pygame.SRCALPHA)
-        pygame.draw.ellipse(paddle_surf, paddle_rim, (0, 0, pr_x * 2, pr_y * 2))
-        pygame.draw.ellipse(paddle_surf, paddle_face, (2, 2, pr_x * 2 - 4, pr_y * 2 - 4))
-        screen.blit(paddle_surf, (px - pr_x, py - pr_y))
+        # Oval racket shape (elliptical)
+        pr_w, pr_h = 36, 22
+        paddle_surf = pygame.Surface((pr_w, pr_h), pygame.SRCALPHA)
+        
+        # Outer rim (ellipse)
+        pygame.draw.ellipse(paddle_surf, paddle_rim, (0, 0, pr_w, pr_h))
+        # Red face (ellipse)
+        pygame.draw.ellipse(paddle_surf, paddle_face, (2, 2, pr_w - 4, pr_h - 4))
+        # Center highlight for 2D depth
+        pygame.draw.ellipse(paddle_surf, (230, 60, 60), (5, 5, pr_w - 10, pr_h - 10))
+        
+        # Rotate slightly upward (+25 for player facing right, -25 for opponent facing left)
+        angle = 25 if facing_right else -25
+        rotated = pygame.transform.rotate(paddle_surf, angle)
+        r_rect = rotated.get_rect(center=(px, py))
+        screen.blit(rotated, r_rect.topleft)
 
     def _queue_oscar_extra_ball(self, player_rect: pygame.Rect, delay: float = 0.0, strong: bool = False):
         """Spawn an extra ball from Oscar's current position."""
@@ -1033,19 +1046,19 @@ class PingPongGame:
 
         return None
 
-    def _draw_table_legs(self, screen, bot_l, bot_r, leg_color=(55, 38, 20)):
+    def _draw_table_legs(self, screen, bot_l, bot_r, leg_color=(18, 18, 18)):
         """Draw two legs — one centred on each short end of the table."""
-        leg_h = 22
-        leg_w = 8
+        leg_h = 40  # taller legs for stronger presence
+        leg_w = 26  # much wider legs per request
         # One leg per side, centred horizontally between bot_l and bot_r extremes
         left_cx  = bot_l[0] + 36   # inset from left corner
         right_cx = bot_r[0] - 36   # inset from right corner
         for cx, cy in [(left_cx, bot_l[1]), (right_cx, bot_r[1])]:
             pygame.draw.rect(screen, leg_color,
                              (cx - leg_w // 2, cy, leg_w, leg_h))
-            # small foot shadow
-            pygame.draw.rect(screen, (30, 20, 10),
-                             (cx - leg_w // 2 - 2, cy + leg_h - 3, leg_w + 4, 4))
+            # small foot shadow (darker, matching leg size)
+            pygame.draw.rect(screen, (8, 8, 8),
+                             (cx - leg_w // 2 - 5, cy + leg_h - 5, leg_w + 10, 6))
 
     def draw(self, screen: pygame.Surface):
         # Allow drawing the end screen, menu, or countdown even when `active` is False
@@ -1055,11 +1068,19 @@ class PingPongGame:
         if not self._bg_loaded:
             try:
                 import os
-                raw = pygame.image.load(
-                    os.path.join("assets", "UI", "ping pong.png")
-                ).convert()
-                self._bg = pygame.transform.scale(raw, (SCREEN_WIDTH, SCREEN_HEIGHT))
-            except Exception:
+                # Tile the floor using the orange vertical planks tile from the Room Builder tileset
+                tp = os.path.join("assets", "BehindTheSmile_Assets", "BehindTheSmile_Assets", "campus", "Room_Builder_free_32x32.png")
+                tileset = pygame.image.load(tp).convert()
+                # Row 12 (0-indexed) corresponds to the tan vertical planks floor without top border (Y = 12 * 32 = 384)
+                # Using X=0 to include the plank border
+                tile = tileset.subsurface(pygame.Rect(0, 384, 32, 32))
+                
+                self._bg = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
+                for tx in range(0, SCREEN_WIDTH, 32):
+                    for ty in range(0, SCREEN_HEIGHT, 32):
+                        self._bg.blit(tile, (tx, ty))
+            except Exception as e:
+                print(f"[PingPong] Failed to tile floor background: {e}")
                 self._bg = None
             self._bg_loaded = True
         if self._bg:
@@ -1083,7 +1104,30 @@ class PingPongGame:
             ]
             pygame.draw.polygon(screen, (80, 130, 90), inner)
             net_x = (top_l[0] + top_r[0]) // 2
-            pygame.draw.rect(screen, (220, 220, 220), (net_x - 4, top_l[1] - 6, 8, bot_l[1] - top_l[1] + 12))
+            net_rect = pygame.Rect(net_x - 4, top_l[1] - 6, 8, bot_l[1] - top_l[1] + 12)
+            pygame.draw.rect(screen, (220, 220, 220), net_rect)
+
+            post_color = (200, 200, 200)
+            top_post = pygame.Rect(net_x - 6, top_l[1] - 18, 12, 22)
+            bottom_post = pygame.Rect(net_x - 8, bot_l[1] - 12, 16, 32)
+            pygame.draw.rect(screen, post_color, top_post)
+            pygame.draw.rect(screen, post_color, bottom_post)
+
+            def lerp_point(a, b, t: float):
+                return (a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t)
+
+            line_colour = (230, 230, 230)
+            # Horizontal center line
+            left_pt = lerp_point(top_l, bot_l, 0.5)
+            right_pt = lerp_point(top_r, bot_r, 0.5)
+            pygame.draw.line(
+                screen,
+                line_colour,
+                (int(left_pt[0]), int(left_pt[1])),
+                (int(right_pt[0]), int(right_pt[1])),
+                width=3,
+            )
+
             self._draw_table_legs(screen, bot_l, bot_r)
             # draw characters
             player_sprite_x = int(self.player_x - self.sprite_size // 2)
@@ -1148,8 +1192,32 @@ class PingPongGame:
             ]
             pygame.draw.polygon(screen, (80, 130, 90), inner)
             net_x = (top_l[0] + top_r[0]) // 2
-            pygame.draw.rect(screen, (220, 220, 220), (net_x - 4, top_l[1] - 6, 8, bot_l[1] - top_l[1] + 12))
+            net_rect = pygame.Rect(net_x - 4, top_l[1] - 6, 8, bot_l[1] - top_l[1] + 12)
+            pygame.draw.rect(screen, (220, 220, 220), net_rect)
+
+            post_color = (200, 200, 200)
+            top_post = pygame.Rect(net_x - 6, top_l[1] - 18, 12, 22)
+            bottom_post = pygame.Rect(net_x - 8, bot_l[1] - 12, 16, 32)
+            pygame.draw.rect(screen, post_color, top_post)
+            pygame.draw.rect(screen, post_color, bottom_post)
+
+            def lerp_point(a, b, t: float):
+                return (a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t)
+
+            line_colour = (230, 230, 230)
+            # Horizontal center line
+            left_pt = lerp_point(top_l, bot_l, 0.5)
+            right_pt = lerp_point(top_r, bot_r, 0.5)
+            pygame.draw.line(
+                screen,
+                line_colour,
+                (int(left_pt[0]), int(left_pt[1])),
+                (int(right_pt[0]), int(right_pt[1])),
+                width=3,
+            )
+
             self._draw_table_legs(screen, bot_l, bot_r)
+
             # draw characters
             player_sprite_x = int(self.player_x - self.sprite_size // 2)
             player_sprite_y = int(self.player_y - self.sprite_size // 2)
@@ -1186,7 +1254,32 @@ class PingPongGame:
         pygame.draw.polygon(screen, (80, 130, 90), inner)
         # net (center vertical)
         net_x = (top_l[0] + top_r[0]) // 2
-        pygame.draw.rect(screen, (220, 220, 220), (net_x - 4, top_l[1] - 6, 8, bot_l[1] - top_l[1] + 12))
+        net_rect = pygame.Rect(net_x - 4, top_l[1] - 6, 8, bot_l[1] - top_l[1] + 12)
+        pygame.draw.rect(screen, (220, 220, 220), net_rect)
+
+        # Net support posts (top/back and bottom/front)
+        post_color = (200, 200, 200)
+        top_post = pygame.Rect(net_x - 6, top_l[1] - 18, 12, 22)
+        bottom_post = pygame.Rect(net_x - 8, bot_l[1] - 12, 16, 32)
+        pygame.draw.rect(screen, post_color, top_post)
+        pygame.draw.rect(screen, post_color, bottom_post)
+
+        # Sideline division lines (horizontal doubles guides)
+        def lerp_point(a, b, t: float):
+            return (a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t)
+
+        line_colour = (230, 230, 230)
+        # Horizontal center line
+        left_pt = lerp_point(top_l, bot_l, 0.5)
+        right_pt = lerp_point(top_r, bot_r, 0.5)
+        pygame.draw.line(
+            screen,
+            line_colour,
+            (int(left_pt[0]), int(left_pt[1])),
+            (int(right_pt[0]), int(right_pt[1])),
+            width=3,
+        )
+
         self._draw_table_legs(screen, bot_l, bot_r)
 
         # draw characters with sprite animations

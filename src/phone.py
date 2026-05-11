@@ -913,7 +913,7 @@ class Phone:
 
         ir = r.inflate(-80, -120)
         ir.center = r.center
-        pygame.draw.rect(s, WHITE, ir, border_radius=20)
+        pygame.draw.rect(s, PH_CARD, ir, border_radius=20)
         self._draw_app_glyph(s, app, ir)
         name = next((lb for a, lb in self._HOME_APPS if a == app), "App")
         tt = self._f_sec.render(name, True, PH_TEXT)
@@ -1272,8 +1272,8 @@ class Phone:
         y_list = tab_y + tab_h
         avail_h = ch - (y_list - cy)
 
-        # White background for the list
-        pygame.draw.rect(s, WHITE, (cx, y_list, cw, avail_h))
+        # Dark background for the list
+        pygame.draw.rect(s, PH_SCREEN, (cx, y_list, cw, avail_h))
 
         if self.active_chat is not None:
             self._chat_view(s, cx, cy, cw, ch)
@@ -1308,16 +1308,16 @@ class Phone:
                 yoff += IH
                 continue
 
-            # Hover/Selected effect could go here, but WhatsApp is usually plain white
-            # Separator line
-            pygame.draw.line(s, (230, 230, 230), (cx + 70, card.bottom - 1), (cx + cw, card.bottom - 1))
-
+            # Hover/Selected effect could go here
+            # Separator line (Darker for dark mode)
+            pygame.draw.line(s, PH_BD, (cx + 70, card.bottom - 1), (cx + cw, card.bottom - 1))
+            
             # Avatar
             avc = (cx + 35, card.centery)
             self._draw_avatar(s, npc_id, contact_name, avc, 24)
 
             # Name (Contact Name, never "Tú")
-            self._text(s, contact_name, self._f_title, (10, 10, 10), cx + 70, card.y + 12)
+            self._text(s, contact_name, self._f_title, PH_TEXT, cx + 70, card.y + 12)
             
             # Preview (Last message content)
             prev_text = last.content
@@ -1325,10 +1325,10 @@ class Phone:
                 prev_text = "✓ " + prev_text # Checkmark for player messages
             
             prev = prev_text[:30] + ("…" if len(prev_text) > 30 else "")
-            self._text(s, prev, self._f_sub, (100, 100, 100), cx + 70, card.y + 32)
+            self._text(s, prev, self._f_sub, PH_TEXT_S, cx + 70, card.y + 32)
 
             # Time on the right
-            time_s = self._f_badge.render(last.timestamp, True, (130, 130, 130))
+            time_s = self._f_badge.render(last.timestamp, True, PH_TEXT_D)
             s.blit(time_s, (cx + cw - time_s.get_width() - 12, card.y + 14))
 
             if unread > 0:

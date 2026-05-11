@@ -1049,7 +1049,8 @@ class SchoolMap:
                         100, 150, 1200, 1000, (32, 58, 32)))
         f.add_room(Room("c_tennis", "Ping Pong Court",
                         "One court for recreation",
-                        3100, 2100, 780, 750, (40, 52, 44)))
+                        3100, 2100, 780, 750, (40, 52, 44),
+                        tile_path="assets/UI/wood_tile_orange.png"))
         f.add_room(Room("c_coliseum", "Athletic Coliseum",
                         "Circular coliseum with basketball court",
                         2800, 150, 1080, 950, (44, 40, 36),
@@ -1749,7 +1750,8 @@ class SchoolMap:
 
         f.add_room(Room("pi_hall", "Ping Pong Hall",
                         "Indoor practice court",
-                        0, 0, 1300, 1000, (58, 72, 62)))
+                        0, 0, 1300, 1000, (58, 72, 62),
+                        tile_path="assets/UI/wood_tile_orange.png"))
 
         f.walls.extend([
             _hw(0, 0, 1300), _hw(0, 1000 - WT, 1300),

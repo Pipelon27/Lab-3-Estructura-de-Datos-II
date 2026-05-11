@@ -79,6 +79,7 @@ class Player:
         self.xp            = 0
         self.level         = 1
         self.skill_points  = 0
+        self.money         = 5           # Start with $5 as requested
 
         # Combat extras (overridden by Aiden)
         self.attack_damage  = 10

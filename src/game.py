@@ -1205,7 +1205,7 @@ class Game:
                 "label": "Ping Pong Court",
                 "zone": pygame.Rect(3340, 2810, 300, 90),
                 "target_floor": FLOOR_PINGPONG_INTERIOR,
-                "spawn": (650, 760),
+                "spawn": (650, 640),
             },
         ]
         for entry in entrances:
@@ -1347,7 +1347,7 @@ class Game:
         room = floor.get_room_at(tx, ty)
         if floor_id == FLOOR_CAMPUS and room:
             if room.id == "c_tennis":
-                self._go_to_floor(FLOOR_PINGPONG_INTERIOR, 650, 760)
+                self._go_to_floor(FLOOR_PINGPONG_INTERIOR, 650, 640)
                 return True
             if room.id == "c_coliseum":
                 self._go_to_floor(FLOOR_COLISEUM_INTERIOR, 900, 980)
@@ -1614,6 +1614,10 @@ class Game:
         for npc in npcs_on_floor:
             if npc.id == "npc_gordon":
                 walls.append(npc.rect)
+                continue
+            if npc.id.startswith("npc_oscar_obs"):
+                walls.append(npc.rect)
+                continue
             
         previous_rect = self.player.rect.copy()
         

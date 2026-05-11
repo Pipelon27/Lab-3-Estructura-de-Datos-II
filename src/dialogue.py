@@ -20,6 +20,7 @@ from settings import (
     NOTIF_SUCCESS,
     SCREEN_WIDTH, SCREEN_HEIGHT,
     DATA_DIR,
+    Character,
 )
 
 
@@ -395,18 +396,40 @@ class DialogueSystem:
         choices = self.active_tree.get_choices()
 
         # ── dialogue box (bottom of screen) ──
-        # Template for all NPCs: always show a portrait on the left if not the player
-        is_npc = speaker != "Player"
-        
-        # Map speaker name to avatar filename (e.g., "Aiden" -> "Aiden Parker")
-        avatar_name = speaker
-        if speaker == "Aiden":
-            avatar_name = "Aiden Parker"
-        
+        player_character = getattr(self.player, "character", None)
+        player_name = None
+        if player_character == Character.AIDEN:
+            player_name = "Aiden"
+        elif player_character == Character.LENA:
+            player_name = "Lena"
+
+        display_speaker = speaker
+        is_player_line = False
+
+        if speaker == "Player":
+            if player_name:
+                display_speaker = player_name
+            is_player_line = True
+        elif player_name and speaker in ("Aiden", "Lena"):
+            # Dialogue assets may always reference Aiden; swap to current protagonist
+            if speaker != player_name:
+                display_speaker = player_name
+            is_player_line = True
+        elif player_name and speaker.lower() == player_name.lower():
+            is_player_line = True
+
+        is_npc = not is_player_line
+
+        avatar_lookup = {
+            "Aiden": "Aiden Parker",
+            "Lena": "Lena Aiden",
+        }
+        avatar_name = avatar_lookup.get(display_speaker, display_speaker)
+
         has_realistic = avatar_name in self.avatars
-        # Also show portrait for player if they have a realistic avatar
-        show_portrait = is_npc or (speaker == "Aiden" and has_realistic)
-        
+        # Show portrait for NPCs, and also for the player if we have a realistic avatar
+        show_portrait = is_npc or (is_player_line and has_realistic)
+
         box_w_offset = 140 if show_portrait else 0
 
         box_h = 180 if choices else 130
@@ -420,7 +443,7 @@ class DialogueSystem:
         pygame.draw.rect(screen, UI_ACCENT, box, 2, border_radius=12)
 
         # Speaker name
-        screen.blit(font_name.render(speaker, True, UI_ACCENT),
+        screen.blit(font_name.render(display_speaker, True, UI_ACCENT),
                     (box.x + 18, box.y + 12))
 
         # Text (with word wrap)
@@ -450,7 +473,7 @@ class DialogueSystem:
             else:
                 # Fallback: Draw initials in a stylized circle
                 pygame.draw.circle(screen, (40, 50, 70), (av_cx, av_cy), av_radius - 2)
-                display_name = speaker if is_npc else (avatar_name if avatar_name else speaker)
+                display_name = display_speaker if display_speaker else speaker
                 initial = display_name[0].upper() if display_name else "?"
                 f_init = pygame.font.SysFont("arial", 48, bold=True)
                 txt = f_init.render(initial, True, UI_ACCENT)
@@ -471,7 +494,7 @@ class DialogueSystem:
         sub_bar = pygame.Rect(0, SCREEN_HEIGHT - 18, SCREEN_WIDTH, 18)
         pygame.draw.rect(screen, BLACK, sub_bar)
         sub_font = pygame.font.SysFont("arial", 14)
-        screen.blit(sub_font.render(f"[{speaker}] {text}", True, WHITE),
+        screen.blit(sub_font.render(f"[{display_speaker}] {text}", True, WHITE),
                     (10, SCREEN_HEIGHT - 17))
 
     @staticmethod

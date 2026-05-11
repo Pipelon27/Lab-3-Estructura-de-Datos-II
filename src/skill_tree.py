@@ -129,8 +129,9 @@ class SkillTree:
     def __init__(self, root: SkillNode):
         self.root      = root
         self.root.unlocked = True     # root is always unlocked
-        self.selected_index = 0       # for UI navigation
+        self.selected_node = self.root.children[0] if self.root.children else self.root
         self._flat:  list[SkillNode] = []   # cache for drawing
+        self._node_pos: dict[SkillNode, tuple[int, int]] = {}
         self._refresh_flat()
 
     def _refresh_flat(self):
@@ -188,23 +189,35 @@ class SkillTree:
             return None
 
         if event.key == pygame.K_UP:
-            self.selected_index = max(0, self.selected_index - 1)
+            if self.selected_node.parent and not self.selected_node.parent.is_root():
+                self.selected_node = self.selected_node.parent
         elif event.key == pygame.K_DOWN:
-            self.selected_index = min(len(self._flat) - 1, self.selected_index + 1)
+            if self.selected_node.children:
+                self.selected_node = self.selected_node.children[0]
+        elif event.key == pygame.K_LEFT:
+            if self.selected_node.parent:
+                sibs = self.selected_node.parent.children
+                idx = sibs.index(self.selected_node)
+                if idx > 0:
+                    self.selected_node = sibs[idx - 1]
+        elif event.key == pygame.K_RIGHT:
+            if self.selected_node.parent:
+                sibs = self.selected_node.parent.children
+                idx = sibs.index(self.selected_node)
+                if idx < len(sibs) - 1:
+                    self.selected_node = sibs[idx + 1]
         elif event.key in (pygame.K_RETURN, pygame.K_SPACE):
-            if 0 <= self.selected_index < len(self._flat):
-                node = self._flat[self.selected_index]
-                return self.unlock_skill(node, player)
+            return self.unlock_skill(self.selected_node, player)
         return None
 
     # ── drawing ───────────────────────────────────────────────
 
     def draw(self, screen: pygame.Surface, player):
-        """Render the full skill-tree screen."""
+        """Render the full skill-tree screen as a graphical tree."""
         screen.fill(UI_BG)
 
-        font_title = pygame.font.SysFont("arial", 36, bold=True)
-        font_node  = pygame.font.SysFont("arial", 22)
+        font_title = pygame.font.SysFont("arial", 32, bold=True)
+        font_node  = pygame.font.SysFont("arial", 18, bold=True)
         font_desc  = pygame.font.SysFont("arial", 16)
         font_info  = pygame.font.SysFont("arial", 18)
 
@@ -214,45 +227,96 @@ class SkillTree:
             (30, 20),
         )
 
-        # List skills
-        y = 80
-        for i, skill in enumerate(self._flat):
-            is_sel  = (i == self.selected_index)
-            indent  = skill.depth() * 30
-            prefix  = "►" if is_sel else " "
-            status  = " ✓" if skill.unlocked else ""
-            avail   = skill.is_available() and not skill.unlocked
+        # Calculate layout
+        self._node_pos = {}
+        self._calculate_layout(self.root, 0, SCREEN_WIDTH, 100, 150)
 
-            if skill.unlocked:
-                colour = NOTIF_SUCCESS
+        # Draw edges (connections) first
+        for node in self.root.level_order():
+            if node.is_root(): continue
+            px, py = self._node_pos[node.parent]
+            nx, ny = self._node_pos[node]
+            
+            # Draw line from parent to child
+            color = NOTIF_SUCCESS if node.unlocked else UI_BORDER
+            pygame.draw.line(screen, color, (px, py), (nx, ny), 3)
+
+        # Draw nodes
+        for node in self.root.level_order():
+            if node.is_root(): continue
+            nx, ny = self._node_pos[node]
+            is_sel = (node == self.selected_node)
+            avail  = node.is_available() and not node.unlocked
+
+            # Node color
+            if node.unlocked:
+                color = NOTIF_SUCCESS
             elif avail:
-                colour = UI_ACCENT
+                color = UI_ACCENT
             else:
-                colour = UI_TEXT_DIM
+                color = UI_TEXT_DIM
 
-            line = f"{prefix} {'  ' * (skill.depth() - 1)}{'├─ ' if skill.depth() > 1 else ''}{skill.name} (cost {skill.cost}){status}"
-            surf = font_node.render(line, True, colour)
-            rx   = 40 + indent
-            ry   = y
-
+            # Selection highlight
             if is_sel:
-                bg = pygame.Rect(rx - 6, ry - 2, SCREEN_WIDTH - 80 - indent, 28)
-                pygame.draw.rect(screen, UI_PANEL, bg, border_radius=5)
-                pygame.draw.rect(screen, colour, bg, 1, border_radius=5)
-                # Description below list
-                desc = font_desc.render(skill.description, True, UI_TEXT)
-                screen.blit(desc, (40, SCREEN_HEIGHT - 80))
-                # Effect
-                if skill.effect:
-                    eff_txt = "  |  ".join(f"{k} +{v}" for k, v in skill.effect.items())
-                    screen.blit(font_info.render(eff_txt, True, NOTIF_SUCCESS), (40, SCREEN_HEIGHT - 55))
-
-            screen.blit(surf, (rx, ry))
-            y += 32
+                pygame.draw.circle(screen, UI_PANEL, (nx, ny), 35)
+                pygame.draw.circle(screen, color, (nx, ny), 35, 3)
+                
+                # Info panel at bottom
+                info_rect = pygame.Rect(40, SCREEN_HEIGHT - 120, SCREEN_WIDTH - 80, 100)
+                pygame.draw.rect(screen, UI_PANEL, info_rect, border_radius=10)
+                pygame.draw.rect(screen, UI_BORDER, info_rect, 2, border_radius=10)
+                
+                self._text(screen, node.name, font_node, UI_ACCENT, 60, SCREEN_HEIGHT - 110)
+                self._text(screen, f"Cost: {node.cost}", font_info, WHITE, SCREEN_WIDTH - 150, SCREEN_HEIGHT - 110)
+                self._wrap_text(screen, node.description, font_desc, UI_TEXT, 60, SCREEN_HEIGHT - 85, SCREEN_WIDTH - 200)
+                
+                if node.effect:
+                    eff_txt = " | ".join(f"{k}: +{v}" for k, v in node.effect.items())
+                    self._text(screen, eff_txt, font_info, NOTIF_SUCCESS, 60, SCREEN_HEIGHT - 50)
+            
+            # Node circle
+            pygame.draw.circle(screen, UI_BG, (nx, ny), 28)
+            pygame.draw.circle(screen, color, (nx, ny), 28, 2)
+            
+            # Label
+            label = font_node.render(node.name[:2], True, color)
+            screen.blit(label, label.get_rect(center=(nx, ny)))
+            
+            # Full name above/below
+            full_name = font_desc.render(node.name, True, color)
+            screen.blit(full_name, full_name.get_rect(midtop=(nx, ny + 32)))
 
         # Footer hint
-        hint = font_desc.render("↑↓ Navigate  |  ENTER Unlock  |  ESC Back", True, UI_TEXT_DIM)
+        hint = font_desc.render("Arrows: Navigate  |  ENTER: Unlock  |  ESC: Back", True, UI_TEXT_DIM)
         screen.blit(hint, hint.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT - 25)))
+
+    def _calculate_layout(self, node, x_start, x_end, y, y_step):
+        """Recursively calculate positions for nodes."""
+        mid_x = (x_start + x_end) // 2
+        self._node_pos[node] = (mid_x, y)
+        
+        if node.children:
+            child_w = (x_end - x_start) // len(node.children)
+            for i, child in enumerate(node.children):
+                self._calculate_layout(child, x_start + i * child_w, x_start + (i + 1) * child_w, y + y_step, y_step)
+
+    def _text(self, s, text, font, color, x, y):
+        s.blit(font.render(text, True, color), (x, y))
+
+    def _wrap_text(self, s, text, font, color, x, y, max_w):
+        words = text.split()
+        lines = []
+        cur_line = ""
+        for w in words:
+            test = cur_line + " " + w if cur_line else w
+            if font.size(test)[0] <= max_w:
+                cur_line = test
+            else:
+                lines.append(cur_line)
+                cur_line = w
+        lines.append(cur_line)
+        for i, line in enumerate(lines):
+            s.blit(font.render(line, True, color), (x, y + i * 18))
 
 
 # ══════════════════════════════════════════════════════════════
