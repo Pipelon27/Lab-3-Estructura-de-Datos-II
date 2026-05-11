@@ -172,7 +172,7 @@ class WorldMap:
                                 tx, ty = 900, 1100 # Default interior spawn
                             elif rid == "c_tennis":
                                 target_tab = self.school_map.FLOOR_PINGPONG_INTERIOR
-                                tx, ty = 800, 1000 # Default interior spawn
+                                tx, ty = 650, 900 # Default interior spawn
                             elif rid == "c_building":
                                 target_tab = 0 # Campus
                                 tx, ty = 2000, 2100 # In front of Main Building
@@ -462,10 +462,7 @@ class WorldMap:
             ww = max(1, int(wall.width * z))
             wh = max(1, int(wall.height * z))
             wall_rect = pygame.Rect(wx, wy, ww, wh)
-            if hasattr(floor, "_draw_topdown_wall"):
-                floor._draw_topdown_wall(screen, wall_rect)
-            else:
-                pygame.draw.rect(screen, (90, 90, 100), wall_rect)
+            pygame.draw.rect(screen, (90, 90, 100), wall_rect)
 
         door_col = (200, 200, 230)
         for door in getattr(floor, "doors", []):

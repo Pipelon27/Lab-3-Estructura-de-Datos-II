@@ -456,9 +456,13 @@ class DialogueSystem:
             # Positioned to the left of the box, attached
             av_cx = box.left - 87
             av_cy = box.centery
-            
-            # Circular frame (Light Blue UI_ACCENT)
-            pygame.draw.circle(screen, UI_ACCENT, (av_cx, av_cy), av_radius + 4)
+
+            # Frame color: pink HUD tone when Lena is speaking, blue accent otherwise
+            if is_player_line and player_character == Character.LENA:
+                frame_col = (255, 180, 220)  # matches HUD pink for Lena
+            else:
+                frame_col = UI_ACCENT
+            pygame.draw.circle(screen, frame_col, (av_cx, av_cy), av_radius + 4)
             pygame.draw.circle(screen, BLACK, (av_cx, av_cy), av_radius)
             
             if has_realistic:

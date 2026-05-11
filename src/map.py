@@ -141,6 +141,19 @@ def _vw(x, y, length):
     return pygame.Rect(x, y, WT, length)
 
 
+def _add_furn(floor, rect, ftype=None, blocking=True, **kw):
+    """Helper to register a furniture piece and (optionally) its collider."""
+    item = {"rect": rect}
+    if ftype:
+        item["type"] = ftype
+    if "color" not in kw and ftype is None:
+        kw["color"] = (140, 140, 150)
+    item.update(kw)
+    floor.furniture.append(item)
+    if blocking:
+        floor.walls.append(rect)
+
+
 # ══════════════════════════════════════════════════════════════
 #  ROOM
 # ══════════════════════════════════════════════════════════════
@@ -219,15 +232,23 @@ class SeamlessStaircase:
 
 class Floor:
     WALL_COLOR       = (70, 70, 80)
-    WALL_TOP_COLOR   = (238, 240, 248)
+    WALL_TOP_COLOR   = (210, 212, 222)       # lighter top surface
     WALL_FACE_COLOR  = (128, 126, 120)
-    WALL_SHADE_COLOR = (74, 70, 76)
-    WALL_EDGE_COLOR  = (48, 48, 70)
-    WALL_HILITE      = (255, 255, 255)
+    WALL_SHADE_COLOR = (88, 82, 78)          # bottom face (slightly lighter for contrast)
+    WALL_RIGHT_COLOR = (72, 68, 64)          # right face (darker = further from light)
+    WALL_EDGE_COLOR  = (42, 40, 55)          # outline
+    WALL_HILITE      = (245, 245, 255)       # top-left highlight
+    WALL_DEPTH       = 14                    # base depth of the 3D extrusion
     TRANSITION_COLOR = (80, 160, 240)
     STAIR_STEP_A     = (55, 55, 68)
     STAIR_STEP_B     = (48, 48, 58)
-    STAIR_ARROW_COL  = (120, 130, 160)
+    STAIR_ARROW_COL  = (210, 215, 235)
+    STAIR_TREAD_LO   = (70, 70, 86)
+    STAIR_TREAD_HI   = (158, 162, 184)
+    STAIR_NOSING     = (220, 224, 244)
+    STAIR_RISER      = (18, 18, 26)
+    STAIR_RAIL       = (28, 28, 38)
+    STAIR_RAIL_HI    = (130, 135, 155)
 
     def __init__(self, floor_id, name, width, height, bg_color):
         self.id       = floor_id
@@ -328,32 +349,9 @@ class Floor:
             else:
                 pygame.draw.rect(screen, room.color, r)
             if room.is_staircase and r.height > 20:
-                steps = max(4, r.height // 12)
-                for si in range(steps):
-                    sy = r.y + int(r.height * si / steps)
-                    col = self.STAIR_STEP_A if si % 2 == 0 else self.STAIR_STEP_B
-                    pygame.draw.line(screen, col,
-                                     (r.x + 4, sy), (r.x + r.width - 4, sy), 1)
-                if r.width > 40 and r.height > 30:
-                    arr = font14.render("\u2191\u2193", True, self.STAIR_ARROW_COL)
-                    screen.blit(arr, (r.centerx - arr.get_width() // 2,
-                                      r.centery - arr.get_height() // 2))
+                self._draw_staircase_3d(screen, r, font14)
             elif r.width > 50:
-                lbl = font14.render(room.name, True, (200, 200, 210))
-                y_offset = 24 if room.id == "c_tennis" else 8
-                x_offset = 30 if room.id == "c_tennis" else 8
-                lx, ly = r.x + x_offset, r.y + y_offset
-                for other in self.rooms.values():
-                    if other.is_staircase and other.rect.collidepoint(
-                            room.rect.x + 8, room.rect.y + 8):
-                        ly = camera.apply_rect(other.rect).bottom + 4
-                        break
-                if room.id == "f1_women_bath":
-                    stair = self.rooms.get("f1_stairs_2f")
-                    if stair:
-                        lx, ly = camera.apply_pos(stair.rect.right + 12,
-                                                   room.rect.y + 12)
-                screen.blit(lbl, (lx, ly))
+                pass  # labels drawn after walls
 
         door_color = (180, 180, 205)
         for door in self.doors:
@@ -371,29 +369,143 @@ class Floor:
             fr = camera.apply_rect(furn["rect"])
             if fr.right < 0 or fr.left > sw or fr.bottom < 0 or fr.top > sh:
                 continue
-            if furn.get("type") == "bookshelf":
+            ftype = furn.get("type")
+            if ftype == "bookshelf":
                 self._draw_bookshelf(screen, fr)
-                continue
-            pygame.draw.rect(screen, furn["color"], fr)
-            outline = furn.get("outline")
-            if outline:
-                pygame.draw.rect(screen, outline, fr, 2)
+            elif ftype == "round_table":
+                pygame.draw.circle(screen, furn["color"], fr.center, fr.width // 2)
+                if furn.get("outline"):
+                    pygame.draw.circle(screen, furn["outline"], fr.center, fr.width // 2, 2)
+            elif ftype == "lamp":
+                # Base
+                pygame.draw.circle(screen, (80, 80, 80), fr.center, fr.width // 3)
+                # Shade
+                pygame.draw.circle(screen, furn["color"], fr.center, fr.width // 2)
+                # Glow
+                glow_surf = pygame.Surface((fr.width * 2, fr.height * 2), pygame.SRCALPHA)
+                pygame.draw.circle(glow_surf, (255, 255, 200, 40), (fr.width, fr.height), fr.width)
+                screen.blit(glow_surf, (fr.centerx - fr.width, fr.centery - fr.height))
+            elif ftype == "plant":
+                # Pot
+                pygame.draw.circle(screen, (139, 69, 19), fr.center, fr.width // 3)
+                # Leaves
+                pygame.draw.circle(screen, furn["color"], (fr.centerx - 4, fr.centery - 4), fr.width // 2)
+                pygame.draw.circle(screen, (34, 139, 34), (fr.centerx + 4, fr.centery + 4), fr.width // 2)
+                pygame.draw.circle(screen, furn["color"], (fr.centerx, fr.centery), fr.width // 2)
+            elif ftype == "buffet_tray":
+                # Silver outer tray
+                pygame.draw.rect(screen, (190, 190, 200), fr, border_radius=4)
+                pygame.draw.rect(screen, (150, 150, 160), fr, 2, border_radius=4)
+                # Inner food area
+                inner = fr.inflate(-8, -8)
+                if inner.width > 0 and inner.height > 0:
+                    pygame.draw.rect(screen, furn["color"], inner, border_radius=2)
+            elif ftype == "toilet":
+                self._draw_toilet(screen, fr, furn.get("facing", "down"))
+            elif ftype == "computer":
+                self._draw_computer(screen, fr, furn.get("facing", "up"))
+            elif ftype == "lab_bench":
+                self._draw_lab_bench(screen, fr)
+            elif ftype == "piano":
+                self._draw_piano(screen, fr)
+            elif ftype == "drum_set":
+                self._draw_drum_set(screen, fr)
+            elif ftype == "guitar":
+                self._draw_guitar(screen, fr)
+            elif ftype == "easel":
+                self._draw_easel(screen, fr)
+            elif ftype == "locker":
+                self._draw_locker(screen, fr)
+            elif ftype == "office_desk":
+                self._draw_office_desk(screen, fr, furn.get("facing", "down"))
+            elif ftype == "office_chair":
+                self._draw_office_chair(screen, fr)
+            elif ftype == "hospital_bed":
+                self._draw_hospital_bed(screen, fr, furn.get("facing", "down"))
+            elif ftype == "stage":
+                self._draw_stage(screen, fr)
+            elif ftype == "auditorium_seat":
+                self._draw_auditorium_seat(screen, fr)
+            elif ftype == "executive_desk":
+                self._draw_executive_desk(screen, fr)
+            elif ftype == "sofa_chair":
+                self._draw_sofa_chair(screen, fr)
+            elif ftype == "umbrella_table":
+                self._draw_umbrella_table(screen, fr)
+            elif ftype == "chalkboard":
+                self._draw_chalkboard(screen, fr, furn.get("facing", "up"))
+            elif ftype == "sink":
+                self._draw_sink(screen, fr, furn.get("facing", "down"))
+            else:
+                pygame.draw.rect(screen, furn["color"], fr)
+                if furn.get("outline"):
+                    pygame.draw.rect(screen, furn["outline"], fr, 2)
 
+        # ── Two-pass wall rendering ──────────────────────────────
+        # Pass 1: shadows + 3-D extrusions (bottom/right faces)
+        # Pass 2: top surfaces (caps)
+        # This prevents one wall's extrusion from overlapping
+        # another wall's top surface.
+        pp_tables = getattr(self, 'ping_pong_tables', [])
+        pp_table  = getattr(self, 'ping_pong_table', None)
+        fountain  = getattr(self, 'fountain_rect', None)
+        # Collect all furniture rects so they are drawn as furniture, not walls
+        furniture_rects = set()
+        for furn in self.furniture:
+            furniture_rects.add(id(furn["rect"]))
+
+        visible_walls = []  # (wall, screen_rect)
         for wall in self.walls:
             wr = camera.apply_rect(wall)
-            if wr.right < 0 or wr.left > sw or wr.bottom < 0 or wr.top > sh:
+            d = self.WALL_DEPTH
+            if wr.right + d < 0 or wr.left > sw or wr.bottom + d < 0 or wr.top > sh:
                 continue
-            
-            # Special case for ping pong tables
-            if wall in getattr(self, 'ping_pong_tables', []):
+            visible_walls.append((wall, wr))
+
+        # Pass 1 — extrusions (back layer)
+        for wall, wr in visible_walls:
+            if wall in pp_tables or (pp_table and wall == pp_table):
+                continue
+            if fountain and wall == fountain:
+                continue
+            if id(wall) in furniture_rects:
+                continue
+            self._draw_wall_extrusion(screen, wr)
+
+        # Pass 2 — top caps + special items (front layer)
+        for wall, wr in visible_walls:
+            if wall in pp_tables or (pp_table and wall == pp_table):
                 self._draw_ping_pong_table(screen, wr)
-            elif getattr(self, 'ping_pong_table', None) and wall == self.ping_pong_table:
-                self._draw_ping_pong_table(screen, wr)
-            # Skip drawing fountain collision rect (it's invisible, only for collision)
-            elif getattr(self, 'fountain_rect', None) and wall == self.fountain_rect:
+            elif fountain and wall == fountain:
+                continue
+            elif id(wall) in furniture_rects:
                 continue
             else:
-                self._draw_topdown_wall(screen, wr)
+                self._draw_wall_cap(screen, wr)
+
+        # ── Room name labels (drawn AFTER walls so they stay visible) ──
+        for room in self.rooms.values():
+            if room.is_staircase:
+                continue
+            r = camera.apply_rect(room.rect)
+            if r.right < 0 or r.left > sw or r.bottom < 0 or r.top > sh:
+                continue
+            if r.width > 50:
+                lbl = font14.render(room.name, True, (200, 200, 210))
+                y_offset = 24 if room.id == "c_tennis" else 8
+                x_offset = 30 if room.id == "c_tennis" else 8
+                lx, ly = r.x + x_offset, r.y + y_offset
+                for other in self.rooms.values():
+                    if other.is_staircase and other.rect.collidepoint(
+                            room.rect.x + 8, room.rect.y + 8):
+                        ly = camera.apply_rect(other.rect).bottom + 4
+                        break
+                if room.id == "f1_women_bath":
+                    stair = self.rooms.get("f1_stairs_2f")
+                    if stair:
+                        lx, ly = camera.apply_pos(stair.rect.right + 12,
+                                                   room.rect.y + 12)
+                screen.blit(lbl, (lx, ly))
 
         # Draw realistic fountain for Central Fountain room
         if self.id == 0:  # Campus floor
@@ -617,53 +729,170 @@ class Floor:
                     lbl = font_sm.render(tr.label, True, WHITE)
                     screen.blit(lbl, (r.x + 2, r.y - 16))
 
-    def _draw_topdown_wall(self, screen: pygame.Surface, rect: pygame.Rect):
-        """Draw a collision wall with a top-down 3D treatment."""
+    # ── Staircase 3D rendering ───────────────────────────────────
+
+    def _draw_staircase_3d(self, screen: pygame.Surface, rect: pygame.Rect,
+                           font: pygame.font.Font):
+        """Draw a top-down staircase with a clear 3D stepped look.
+
+        Each step is a tread slab with a bright nosing edge and a dark
+        riser shadow, plus side rails. Treads alternate slightly so the
+        ascent reads at a glance.
+        """
         if rect.width <= 0 or rect.height <= 0:
             return
 
-        horizontal = rect.width >= rect.height
-        thickness = rect.height if horizontal else rect.width
-        depth = max(6, min(26, int(thickness * 0.75)))
-        depth = min(depth, max(4, thickness))
+        inset = 3
+        inner = rect.inflate(-inset * 2, -inset * 2)
+        if inner.width <= 4 or inner.height <= 4:
+            return
 
-        shadow = rect.move(4, 5)
+        # Backdrop (dark stairwell shaft beneath the steps)
+        pygame.draw.rect(screen, (24, 24, 32), rect)
+        pygame.draw.rect(screen, self.STAIR_RAIL, rect, 2)
+
+        horizontal_climb = inner.width >= inner.height
+
+        if horizontal_climb:
+            target_step = 14
+            n = max(6, inner.width // target_step)
+            step_w = inner.width / n
+            for i in range(n):
+                x0 = int(inner.x + i * step_w)
+                x1 = int(inner.x + (i + 1) * step_w)
+                w = max(1, x1 - x0)
+                t = i / max(1, n - 1)
+                # Treads brighten toward the front (right side)
+                shade_r = int(self.STAIR_TREAD_LO[0] + (self.STAIR_TREAD_HI[0] - self.STAIR_TREAD_LO[0]) * t)
+                shade_g = int(self.STAIR_TREAD_LO[1] + (self.STAIR_TREAD_HI[1] - self.STAIR_TREAD_LO[1]) * t)
+                shade_b = int(self.STAIR_TREAD_LO[2] + (self.STAIR_TREAD_HI[2] - self.STAIR_TREAD_LO[2]) * t)
+                pygame.draw.rect(screen, (shade_r, shade_g, shade_b),
+                                 (x0, inner.y, w, inner.height))
+                # Riser shadow on the back edge of each step
+                pygame.draw.rect(screen, self.STAIR_RISER,
+                                 (x0, inner.y, max(1, min(2, w)), inner.height))
+                # Nosing highlight on the front edge of each step
+                pygame.draw.line(screen, self.STAIR_NOSING,
+                                 (x1 - 1, inner.y + 1),
+                                 (x1 - 1, inner.bottom - 2), 1)
+            # Side rails (top and bottom long edges)
+            pygame.draw.rect(screen, self.STAIR_RAIL,
+                             (inner.x, inner.y, inner.width, 3))
+            pygame.draw.rect(screen, self.STAIR_RAIL,
+                             (inner.x, inner.bottom - 3, inner.width, 3))
+            pygame.draw.line(screen, self.STAIR_RAIL_HI,
+                             (inner.x + 1, inner.y + 3),
+                             (inner.right - 2, inner.y + 3), 1)
+        else:
+            target_step = 12
+            n = max(6, inner.height // target_step)
+            step_h = inner.height / n
+            for i in range(n):
+                y0 = int(inner.y + i * step_h)
+                y1 = int(inner.y + (i + 1) * step_h)
+                h = max(1, y1 - y0)
+                t = i / max(1, n - 1)
+                shade_r = int(self.STAIR_TREAD_LO[0] + (self.STAIR_TREAD_HI[0] - self.STAIR_TREAD_LO[0]) * t)
+                shade_g = int(self.STAIR_TREAD_LO[1] + (self.STAIR_TREAD_HI[1] - self.STAIR_TREAD_LO[1]) * t)
+                shade_b = int(self.STAIR_TREAD_LO[2] + (self.STAIR_TREAD_HI[2] - self.STAIR_TREAD_LO[2]) * t)
+                pygame.draw.rect(screen, (shade_r, shade_g, shade_b),
+                                 (inner.x, y0, inner.width, h))
+                # Riser shadow on the back (upper) edge of each step
+                pygame.draw.rect(screen, self.STAIR_RISER,
+                                 (inner.x, y0, inner.width, max(1, min(2, h))))
+                # Nosing highlight on the front (lower) edge of each step
+                pygame.draw.line(screen, self.STAIR_NOSING,
+                                 (inner.x + 1, y1 - 1),
+                                 (inner.right - 2, y1 - 1), 1)
+            # Side rails (left and right vertical edges)
+            pygame.draw.rect(screen, self.STAIR_RAIL,
+                             (inner.x, inner.y, 3, inner.height))
+            pygame.draw.rect(screen, self.STAIR_RAIL,
+                             (inner.right - 3, inner.y, 3, inner.height))
+            pygame.draw.line(screen, self.STAIR_RAIL_HI,
+                             (inner.x + 3, inner.y + 1),
+                             (inner.x + 3, inner.bottom - 2), 1)
+
+        # Up/down arrow guide
+        if rect.width > 40 and rect.height > 30:
+            arr = font.render("\u2191\u2193", True, self.STAIR_ARROW_COL)
+            arr_surf = pygame.Surface(arr.get_size(), pygame.SRCALPHA)
+            arr_surf.fill((0, 0, 0, 110))
+            screen.blit(arr_surf,
+                        (rect.centerx - arr.get_width() // 2,
+                         rect.centery - arr.get_height() // 2))
+            screen.blit(arr,
+                        (rect.centerx - arr.get_width() // 2,
+                         rect.centery - arr.get_height() // 2))
+
+    # ── Two-pass wall helpers ────────────────────────────────────
+
+    def _draw_wall_extrusion(self, screen: pygame.Surface, rect: pygame.Rect):
+        """Pass 1: draw shadow + right face + bottom face (the 3-D sides)."""
+        if rect.width <= 0 or rect.height <= 0:
+            return
+
+        d = self.WALL_DEPTH
+
+        # Drop shadow
+        sh_off = d + 2
+        shadow = rect.move(sh_off, sh_off)
         shadow_surf = pygame.Surface((shadow.width, shadow.height), pygame.SRCALPHA)
-        shadow_surf.fill((*BLACK, 45))
+        shadow_surf.fill((*BLACK, 55))
         screen.blit(shadow_surf, shadow)
 
-        pygame.draw.rect(screen, self.WALL_FACE_COLOR, rect)
+        # Right face (east side, darkest)
+        right_face = [
+            (rect.right, rect.top),
+            (rect.right + d, rect.top + d),
+            (rect.right + d, rect.bottom + d),
+            (rect.right, rect.bottom),
+        ]
+        pygame.draw.polygon(screen, self.WALL_RIGHT_COLOR, right_face)
+        pygame.draw.polygon(screen, self.WALL_EDGE_COLOR, right_face, 2)
 
-        if horizontal:
-            face = pygame.Rect(rect.x, rect.bottom - depth, rect.width, depth)
-            cap_h = max(3, rect.height - depth)
-            cap = pygame.Rect(rect.x + 2, rect.y + 2, max(1, rect.width - 4), max(1, cap_h - 2))
-            pygame.draw.rect(screen, self.WALL_SHADE_COLOR, face)
-            pygame.draw.rect(screen, self.WALL_TOP_COLOR, cap)
-            pygame.draw.line(
-                screen, self.WALL_HILITE,
-                (rect.left + 1, rect.top + 1), (rect.right - 2, rect.top + 1), 2
-            )
-            pygame.draw.line(
-                screen, self.WALL_EDGE_COLOR,
-                (rect.left, rect.bottom - depth), (rect.right, rect.bottom - depth), 2
-            )
-        else:
-            face = pygame.Rect(rect.right - depth, rect.y, depth, rect.height)
-            cap_w = max(3, rect.width - depth)
-            cap = pygame.Rect(rect.x + 2, rect.y + 2, max(1, cap_w - 2), max(1, rect.height - 4))
-            pygame.draw.rect(screen, self.WALL_SHADE_COLOR, face)
-            pygame.draw.rect(screen, self.WALL_TOP_COLOR, cap)
-            pygame.draw.line(
-                screen, self.WALL_HILITE,
-                (rect.left + 1, rect.top + 1), (rect.left + 1, rect.bottom - 2), 2
-            )
-            pygame.draw.line(
-                screen, self.WALL_EDGE_COLOR,
-                (rect.right - depth, rect.top), (rect.right - depth, rect.bottom), 2
-            )
+        # Bottom face (south side, medium shade)
+        bottom_face = [
+            (rect.left, rect.bottom),
+            (rect.right, rect.bottom),
+            (rect.right + d, rect.bottom + d),
+            (rect.left + d, rect.bottom + d),
+        ]
+        pygame.draw.polygon(screen, self.WALL_SHADE_COLOR, bottom_face)
+        pygame.draw.polygon(screen, self.WALL_EDGE_COLOR, bottom_face, 2)
 
+    def _draw_wall_cap(self, screen: pygame.Surface, rect: pygame.Rect):
+        """Pass 2: draw the top surface (cap) of the wall."""
+        if rect.width <= 0 or rect.height <= 0:
+            return
+
+        # Top surface
+        pygame.draw.rect(screen, self.WALL_TOP_COLOR, rect)
+
+        # Subtle highlight at top edge
+        hilite_h = max(2, min(4, rect.height // 3))
+        hilite_rect = pygame.Rect(rect.x + 1, rect.y + 1,
+                                  rect.width - 2, hilite_h)
+        hilite_surf = pygame.Surface((hilite_rect.width, hilite_rect.height), pygame.SRCALPHA)
+        hilite_surf.fill((*self.WALL_HILITE, 70))
+        screen.blit(hilite_surf, hilite_rect)
+
+        # Subtle darker band at bottom edge of cap
+        shade_h = max(2, min(4, rect.height // 4))
+        shade_rect = pygame.Rect(rect.x + 1, rect.bottom - shade_h,
+                                 rect.width - 2, shade_h)
+        shade_surf = pygame.Surface((shade_rect.width, shade_rect.height), pygame.SRCALPHA)
+        shade_surf.fill((*BLACK, 30))
+        screen.blit(shade_surf, shade_rect)
+
+        # Outline
         pygame.draw.rect(screen, self.WALL_EDGE_COLOR, rect, 2)
+
+    def _draw_topdown_wall(self, screen: pygame.Surface, rect: pygame.Rect):
+        """Legacy single-call: draw both extrusion and cap in one go."""
+        self._draw_wall_extrusion(screen, rect)
+        self._draw_wall_cap(screen, rect)
+
 
     def _draw_ping_pong_table(self, screen: pygame.Surface, rect: pygame.Rect):
         """Draw a top-down ping pong table."""
@@ -690,14 +919,746 @@ class Floor:
             y = rect.top + pad + row * shelf_h
             pygame.draw.line(screen, (50, 30, 20), (rect.left + 4, y + shelf_h), (rect.right - 4, y + shelf_h), 2)
             x = rect.left + pad
-            c_idx = row
+            book_idx = 0  # camera-independent index for deterministic sizing
             while x < rect.right - pad - 6:
-                w = 5 + ((x + row * 3) % 5)
-                h = max(8, shelf_h - 5 - ((x + row) % 4))
-                color = book_colors[c_idx % len(book_colors)]
+                w = 5 + ((book_idx + row * 3) % 5)
+                h = max(8, shelf_h - 5 - ((book_idx + row) % 4))
+                color = book_colors[(book_idx + row) % len(book_colors)]
                 pygame.draw.rect(screen, color, pygame.Rect(x, y + shelf_h - h - 1, w, h))
                 x += w + 3
-                c_idx += 1
+                book_idx += 1
+
+    # ── Detailed furniture renderers ─────────────────────────────
+
+    def _draw_toilet(self, screen: pygame.Surface, rect: pygame.Rect, facing: str = "down"):
+        """Top-down toilet: tank at the back, oval bowl at the front."""
+        if rect.width <= 4 or rect.height <= 4:
+            return
+        bowl_col = (240, 244, 250)
+        tank_col = (215, 220, 230)
+        edge = (140, 144, 160)
+        seat = (200, 205, 218)
+        # Background tile (white-ish floor patch)
+        pygame.draw.rect(screen, (250, 252, 255), rect)
+        pygame.draw.rect(screen, edge, rect, 1)
+        # Orient: tank goes at the "back" side, bowl at the front
+        if facing in ("down", "up"):
+            tank_h = max(6, rect.height // 3)
+            if facing == "down":
+                tank_rect = pygame.Rect(rect.x + 2, rect.y + 2, rect.width - 4, tank_h)
+                bowl_rect = pygame.Rect(rect.x + 4, rect.y + tank_h + 1, rect.width - 8, rect.height - tank_h - 4)
+            else:
+                tank_rect = pygame.Rect(rect.x + 2, rect.bottom - tank_h - 2, rect.width - 4, tank_h)
+                bowl_rect = pygame.Rect(rect.x + 4, rect.y + 2, rect.width - 8, rect.height - tank_h - 4)
+            pygame.draw.rect(screen, tank_col, tank_rect)
+            pygame.draw.rect(screen, edge, tank_rect, 1)
+            pygame.draw.ellipse(screen, bowl_col, bowl_rect)
+            pygame.draw.ellipse(screen, edge, bowl_rect, 1)
+            inner = bowl_rect.inflate(-6, -6)
+            if inner.width > 0 and inner.height > 0:
+                pygame.draw.ellipse(screen, seat, inner)
+                pygame.draw.ellipse(screen, edge, inner, 1)
+        else:
+            tank_w = max(6, rect.width // 3)
+            if facing == "right":
+                tank_rect = pygame.Rect(rect.x + 2, rect.y + 2, tank_w, rect.height - 4)
+                bowl_rect = pygame.Rect(rect.x + tank_w + 1, rect.y + 4, rect.width - tank_w - 4, rect.height - 8)
+            else:
+                tank_rect = pygame.Rect(rect.right - tank_w - 2, rect.y + 2, tank_w, rect.height - 4)
+                bowl_rect = pygame.Rect(rect.x + 2, rect.y + 4, rect.width - tank_w - 4, rect.height - 8)
+            pygame.draw.rect(screen, tank_col, tank_rect)
+            pygame.draw.rect(screen, edge, tank_rect, 1)
+            pygame.draw.ellipse(screen, bowl_col, bowl_rect)
+            pygame.draw.ellipse(screen, edge, bowl_rect, 1)
+            inner = bowl_rect.inflate(-6, -6)
+            if inner.width > 0 and inner.height > 0:
+                pygame.draw.ellipse(screen, seat, inner)
+                pygame.draw.ellipse(screen, edge, inner, 1)
+
+    def _draw_computer(self, screen: pygame.Surface, rect: pygame.Rect, facing: str = "up"):
+        """Top-down desktop computer: monitor + keyboard + mouse on a desk."""
+        if rect.width <= 6 or rect.height <= 6:
+            return
+        desk = (148, 110, 70)
+        desk_edge = (90, 64, 38)
+        monitor = (28, 30, 38)
+        screen_col = (90, 175, 230)
+        keyboard = (40, 42, 50)
+        keys = (210, 215, 225)
+        mouse_col = (35, 35, 45)
+        pygame.draw.rect(screen, desk, rect)
+        pygame.draw.rect(screen, desk_edge, rect, 1)
+
+        if facing in ("up", "down"):
+            mon_w = int(rect.width * 0.6)
+            mon_h = max(8, int(rect.height * 0.35))
+            kb_w = int(rect.width * 0.7)
+            kb_h = max(6, int(rect.height * 0.18))
+            if facing == "up":
+                mon_rect = pygame.Rect(rect.centerx - mon_w // 2, rect.y + 3, mon_w, mon_h)
+                kb_rect = pygame.Rect(rect.centerx - kb_w // 2, rect.bottom - kb_h - 5, kb_w, kb_h)
+                mouse_pos = (rect.right - 8, rect.bottom - 8)
+            else:
+                mon_rect = pygame.Rect(rect.centerx - mon_w // 2, rect.bottom - mon_h - 3, mon_w, mon_h)
+                kb_rect = pygame.Rect(rect.centerx - kb_w // 2, rect.y + 5, kb_w, kb_h)
+                mouse_pos = (rect.left + 8, rect.y + 8)
+            pygame.draw.rect(screen, monitor, mon_rect, border_radius=2)
+            inner_screen = mon_rect.inflate(-4, -4)
+            if inner_screen.width > 0 and inner_screen.height > 0:
+                pygame.draw.rect(screen, screen_col, inner_screen)
+            pygame.draw.rect(screen, keyboard, kb_rect, border_radius=2)
+            # key dots
+            if kb_rect.width > 18 and kb_rect.height > 6:
+                for i in range(3):
+                    ky = kb_rect.y + 2 + i * (kb_rect.height // 3)
+                    pygame.draw.line(screen, keys, (kb_rect.x + 3, ky), (kb_rect.right - 3, ky), 1)
+            pygame.draw.circle(screen, mouse_col, mouse_pos, 3)
+        else:
+            mon_w = max(8, int(rect.width * 0.35))
+            mon_h = int(rect.height * 0.6)
+            kb_w = max(6, int(rect.width * 0.18))
+            kb_h = int(rect.height * 0.7)
+            if facing == "left":
+                mon_rect = pygame.Rect(rect.x + 3, rect.centery - mon_h // 2, mon_w, mon_h)
+                kb_rect = pygame.Rect(rect.right - kb_w - 5, rect.centery - kb_h // 2, kb_w, kb_h)
+                mouse_pos = (rect.right - 8, rect.bottom - 8)
+            else:
+                mon_rect = pygame.Rect(rect.right - mon_w - 3, rect.centery - mon_h // 2, mon_w, mon_h)
+                kb_rect = pygame.Rect(rect.x + 5, rect.centery - kb_h // 2, kb_w, kb_h)
+                mouse_pos = (rect.x + 8, rect.y + 8)
+            pygame.draw.rect(screen, monitor, mon_rect, border_radius=2)
+            inner_screen = mon_rect.inflate(-4, -4)
+            if inner_screen.width > 0 and inner_screen.height > 0:
+                pygame.draw.rect(screen, screen_col, inner_screen)
+            pygame.draw.rect(screen, keyboard, kb_rect, border_radius=2)
+            if kb_rect.height > 18 and kb_rect.width > 6:
+                for i in range(3):
+                    kx = kb_rect.x + 2 + i * (kb_rect.width // 3)
+                    pygame.draw.line(screen, keys, (kx, kb_rect.y + 3), (kx, kb_rect.bottom - 3), 1)
+            pygame.draw.circle(screen, mouse_col, mouse_pos, 3)
+
+    def _draw_lab_bench(self, screen: pygame.Surface, rect: pygame.Rect):
+        """Chemistry lab bench: dark surface with beakers, flasks, bunsen burner, rack."""
+        if rect.width <= 8 or rect.height <= 8:
+            return
+        bench = (60, 65, 78)
+        bench_edge = (28, 32, 44)
+        pygame.draw.rect(screen, bench, rect)
+        pygame.draw.rect(screen, bench_edge, rect, 2)
+        # Lay equipment along the bench length (horizontal or vertical)
+        horizontal = rect.width >= rect.height
+        cx, cy = rect.centerx, rect.centery
+        if horizontal:
+            spots = [
+                (rect.x + 14, cy),
+                (rect.x + 36, cy),
+                (rect.x + 58, cy),
+                (cx + 10, cy),
+                (cx + 32, cy),
+                (rect.right - 16, cy),
+            ]
+        else:
+            spots = [
+                (cx, rect.y + 14),
+                (cx, rect.y + 36),
+                (cx, rect.y + 58),
+                (cx, cy + 10),
+                (cx, cy + 32),
+                (cx, rect.bottom - 16),
+            ]
+        equipment = [
+            ("beaker", (135, 210, 240)),
+            ("flask", (170, 240, 180)),
+            ("burner", (180, 120, 60)),
+            ("tube_rack", (140, 90, 60)),
+            ("beaker", (240, 180, 130)),
+            ("flask", (220, 150, 220)),
+        ]
+        for (ex, ey), (kind, col) in zip(spots, equipment):
+            if not rect.collidepoint(ex, ey):
+                continue
+            if kind == "beaker":
+                # Square beaker with liquid
+                br = pygame.Rect(ex - 5, ey - 6, 10, 12)
+                pygame.draw.rect(screen, (235, 240, 245), br)
+                pygame.draw.rect(screen, (40, 40, 50), br, 1)
+                liquid = pygame.Rect(ex - 4, ey - 2, 8, 7)
+                pygame.draw.rect(screen, col, liquid)
+            elif kind == "flask":
+                # Erlenmeyer flask: triangle body with neck
+                pygame.draw.line(screen, (40, 40, 50), (ex, ey - 7), (ex, ey - 2), 2)
+                points = [(ex - 6, ey + 6), (ex + 6, ey + 6), (ex + 2, ey - 2), (ex - 2, ey - 2)]
+                pygame.draw.polygon(screen, (235, 240, 245), points)
+                pygame.draw.polygon(screen, (40, 40, 50), points, 1)
+                liquid_pts = [(ex - 5, ey + 5), (ex + 5, ey + 5), (ex + 1, ey + 1), (ex - 1, ey + 1)]
+                pygame.draw.polygon(screen, col, liquid_pts)
+            elif kind == "burner":
+                # Bunsen burner: dark base + blue flame
+                pygame.draw.rect(screen, (50, 50, 60), pygame.Rect(ex - 4, ey - 2, 8, 8))
+                pygame.draw.polygon(screen, (90, 160, 220),
+                                    [(ex - 3, ey - 2), (ex + 3, ey - 2), (ex, ey - 8)])
+                pygame.draw.polygon(screen, (230, 220, 120),
+                                    [(ex - 1, ey - 3), (ex + 1, ey - 3), (ex, ey - 6)])
+            elif kind == "tube_rack":
+                rack = pygame.Rect(ex - 8, ey - 4, 16, 8)
+                pygame.draw.rect(screen, col, rack)
+                pygame.draw.rect(screen, (60, 40, 25), rack, 1)
+                for i in range(4):
+                    tx = rack.x + 2 + i * 4
+                    pygame.draw.line(screen, (220, 230, 240), (tx, rack.y - 4), (tx, rack.y), 2)
+
+    def _draw_piano(self, screen: pygame.Surface, rect: pygame.Rect):
+        """Upright piano viewed from above: black body with white keys row."""
+        if rect.width <= 6 or rect.height <= 6:
+            return
+        body = (24, 24, 28)
+        wood = (50, 32, 22)
+        keys_white = (240, 240, 245)
+        keys_edge = (40, 40, 50)
+        pygame.draw.rect(screen, body, rect)
+        pygame.draw.rect(screen, wood, rect, 2)
+        horizontal = rect.width >= rect.height
+        if horizontal:
+            keys_rect = pygame.Rect(rect.x + 4, rect.bottom - 12, rect.width - 8, 8)
+            pygame.draw.rect(screen, keys_white, keys_rect)
+            pygame.draw.rect(screen, keys_edge, keys_rect, 1)
+            n = max(8, keys_rect.width // 8)
+            for i in range(1, n):
+                kx = keys_rect.x + int(keys_rect.width * i / n)
+                pygame.draw.line(screen, keys_edge, (kx, keys_rect.y), (kx, keys_rect.bottom), 1)
+            # Black keys (groups of 2 and 3)
+            for i in range(n):
+                if i % 7 in (1, 3, 4):
+                    kx = keys_rect.x + int(keys_rect.width * i / n)
+                    bkw = max(2, keys_rect.width // n - 3)
+                    pygame.draw.rect(screen, body, (kx + 1, keys_rect.y, bkw, keys_rect.height // 2))
+        else:
+            keys_rect = pygame.Rect(rect.right - 12, rect.y + 4, 8, rect.height - 8)
+            pygame.draw.rect(screen, keys_white, keys_rect)
+            pygame.draw.rect(screen, keys_edge, keys_rect, 1)
+            n = max(8, keys_rect.height // 8)
+            for i in range(1, n):
+                ky = keys_rect.y + int(keys_rect.height * i / n)
+                pygame.draw.line(screen, keys_edge, (keys_rect.x, ky), (keys_rect.right, ky), 1)
+            for i in range(n):
+                if i % 7 in (1, 3, 4):
+                    ky = keys_rect.y + int(keys_rect.height * i / n)
+                    bkh = max(2, keys_rect.height // n - 3)
+                    pygame.draw.rect(screen, body, (keys_rect.x, ky + 1, keys_rect.width // 2, bkh))
+
+    def _draw_drum_set(self, screen: pygame.Surface, rect: pygame.Rect):
+        """Drum kit viewed from above: bass + snare + toms + cymbals."""
+        if rect.width <= 8 or rect.height <= 8:
+            return
+        cx, cy = rect.centerx, rect.centery
+        # Background carpet
+        pygame.draw.rect(screen, (60, 30, 35), rect)
+        pygame.draw.rect(screen, (35, 18, 22), rect, 1)
+        # Bass drum (largest, centre)
+        bass_r = max(6, min(rect.width, rect.height) // 3)
+        pygame.draw.circle(screen, (220, 220, 230), (cx, cy), bass_r)
+        pygame.draw.circle(screen, (60, 60, 70), (cx, cy), bass_r, 2)
+        # Snare (front centre)
+        snare_r = max(4, bass_r // 2)
+        pygame.draw.circle(screen, (235, 235, 245), (cx, cy + bass_r + snare_r // 2), snare_r)
+        pygame.draw.circle(screen, (50, 50, 60), (cx, cy + bass_r + snare_r // 2), snare_r, 1)
+        # Tom-toms (left + right of bass)
+        tom_r = max(3, bass_r // 2)
+        pygame.draw.circle(screen, (180, 90, 60), (cx - bass_r - 2, cy - 2), tom_r)
+        pygame.draw.circle(screen, (60, 30, 18), (cx - bass_r - 2, cy - 2), tom_r, 1)
+        pygame.draw.circle(screen, (180, 90, 60), (cx + bass_r + 2, cy - 2), tom_r)
+        pygame.draw.circle(screen, (60, 30, 18), (cx + bass_r + 2, cy - 2), tom_r, 1)
+        # Cymbals (gold rings above)
+        cymb_r = max(3, bass_r // 2 + 1)
+        pygame.draw.circle(screen, (220, 180, 60), (cx - bass_r - 4, cy - bass_r), cymb_r)
+        pygame.draw.circle(screen, (140, 110, 30), (cx - bass_r - 4, cy - bass_r), cymb_r, 1)
+        pygame.draw.circle(screen, (220, 180, 60), (cx + bass_r + 4, cy - bass_r), cymb_r)
+        pygame.draw.circle(screen, (140, 110, 30), (cx + bass_r + 4, cy - bass_r), cymb_r, 1)
+
+    def _draw_guitar(self, screen: pygame.Surface, rect: pygame.Rect):
+        """Guitar viewed from above (on a stand)."""
+        if rect.width <= 4 or rect.height <= 4:
+            return
+        body_col = (170, 70, 35)
+        edge = (70, 30, 14)
+        neck = (210, 175, 120)
+        # Body (lower oval) and neck (upper rect)
+        body_h = int(rect.height * 0.55)
+        body_rect = pygame.Rect(rect.x, rect.bottom - body_h, rect.width, body_h)
+        neck_rect = pygame.Rect(rect.centerx - max(2, rect.width // 6),
+                                rect.y, max(4, rect.width // 3), rect.height - body_h + 4)
+        pygame.draw.rect(screen, neck, neck_rect)
+        pygame.draw.rect(screen, edge, neck_rect, 1)
+        pygame.draw.ellipse(screen, body_col, body_rect)
+        pygame.draw.ellipse(screen, edge, body_rect, 1)
+        # Sound hole
+        hole_r = max(2, body_rect.width // 6)
+        pygame.draw.circle(screen, (20, 14, 10), (body_rect.centerx, body_rect.centery), hole_r)
+        # Frets
+        for i in range(1, 4):
+            fy = neck_rect.y + neck_rect.height * i // 4
+            pygame.draw.line(screen, edge, (neck_rect.x, fy), (neck_rect.right, fy), 1)
+
+    def _draw_easel(self, screen: pygame.Surface, rect: pygame.Rect):
+        """Painter's easel from above: tripod legs + canvas with rough sketch."""
+        if rect.width <= 6 or rect.height <= 6:
+            return
+        wood = (115, 75, 40)
+        wood_dark = (70, 44, 24)
+        canvas = (245, 240, 222)
+        # Tripod legs (three rectangles forming an A)
+        leg_w = max(2, rect.width // 14)
+        pygame.draw.line(screen, wood, (rect.x + 3, rect.bottom - 2),
+                         (rect.centerx, rect.y + 4), leg_w)
+        pygame.draw.line(screen, wood, (rect.right - 3, rect.bottom - 2),
+                         (rect.centerx, rect.y + 4), leg_w)
+        pygame.draw.line(screen, wood_dark, (rect.centerx, rect.y + 6),
+                         (rect.centerx, rect.bottom - 4), leg_w)
+        # Canvas in centre
+        cw = int(rect.width * 0.65)
+        ch = int(rect.height * 0.55)
+        canvas_rect = pygame.Rect(rect.centerx - cw // 2, rect.y + 4, cw, ch)
+        pygame.draw.rect(screen, canvas, canvas_rect)
+        pygame.draw.rect(screen, wood_dark, canvas_rect, 2)
+        # Sketch strokes: random-ish colored shapes
+        sketch_colors = [(200, 80, 60), (60, 110, 180), (60, 160, 90), (220, 180, 60)]
+        for i, c in enumerate(sketch_colors):
+            sx = canvas_rect.x + 4 + (i * 7) % max(1, canvas_rect.width - 12)
+            sy = canvas_rect.y + 4 + ((i * 11) % max(1, canvas_rect.height - 10))
+            pygame.draw.line(screen, c, (sx, sy), (sx + 6, sy + 4), 2)
+        # Horizon line sketch
+        pygame.draw.line(screen, (100, 100, 110),
+                         (canvas_rect.x + 4, canvas_rect.centery),
+                         (canvas_rect.right - 4, canvas_rect.centery), 1)
+
+    def _draw_locker(self, screen: pygame.Surface, rect: pygame.Rect):
+        """A row of school lockers (tall narrow doors)."""
+        if rect.width <= 4 or rect.height <= 4:
+            return
+        body = (78, 110, 150)
+        body_dark = (40, 64, 92)
+        edge = (24, 38, 58)
+        handle = (210, 215, 225)
+        pygame.draw.rect(screen, body, rect)
+        pygame.draw.rect(screen, edge, rect, 2)
+        horizontal = rect.width >= rect.height
+        if horizontal:
+            n = max(2, rect.width // 28)
+            door_w = rect.width / n
+            for i in range(n):
+                dx = rect.x + int(i * door_w)
+                pygame.draw.line(screen, edge, (dx, rect.y), (dx, rect.bottom), 1)
+                # Top vent slits
+                pygame.draw.line(screen, body_dark,
+                                 (dx + 4, rect.y + 5), (dx + int(door_w) - 5, rect.y + 5), 1)
+                pygame.draw.line(screen, body_dark,
+                                 (dx + 4, rect.y + 9), (dx + int(door_w) - 5, rect.y + 9), 1)
+                # Handle
+                hx = dx + int(door_w) - 6
+                hy = rect.centery
+                pygame.draw.rect(screen, handle, (hx, hy - 1, 3, 3))
+        else:
+            n = max(2, rect.height // 28)
+            door_h = rect.height / n
+            for i in range(n):
+                dy = rect.y + int(i * door_h)
+                pygame.draw.line(screen, edge, (rect.x, dy), (rect.right, dy), 1)
+                pygame.draw.line(screen, body_dark,
+                                 (rect.x + 5, dy + 4), (rect.x + 5, dy + int(door_h) - 5), 1)
+                pygame.draw.line(screen, body_dark,
+                                 (rect.x + 9, dy + 4), (rect.x + 9, dy + int(door_h) - 5), 1)
+                hx = rect.centerx
+                hy = dy + int(door_h) - 6
+                pygame.draw.rect(screen, handle, (hx - 1, hy, 3, 3))
+
+    def _draw_office_desk(self, screen: pygame.Surface, rect: pygame.Rect, facing: str = "down"):
+        """Wood office desk with a small notebook and pen tray."""
+        if rect.width <= 6 or rect.height <= 6:
+            return
+        wood = (148, 110, 70)
+        wood_dark = (88, 60, 34)
+        paper = (240, 240, 230)
+        pen_tray = (60, 50, 40)
+        pygame.draw.rect(screen, wood, rect)
+        pygame.draw.rect(screen, wood_dark, rect, 2)
+        # Notebook + pen tray on the user side
+        pad = 4
+        if facing == "down":
+            paper_rect = pygame.Rect(rect.x + pad + 4, rect.y + pad, max(8, rect.width // 3), max(8, rect.height // 2))
+            tray_rect = pygame.Rect(rect.right - rect.width // 3 - pad, rect.y + pad, max(8, rect.width // 4), 6)
+        elif facing == "up":
+            paper_rect = pygame.Rect(rect.x + pad + 4, rect.bottom - rect.height // 2 - pad, max(8, rect.width // 3), max(8, rect.height // 2))
+            tray_rect = pygame.Rect(rect.right - rect.width // 3 - pad, rect.bottom - 10, max(8, rect.width // 4), 6)
+        elif facing == "right":
+            paper_rect = pygame.Rect(rect.x + pad, rect.y + pad + 4, max(8, rect.width // 2), max(8, rect.height // 3))
+            tray_rect = pygame.Rect(rect.x + pad, rect.bottom - rect.height // 3 - pad, 6, max(8, rect.height // 4))
+        else:  # left
+            paper_rect = pygame.Rect(rect.right - rect.width // 2 - pad, rect.y + pad + 4, max(8, rect.width // 2), max(8, rect.height // 3))
+            tray_rect = pygame.Rect(rect.right - 10, rect.bottom - rect.height // 3 - pad, 6, max(8, rect.height // 4))
+        pygame.draw.rect(screen, paper, paper_rect)
+        pygame.draw.rect(screen, wood_dark, paper_rect, 1)
+        # Paper lines
+        for i in range(1, 4):
+            ly = paper_rect.y + paper_rect.height * i // 4
+            pygame.draw.line(screen, (170, 170, 160),
+                             (paper_rect.x + 2, ly), (paper_rect.right - 2, ly), 1)
+        pygame.draw.rect(screen, pen_tray, tray_rect)
+        pygame.draw.rect(screen, (180, 60, 40),
+                         (tray_rect.x + 1, tray_rect.y + 1, max(2, tray_rect.width - 6), 2))
+
+    def _draw_office_chair(self, screen: pygame.Surface, rect: pygame.Rect):
+        """Small swivel office chair from above (seat + backrest hint)."""
+        if rect.width <= 4 or rect.height <= 4:
+            return
+        seat = (60, 64, 78)
+        seat_edge = (30, 32, 44)
+        pygame.draw.ellipse(screen, seat, rect)
+        pygame.draw.ellipse(screen, seat_edge, rect, 1)
+        # Backrest stripe (top)
+        back = pygame.Rect(rect.x + 2, rect.y + 1, rect.width - 4, max(2, rect.height // 4))
+        pygame.draw.rect(screen, seat_edge, back, border_radius=2)
+
+    def _draw_hospital_bed(self, screen: pygame.Surface, rect: pygame.Rect, facing: str = "down"):
+        """Infirmary cot: mattress + pillow + blanket."""
+        if rect.width <= 6 or rect.height <= 6:
+            return
+        frame = (200, 205, 215)
+        frame_edge = (110, 115, 130)
+        mattress = (245, 248, 252)
+        pillow = (235, 240, 250)
+        blanket = (180, 70, 80)
+        pygame.draw.rect(screen, frame, rect, border_radius=3)
+        pygame.draw.rect(screen, frame_edge, rect, 2, border_radius=3)
+        inner = rect.inflate(-6, -6)
+        if inner.width <= 0 or inner.height <= 0:
+            return
+        pygame.draw.rect(screen, mattress, inner, border_radius=2)
+        if facing == "down":
+            pillow_rect = pygame.Rect(inner.x + 2, inner.y + 2, inner.width - 4, max(6, inner.height // 4))
+            blanket_rect = pygame.Rect(inner.x + 2, inner.centery, inner.width - 4, inner.bottom - inner.centery - 2)
+        elif facing == "up":
+            pillow_rect = pygame.Rect(inner.x + 2, inner.bottom - max(6, inner.height // 4) - 2, inner.width - 4, max(6, inner.height // 4))
+            blanket_rect = pygame.Rect(inner.x + 2, inner.y + 2, inner.width - 4, inner.centery - inner.y - 2)
+        elif facing == "right":
+            pillow_rect = pygame.Rect(inner.x + 2, inner.y + 2, max(6, inner.width // 4), inner.height - 4)
+            blanket_rect = pygame.Rect(inner.centerx, inner.y + 2, inner.right - inner.centerx - 2, inner.height - 4)
+        else:
+            pillow_rect = pygame.Rect(inner.right - max(6, inner.width // 4) - 2, inner.y + 2, max(6, inner.width // 4), inner.height - 4)
+            blanket_rect = pygame.Rect(inner.x + 2, inner.y + 2, inner.centerx - inner.x - 2, inner.height - 4)
+        pygame.draw.rect(screen, blanket, blanket_rect, border_radius=2)
+        pygame.draw.rect(screen, pillow, pillow_rect, border_radius=2)
+        pygame.draw.rect(screen, frame_edge, pillow_rect, 1, border_radius=2)
+        # Red cross on blanket
+        cx, cy = blanket_rect.center
+        pygame.draw.rect(screen, (240, 240, 240), (cx - 1, cy - 5, 2, 10))
+        pygame.draw.rect(screen, (240, 240, 240), (cx - 5, cy - 1, 10, 2))
+
+    def _draw_stage(self, screen: pygame.Surface, rect: pygame.Rect):
+        """Auditorium stage: raised wooden platform with red curtains on the sides."""
+        if rect.width <= 8 or rect.height <= 8:
+            return
+        stage_col = (120, 80, 45)
+        stage_edge = (60, 38, 18)
+        plank_col = (90, 60, 32)
+        curtain = (140, 30, 35)
+        curtain_dark = (80, 14, 16)
+        pygame.draw.rect(screen, stage_col, rect)
+        pygame.draw.rect(screen, stage_edge, rect, 2)
+        # Planks (parallel to long side)
+        if rect.width >= rect.height:
+            n = max(4, rect.height // 16)
+            for i in range(1, n):
+                py = rect.y + rect.height * i // n
+                pygame.draw.line(screen, plank_col, (rect.x + 4, py), (rect.right - 4, py), 1)
+            # Curtains on left + right
+            cw = max(10, rect.width // 12)
+            for i in range(4):
+                col = curtain if i % 2 == 0 else curtain_dark
+                pygame.draw.rect(screen, col,
+                                 (rect.x + i * (cw // 4), rect.y, cw // 4 + 1, rect.height))
+                pygame.draw.rect(screen, col,
+                                 (rect.right - cw + i * (cw // 4), rect.y, cw // 4 + 1, rect.height))
+        else:
+            n = max(4, rect.width // 16)
+            for i in range(1, n):
+                px = rect.x + rect.width * i // n
+                pygame.draw.line(screen, plank_col, (px, rect.y + 4), (px, rect.bottom - 4), 1)
+            ch = max(10, rect.height // 12)
+            for i in range(4):
+                col = curtain if i % 2 == 0 else curtain_dark
+                pygame.draw.rect(screen, col,
+                                 (rect.x, rect.y + i * (ch // 4), rect.width, ch // 4 + 1))
+                pygame.draw.rect(screen, col,
+                                 (rect.x, rect.bottom - ch + i * (ch // 4), rect.width, ch // 4 + 1))
+
+    def _draw_auditorium_seat(self, screen: pygame.Surface, rect: pygame.Rect):
+        """Folding theatre seat from above."""
+        if rect.width <= 3 or rect.height <= 3:
+            return
+        cushion = (120, 30, 40)
+        edge = (60, 14, 20)
+        back = (90, 22, 30)
+        pygame.draw.rect(screen, cushion, rect, border_radius=2)
+        pygame.draw.rect(screen, edge, rect, 1, border_radius=2)
+        # Backrest hint along the back edge
+        if rect.height >= rect.width:
+            pygame.draw.rect(screen, back, (rect.x, rect.y, rect.width, max(2, rect.height // 3)))
+        else:
+            pygame.draw.rect(screen, back, (rect.x, rect.y, max(2, rect.width // 3), rect.height))
+
+    def _draw_executive_desk(self, screen: pygame.Surface, rect: pygame.Rect):
+        """Large director's desk: dark hardwood, gold trim, blotter and pen."""
+        if rect.width <= 8 or rect.height <= 8:
+            return
+        wood = (78, 46, 24)
+        wood_hi = (130, 80, 44)
+        edge = (40, 22, 12)
+        gold = (212, 168, 80)
+        blotter = (24, 28, 48)
+        paper = (245, 240, 220)
+        pygame.draw.rect(screen, wood, rect)
+        # Top highlight band
+        pygame.draw.rect(screen, wood_hi, (rect.x, rect.y, rect.width, max(3, rect.height // 8)))
+        pygame.draw.rect(screen, edge, rect, 3)
+        # Gold trim inside
+        trim = rect.inflate(-6, -6)
+        if trim.width > 0 and trim.height > 0:
+            pygame.draw.rect(screen, gold, trim, 1)
+        # Leather blotter in centre
+        blot_w = int(rect.width * 0.55)
+        blot_h = int(rect.height * 0.55)
+        blot_rect = pygame.Rect(rect.centerx - blot_w // 2,
+                                rect.centery - blot_h // 2, blot_w, blot_h)
+        pygame.draw.rect(screen, blotter, blot_rect, border_radius=3)
+        pygame.draw.rect(screen, gold, blot_rect, 1, border_radius=3)
+        # Paper sheet on blotter
+        sheet = blot_rect.inflate(-int(blot_rect.width * 0.3), -int(blot_rect.height * 0.3))
+        pygame.draw.rect(screen, paper, sheet)
+        pygame.draw.rect(screen, edge, sheet, 1)
+        for i in range(1, 4):
+            ly = sheet.y + sheet.height * i // 4
+            pygame.draw.line(screen, (170, 165, 140),
+                             (sheet.x + 2, ly), (sheet.right - 2, ly), 1)
+
+    def _draw_sofa_chair(self, screen: pygame.Surface, rect: pygame.Rect):
+        """Plush executive sofa-chair from above."""
+        if rect.width <= 6 or rect.height <= 6:
+            return
+        upholstery = (74, 36, 30)
+        cushion = (110, 60, 48)
+        edge = (30, 14, 12)
+        pygame.draw.rect(screen, upholstery, rect, border_radius=6)
+        pygame.draw.rect(screen, edge, rect, 2, border_radius=6)
+        # Inner cushion
+        inner = rect.inflate(-8, -8)
+        if inner.width > 0 and inner.height > 0:
+            pygame.draw.rect(screen, cushion, inner, border_radius=4)
+            pygame.draw.rect(screen, edge, inner, 1, border_radius=4)
+            # Tufting dots
+            for dx in (inner.x + inner.width // 3, inner.x + 2 * inner.width // 3):
+                for dy in (inner.y + inner.height // 3, inner.y + 2 * inner.height // 3):
+                    pygame.draw.circle(screen, edge, (dx, dy), 1)
+
+    def _draw_umbrella_table(self, screen: pygame.Surface, rect: pygame.Rect):
+        """Patio table with parasol umbrella covering it (umbrella above the table)."""
+        if rect.width <= 6 or rect.height <= 6:
+            return
+        cx, cy = rect.centerx, rect.centery
+        radius = min(rect.width, rect.height) // 2 - 2
+        if radius <= 2:
+            return
+        # Table (lighter ring underneath)
+        pygame.draw.circle(screen, (210, 200, 180), (cx, cy), radius - 2)
+        pygame.draw.circle(screen, (110, 100, 80), (cx, cy), radius - 2, 1)
+        # Umbrella canopy: alternating wedges
+        wedge_colors = [(220, 70, 60), (240, 240, 240)]
+        import math as _math
+        seg = 8
+        for i in range(seg):
+            a0 = (i / seg) * _math.tau - _math.pi / 2
+            a1 = ((i + 1) / seg) * _math.tau - _math.pi / 2
+            pts = [
+                (cx, cy),
+                (cx + radius * _math.cos(a0), cy + radius * _math.sin(a0)),
+                (cx + radius * _math.cos((a0 + a1) / 2), cy + radius * _math.sin((a0 + a1) / 2)),
+                (cx + radius * _math.cos(a1), cy + radius * _math.sin(a1)),
+            ]
+            pygame.draw.polygon(screen, wedge_colors[i % 2], pts)
+        pygame.draw.circle(screen, (60, 40, 30), (cx, cy), radius, 2)
+        # Centre pole
+        pygame.draw.circle(screen, (40, 30, 22), (cx, cy), max(2, radius // 7))
+
+    def _draw_chalkboard(self, screen: pygame.Surface, rect: pygame.Rect, facing: str = "up"):
+        """Portable green chalkboard with wooden frame and two wheels.
+
+        ``facing`` controls which side the wheels protrude from (the side
+        opposite to the user / facing direction).
+        """
+        if rect.width <= 8 or rect.height <= 8:
+            return
+        wood = (140, 90, 50)
+        wood_dark = (78, 48, 24)
+        wood_hi = (180, 130, 80)
+        board = (40, 95, 60)        # classic chalkboard green
+        board_edge = (22, 60, 38)
+        chalk = (220, 230, 215)
+        wheel_dark = (35, 35, 42)
+        wheel_rim = (185, 188, 200)
+
+        # Outer wooden frame
+        pygame.draw.rect(screen, wood, rect)
+        pygame.draw.rect(screen, wood_dark, rect, 2)
+        # Subtle highlight on the top edge for a wood grain feel
+        pygame.draw.line(screen, wood_hi,
+                         (rect.x + 2, rect.y + 1), (rect.right - 2, rect.y + 1), 1)
+
+        # Inner green board
+        pad = max(3, min(rect.width, rect.height) // 8)
+        inner = rect.inflate(-pad * 2, -pad * 2)
+        if inner.width > 0 and inner.height > 0:
+            pygame.draw.rect(screen, board, inner)
+            pygame.draw.rect(screen, board_edge, inner, 1)
+            # A few chalk strokes / equation hints
+            if inner.width > 30 and inner.height > 16:
+                # Top-left smudge lines
+                for i in range(2):
+                    sy = inner.y + 4 + i * 4
+                    pygame.draw.line(screen, chalk,
+                                     (inner.x + 4, sy),
+                                     (inner.x + max(6, inner.width // 3), sy), 1)
+                # Centre equation: a small "+" and "="
+                cx_, cy_ = inner.center
+                pygame.draw.line(screen, chalk, (cx_ - 9, cy_), (cx_ - 3, cy_), 2)
+                pygame.draw.line(screen, chalk, (cx_ - 6, cy_ - 3), (cx_ - 6, cy_ + 3), 2)
+                pygame.draw.line(screen, chalk, (cx_ + 2, cy_ - 1), (cx_ + 8, cy_ - 1), 2)
+                pygame.draw.line(screen, chalk, (cx_ + 2, cy_ + 1), (cx_ + 8, cy_ + 1), 2)
+            # Chalk tray ledge on the bottom of the frame (small wood bar)
+            tray_h = max(2, pad - 1)
+            tray_rect = pygame.Rect(inner.x - 2, inner.bottom + 1, inner.width + 4, tray_h)
+            if tray_rect.width > 0 and tray_rect.height > 0 and tray_rect.bottom <= rect.bottom:
+                pygame.draw.rect(screen, wood_hi, tray_rect)
+                pygame.draw.rect(screen, wood_dark, tray_rect, 1)
+                # A piece of chalk
+                pygame.draw.rect(screen, chalk,
+                                 (tray_rect.x + 4, tray_rect.y + 1, 6, max(1, tray_h - 2)))
+
+        # Two wheels at the base (side opposite of "facing")
+        wheel_r = max(3, min(rect.width, rect.height) // 8)
+        if facing == "up":
+            wheels = [
+                (rect.x + wheel_r + 2, rect.bottom + wheel_r - 1),
+                (rect.right - wheel_r - 2, rect.bottom + wheel_r - 1),
+            ]
+        elif facing == "down":
+            wheels = [
+                (rect.x + wheel_r + 2, rect.y - wheel_r + 1),
+                (rect.right - wheel_r - 2, rect.y - wheel_r + 1),
+            ]
+        elif facing == "left":
+            wheels = [
+                (rect.right + wheel_r - 1, rect.y + wheel_r + 2),
+                (rect.right + wheel_r - 1, rect.bottom - wheel_r - 2),
+            ]
+        else:  # right
+            wheels = [
+                (rect.x - wheel_r + 1, rect.y + wheel_r + 2),
+                (rect.x - wheel_r + 1, rect.bottom - wheel_r - 2),
+            ]
+        for wx, wy in wheels:
+            pygame.draw.circle(screen, wheel_dark, (wx, wy), wheel_r)
+            pygame.draw.circle(screen, wheel_rim, (wx, wy), wheel_r, 1)
+            # Hub spot
+            pygame.draw.circle(screen, wheel_rim, (wx, wy), max(1, wheel_r // 3))
+
+    def _draw_sink(self, screen: pygame.Surface, rect: pygame.Rect, facing: str = "down"):
+        """Bathroom sink (lavamanos) seen from above.
+
+        Porcelain basin with an inner bowl, a drain in the centre and a
+        chrome faucet on the wall side (opposite to ``facing``).
+        """
+        if rect.width <= 6 or rect.height <= 6:
+            return
+        porcelain = (245, 247, 250)
+        porcelain_in = (210, 218, 228)
+        porcelain_deep = (175, 185, 200)
+        edge = (130, 138, 150)
+        chrome = (195, 200, 210)
+        chrome_dark = (115, 120, 130)
+        drain = (70, 78, 92)
+
+        # Outer porcelain rim
+        pygame.draw.rect(screen, porcelain, rect, border_radius=3)
+        pygame.draw.rect(screen, edge, rect, 1, border_radius=3)
+
+        # Inner bowl
+        pad = max(2, min(rect.width, rect.height) // 5)
+        inner = rect.inflate(-pad * 2, -pad * 2)
+        if inner.width > 1 and inner.height > 1:
+            pygame.draw.rect(screen, porcelain_in, inner, border_radius=2)
+            pygame.draw.rect(screen, edge, inner, 1, border_radius=2)
+            # Soft shadow on the inside (deeper bowl tone, top + left)
+            if inner.width > 6 and inner.height > 6:
+                pygame.draw.line(screen, porcelain_deep,
+                                 (inner.x + 1, inner.y + 1),
+                                 (inner.right - 2, inner.y + 1), 1)
+                pygame.draw.line(screen, porcelain_deep,
+                                 (inner.x + 1, inner.y + 1),
+                                 (inner.x + 1, inner.bottom - 2), 1)
+            # Drain hole
+            drain_r = max(1, min(inner.width, inner.height) // 5)
+            pygame.draw.circle(screen, drain, inner.center, drain_r)
+            pygame.draw.circle(screen, (30, 30, 38), inner.center, max(1, drain_r // 2))
+
+        # Faucet: small chrome spout + handle on the wall side (opposite ``facing``)
+        if facing == "down":   # user stands south → wall is north
+            sw_ = max(3, rect.width // 5)
+            sh_ = max(4, rect.height // 4)
+            base = pygame.Rect(rect.centerx - sw_ // 2, rect.y - 1, sw_, sh_)
+            spout = pygame.Rect(rect.centerx - max(1, sw_ // 4),
+                                base.bottom - 1,
+                                max(2, sw_ // 2),
+                                max(3, sh_ // 2))
+            # Side handles
+            handle_w = max(2, sw_ // 3)
+            lh = pygame.Rect(base.x - handle_w - 1, base.y + sh_ // 4, handle_w, max(3, sh_ // 2))
+            rh = pygame.Rect(base.right + 1,        base.y + sh_ // 4, handle_w, max(3, sh_ // 2))
+        elif facing == "up":   # user stands north → wall is south
+            sw_ = max(3, rect.width // 5)
+            sh_ = max(4, rect.height // 4)
+            base = pygame.Rect(rect.centerx - sw_ // 2, rect.bottom - sh_ + 1, sw_, sh_)
+            spout = pygame.Rect(rect.centerx - max(1, sw_ // 4),
+                                base.y - max(3, sh_ // 2) + 1,
+                                max(2, sw_ // 2),
+                                max(3, sh_ // 2))
+            handle_w = max(2, sw_ // 3)
+            lh = pygame.Rect(base.x - handle_w - 1, base.y + sh_ // 4, handle_w, max(3, sh_ // 2))
+            rh = pygame.Rect(base.right + 1,        base.y + sh_ // 4, handle_w, max(3, sh_ // 2))
+        elif facing == "left": # user stands west → wall is east
+            sw_ = max(3, rect.height // 5)
+            sh_ = max(4, rect.width // 4)
+            base = pygame.Rect(rect.right - sh_ + 1, rect.centery - sw_ // 2, sh_, sw_)
+            spout = pygame.Rect(base.x - max(3, sh_ // 2) + 1,
+                                rect.centery - max(1, sw_ // 4),
+                                max(3, sh_ // 2),
+                                max(2, sw_ // 2))
+            handle_w = max(2, sw_ // 3)
+            lh = pygame.Rect(base.x + sh_ // 4, base.y - handle_w - 1, max(3, sh_ // 2), handle_w)
+            rh = pygame.Rect(base.x + sh_ // 4, base.bottom + 1,       max(3, sh_ // 2), handle_w)
+        else:                  # right: user east → wall west
+            sw_ = max(3, rect.height // 5)
+            sh_ = max(4, rect.width // 4)
+            base = pygame.Rect(rect.x - 1, rect.centery - sw_ // 2, sh_, sw_)
+            spout = pygame.Rect(base.right - 1,
+                                rect.centery - max(1, sw_ // 4),
+                                max(3, sh_ // 2),
+                                max(2, sw_ // 2))
+            handle_w = max(2, sw_ // 3)
+            lh = pygame.Rect(base.x + sh_ // 4, base.y - handle_w - 1, max(3, sh_ // 2), handle_w)
+            rh = pygame.Rect(base.x + sh_ // 4, base.bottom + 1,       max(3, sh_ // 2), handle_w)
+
+        for fr_ in (base, spout, lh, rh):
+            pygame.draw.rect(screen, chrome, fr_)
+            pygame.draw.rect(screen, chrome_dark, fr_, 1)
 
     def draw_foreground(self, screen, camera, player):
         sw, sh = screen.get_width(), screen.get_height()
@@ -763,14 +1724,67 @@ class Floor:
 
                         if spec["rooftop"]:
                             rooftop = pygame.Rect(rr.x + 10, rr.y + 10, rr.width - 20, rr.height - facade_h - 16)
-                            pygame.draw.rect(screen, (110, 122, 142), rooftop)
+                            # Fill the rooftop with the same tile used on the Rooftop floor
+                            rt_tile_path = "data/tiles/piso_rooftop.png"
+                            if rt_tile_path not in self._tile_cache:
+                                try:
+                                    self._tile_cache[rt_tile_path] = pygame.image.load(rt_tile_path).convert()
+                                except Exception:
+                                    self._tile_cache[rt_tile_path] = None
+                            rt_tile = self._tile_cache.get(rt_tile_path)
+                            if rt_tile is not None:
+                                old_clip = screen.get_clip()
+                                screen.set_clip(rooftop)
+                                tw, th = rt_tile.get_size()
+                                for ty in range(rooftop.y, rooftop.bottom, th):
+                                    for tx in range(rooftop.x, rooftop.right, tw):
+                                        screen.blit(rt_tile, (tx, ty))
+                                screen.set_clip(old_clip)
+                            else:
+                                pygame.draw.rect(screen, (110, 122, 142), rooftop)
                             pygame.draw.rect(screen, (70, 82, 102), rooftop, 3)
+                            # Keep a pair of A/C units in the back corner
                             ac1 = pygame.Rect(rooftop.x + 20, rooftop.y + 20, 46, 26)
                             ac2 = pygame.Rect(rooftop.right - 70, rooftop.y + 28, 50, 28)
                             pygame.draw.rect(screen, (82, 88, 98), ac1)
                             pygame.draw.rect(screen, (82, 88, 98), ac2)
                             pygame.draw.rect(screen, (48, 54, 64), ac1, 2)
                             pygame.draw.rect(screen, (48, 54, 64), ac2, 2)
+                            # Parasol umbrellas matching the Rooftop Terrace layout
+                            umbrella_layout = [
+                                (0.25, 0.40),
+                                (0.62, 0.40),
+                                (0.25, 0.78),
+                                (0.62, 0.78),
+                                (0.44, 0.60),
+                            ]
+                            umbrella_r = max(7, min(rooftop.width, rooftop.height) // 11)
+                            import math as _math
+                            for fx, fy in umbrella_layout:
+                                cx = int(rooftop.x + fx * rooftop.width)
+                                cy = int(rooftop.y + fy * rooftop.height)
+                                # Soft drop shadow
+                                shadow_surf = pygame.Surface((umbrella_r * 2 + 4, umbrella_r * 2 + 4), pygame.SRCALPHA)
+                                pygame.draw.circle(shadow_surf, (0, 0, 0, 80),
+                                                   (umbrella_r + 2, umbrella_r + 2), umbrella_r + 1)
+                                screen.blit(shadow_surf, (cx - umbrella_r - 2 + 2, cy - umbrella_r - 2 + 3))
+                                # Alternating red/white wedges
+                                seg = 8
+                                wedges = [(212, 60, 56), (245, 245, 240)]
+                                for i in range(seg):
+                                    a0 = (i / seg) * _math.tau - _math.pi / 2
+                                    a1 = ((i + 1) / seg) * _math.tau - _math.pi / 2
+                                    pts = [
+                                        (cx, cy),
+                                        (cx + umbrella_r * _math.cos(a0), cy + umbrella_r * _math.sin(a0)),
+                                        (cx + umbrella_r * _math.cos((a0 + a1) / 2),
+                                         cy + umbrella_r * _math.sin((a0 + a1) / 2)),
+                                        (cx + umbrella_r * _math.cos(a1), cy + umbrella_r * _math.sin(a1)),
+                                    ]
+                                    pygame.draw.polygon(screen, wedges[i % 2], pts)
+                                pygame.draw.circle(screen, (70, 45, 32), (cx, cy), umbrella_r, 1)
+                                # Centre pole tip
+                                pygame.draw.circle(screen, (40, 30, 22), (cx, cy), max(2, umbrella_r // 5))
                         else:
                             pygame.draw.rect(screen, spec["trim_color"], roof_rect)
                             pygame.draw.line(screen, (45, 45, 50), (roof_rect.x, roof_rect.bottom - 2),
@@ -1247,7 +2261,7 @@ class SchoolMap:
         # Portal: Ping Pong entrance → Ping Pong Interior
         f.transitions.append(FloorTransition(
             (tennis_door_x, ty + th - 30, tennis_door_w, 60),
-            self.FLOOR_PINGPONG_INTERIOR, 800, 1000,
+            self.FLOOR_PINGPONG_INTERIOR, 650, 900,
             label="Enter Court"))
 
         # Building visual specifications
@@ -1369,6 +2383,42 @@ class SchoolMap:
             f.furniture.append({"rect": shelf, "type": "bookshelf", "color": (92, 58, 34), "outline": (55, 34, 22)})
             f.walls.append(shelf)
 
+        # Library Tables & Decorations
+        TABLE_R_COL = (120, 80, 50)
+        TABLE_R_OUT = (90, 60, 35)
+        CHAIR_COL = (85, 55, 35)
+        CHAIR_OUT = (60, 38, 22)
+
+        # Round Table 1
+        t1_rect = pygame.Rect(2400, 250, 100, 100)
+        f.furniture.append({"rect": t1_rect, "type": "round_table", "color": TABLE_R_COL, "outline": TABLE_R_OUT})
+        f.walls.append(t1_rect)
+        # Table 1 Chairs (Left and Right)
+        c1l = pygame.Rect(2360, 285, 30, 30)
+        c1r = pygame.Rect(2510, 285, 30, 30)
+        f.furniture.append({"rect": c1l, "color": CHAIR_COL, "outline": CHAIR_OUT})
+        f.furniture.append({"rect": c1r, "color": CHAIR_COL, "outline": CHAIR_OUT})
+        f.walls.extend([c1l, c1r])
+
+        # Round Table 2
+        t2_rect = pygame.Rect(2800, 250, 100, 100)
+        f.furniture.append({"rect": t2_rect, "type": "round_table", "color": TABLE_R_COL, "outline": TABLE_R_OUT})
+        f.walls.append(t2_rect)
+        # Table 2 Chairs (Top and Bottom)
+        c2t = pygame.Rect(2835, 210, 30, 30)
+        c2b = pygame.Rect(2835, 360, 30, 30)
+        f.furniture.append({"rect": c2t, "color": CHAIR_COL, "outline": CHAIR_OUT})
+        f.furniture.append({"rect": c2b, "color": CHAIR_COL, "outline": CHAIR_OUT})
+        f.walls.extend([c2t, c2b])
+
+        # 2 Lamps
+        lamp1_rect = pygame.Rect(2435, 120, 30, 30)
+        lamp2_rect = pygame.Rect(2835, 120, 30, 30)
+        f.furniture.append({"rect": lamp1_rect, "type": "lamp", "color": (255, 255, 180)})
+        f.furniture.append({"rect": lamp2_rect, "type": "lamp", "color": (255, 255, 180)})
+        f.walls.extend([lamp1_rect, lamp2_rect])
+
+
         # Outer boundary
         f.walls.extend([
             _hw(0, 0, 3200), _hw(0, 2400 - WT, 3200),
@@ -1381,20 +2431,21 @@ class SchoolMap:
             (_upper_door_y(by), DW),
         ]))
         # Right divider (x=2150) — 2F stair door in LOWER corridor
-        # Library door at y=300 (center of library room y=16+584/2=308)
+        # Library door at y=200 (shifted up to make wall longer)
         f.walls.extend(_vwall_gaps(2150, 16, sy + sh, [
-            (250, DW), (300, 3 * DW),  # Library door - wider (3x)
-            (780 - DW, 3 * DW), (1250, DW),
+            (200, 3 * DW),  # Library door (shifted up)
+            (880 - DW, 3 * DW), (1250, DW),
             (_lower_door_y(sy, sh), DW),
         ]))
-        # Cafeteria door object (Triple size)
-        f.add_door(Door("door_cafeteria", 2150, 780 - DW, 16, 3 * DW, is_vertical=True))
+        # Cafeteria door object (Triple size, shifted down to make wall longer)
+        f.add_door(Door("door_library", 2150, 200, 16, 3 * DW, is_vertical=True))
+        f.add_door(Door("door_cafeteria", 2150, 880 - DW, 16, 3 * DW, is_vertical=True))
 
         # ── Cafeteria furniture ──────────────────────────────
-        TABLE_COL  = (100, 70, 45)
-        TABLE_OUTL = (80, 55, 35)
-        COUNTER_COL  = (110, 80, 50)
-        COUNTER_OUTL = (90, 65, 40)
+        TABLE_COL  = (255, 255, 255)
+        TABLE_OUTL = (200, 200, 200)
+        COUNTER_COL  = (140, 140, 150)
+        COUNTER_OUTL = (100, 100, 110)
 
         # L-shaped serving counter (top-right corner of cafeteria)
         # It sticks to the top wall (y=616) and right wall (x=3184)
@@ -1404,15 +2455,46 @@ class SchoolMap:
         f.furniture.append({"rect": counter_v, "color": COUNTER_COL, "outline": COUNTER_OUTL})
         f.walls.extend([counter_h, counter_v])
 
+        # Buffet trays with colorful food on the counter
+        food_colors = [(200, 60, 60), (220, 200, 50), (139, 69, 19), (240, 150, 50), (100, 200, 100)]
+        for i in range(5):
+            tray_h = pygame.Rect(2720 + i * 80, 621, 60, 30)
+            f.furniture.append({"rect": tray_h, "type": "buffet_tray", "color": food_colors[i % len(food_colors)]})
+        for i in range(3):
+            tray_v = pygame.Rect(3149, 700 + i * 80, 30, 60)
+            f.furniture.append({"rect": tray_v, "type": "buffet_tray", "color": food_colors[(i+2) % len(food_colors)]})
+
         # 3 dining tables (vertical rectangles spread across the cafeteria)
         caf_tables = [
             pygame.Rect(2300, 720, 130, 300),  # left table
             pygame.Rect(2560, 720, 130, 300),  # centre table
             pygame.Rect(2860, 720, 130, 300),  # right table
         ]
+        CHAIR_COL  = (128, 128, 128)
+        CHAIR_OUTL = (80, 80, 80)
+        CHAIR_W, CHAIR_H = 28, 28
+        chair_gap = 8  # gap between chair and table edge
+
         for tbl in caf_tables:
             f.furniture.append({"rect": tbl, "color": TABLE_COL, "outline": TABLE_OUTL})
             f.walls.append(tbl)
+
+            # Chairs along left side (3 chairs)
+            for i in range(3):
+                cy = tbl.top + 30 + i * 110
+                cr = pygame.Rect(tbl.left - CHAIR_W - chair_gap, cy, CHAIR_W, CHAIR_H)
+                f.furniture.append({"rect": cr, "color": CHAIR_COL, "outline": CHAIR_OUTL})
+            # Chairs along right side (3 chairs)
+            for i in range(3):
+                cy = tbl.top + 30 + i * 110
+                cr = pygame.Rect(tbl.right + chair_gap, cy, CHAIR_W, CHAIR_H)
+                f.furniture.append({"rect": cr, "color": CHAIR_COL, "outline": CHAIR_OUTL})
+            # Chair at top
+            cr = pygame.Rect(tbl.centerx - CHAIR_W // 2, tbl.top - CHAIR_H - chair_gap, CHAIR_W, CHAIR_H)
+            f.furniture.append({"rect": cr, "color": CHAIR_COL, "outline": CHAIR_OUTL})
+            # Chair at bottom
+            cr = pygame.Rect(tbl.centerx - CHAIR_W // 2, tbl.bottom + chair_gap, CHAIR_W, CHAIR_H)
+            f.furniture.append({"rect": cr, "color": CHAIR_COL, "outline": CHAIR_OUTL})
 
         # Store seat positions around each table for NPC seating
         f.cafeteria_seats = []
@@ -1463,6 +2545,116 @@ class SchoolMap:
             {"type": "camera", "x": 600, "y": 200, "difficulty": 2, "id": "lab_camera"},
             {"type": "camera", "x": 1600, "y": 100, "difficulty": 1, "id": "hall_camera"},
         ]
+
+        # ── Detailed furniture per room ───────────────────────────
+        # Computer Lab: two long rows of desktops, plus a teacher's desk
+        for col in range(6):
+            cx = 90 + col * 150
+            _add_furn(f, pygame.Rect(cx, 90, 90, 64), "computer", facing="down")
+            _add_furn(f, pygame.Rect(cx + 18, 162, 54, 30), "office_chair")
+            _add_furn(f, pygame.Rect(cx, 320, 90, 64), "computer", facing="up")
+            _add_furn(f, pygame.Rect(cx + 18, 290, 54, 30), "office_chair")
+        _add_furn(f, pygame.Rect(850, 200, 140, 70), "office_desk", facing="left")
+        _add_furn(f, pygame.Rect(960, 220, 36, 30), "office_chair")
+
+        # Infirmary: four cots and a nurse desk
+        for i in range(4):
+            bx_ = 80 + i * 220
+            _add_furn(f, pygame.Rect(bx_, 555, 80, 130), "hospital_bed", facing="down")
+        _add_furn(f, pygame.Rect(440, 760, 160, 70), "office_desk", facing="up")
+        _add_furn(f, pygame.Rect(490, 836, 36, 30), "office_chair")
+
+        # Auditorium: stage with curtains + rows of seats, right-side aisle
+        _add_furn(f, pygame.Rect(110, 905, 820, 110), "stage")
+        seat_w, seat_h = 30, 30
+        seat_gap_x = 12
+        seat_pitch_x = seat_w + seat_gap_x
+        seat_pitch_y = 50
+        cols_seats = 16
+        rows_seats = 9
+        seats_x0 = 60
+        seats_y0 = 1080
+        for row in range(rows_seats):
+            for col in range(cols_seats):
+                _add_furn(
+                    f,
+                    pygame.Rect(seats_x0 + col * seat_pitch_x,
+                                seats_y0 + row * seat_pitch_y,
+                                seat_w, seat_h),
+                    "auditorium_seat",
+                )
+
+        # Main Hall: lockers along the inner walls, avoiding doors
+        # Left wall (just inside x=1066), doors at y in {200,640,1080} (80 wide)
+        locker_thickness = 28
+        left_locker_x = 1050 + WT  # just inside left divider
+        right_locker_x = 2150 - locker_thickness  # flush against right divider
+        for (y0, y1) in [(40, 184), (300, 624), (724, 1064), (1164, 1500)]:
+            _add_furn(f, pygame.Rect(left_locker_x, y0, locker_thickness, y1 - y0), "locker")
+        # Right wall doors: y=200 (triple), y=800 (triple to 880), y=1250 (single)
+        for (y0, y1) in [(40, 184), (504, 784), (904, 1234), (1340, 1500)]:
+            _add_furn(f, pygame.Rect(right_locker_x, y0, locker_thickness, y1 - y0), "locker")
+
+        # Library Bench/Counselor's Office: personal desks with chairs
+        _add_furn(f, pygame.Rect(2260, 1180, 160, 80), "office_desk", facing="down")
+        _add_furn(f, pygame.Rect(2305, 1264, 70, 36), "office_chair")
+        _add_furn(f, pygame.Rect(2700, 1380, 160, 80), "office_desk", facing="up")
+        _add_furn(f, pygame.Rect(2745, 1336, 70, 36), "office_chair")
+        _add_furn(f, pygame.Rect(2980, 1180, 80, 160), "office_desk", facing="left")
+        _add_furn(f, pygame.Rect(2924, 1230, 36, 60), "office_chair")
+
+        # Men's Bathroom: cubicles with toilets along the left wall + bottom row
+        # Left strip (x≈16..550, y from by=1620 to 2384)
+        cubicle_partition_col = (220, 222, 232)
+        cubicle_partition_outl = (140, 142, 156)
+        toilet_w, toilet_h = 60, 70
+        cub_w = 130
+        for i in range(4):
+            ty = by + 30 + i * 165
+            # Toilet (faces right, tank on left)
+            _add_furn(f, pygame.Rect(34, ty, toilet_w, toilet_h), "toilet", facing="right")
+            # Partition wall divider below each cubicle (except after the last one)
+            if i < 3:
+                _add_furn(f, pygame.Rect(16 + WT, ty + toilet_h + 16, cub_w, 6),
+                          color=cubicle_partition_col, outline=cubicle_partition_outl)
+        # Bottom strip (x=16..1050, y=men_bath_y..men_bath_y+men_bath_h) along bottom wall
+        cub_partition_h = 90
+        for i in range(5):
+            tx_ = 120 + i * 170
+            _add_furn(f, pygame.Rect(tx_, men_bath_y + men_bath_h - 90, toilet_w, toilet_h),
+                      "toilet", facing="up")
+            if i < 4:
+                _add_furn(f, pygame.Rect(tx_ + toilet_w + 4, men_bath_y + men_bath_h - 100,
+                                         6, cub_partition_h),
+                          color=cubicle_partition_col, outline=cubicle_partition_outl)
+        # Sinks (lavamanos) mounted just under the staircase wall, facing south
+        sink_w, sink_h = 70, 46
+        for i in range(4):
+            sxn = 590 + i * 110
+            _add_furn(f, pygame.Rect(sxn, by + bh + 12, sink_w, sink_h),
+                      "sink", facing="down")
+
+        # Women's Bathroom: mirror layout on right strip + bottom row
+        for i in range(4):
+            ty = sy + 30 + i * 165
+            _add_furn(f, pygame.Rect(3134 - toilet_w, ty, toilet_w, toilet_h), "toilet", facing="left")
+            if i < 3:
+                _add_furn(f, pygame.Rect(3184 - WT - cub_w, ty + toilet_h + 16, cub_w, 6),
+                          color=cubicle_partition_col, outline=cubicle_partition_outl)
+        for i in range(5):
+            tx_ = 2230 + i * 170
+            _add_furn(f, pygame.Rect(tx_, women_bath_y + women_bath_h - 90, toilet_w, toilet_h),
+                      "toilet", facing="up")
+            if i < 4:
+                _add_furn(f, pygame.Rect(tx_ + toilet_w + 4, women_bath_y + women_bath_h - 100,
+                                         6, cub_partition_h),
+                          color=cubicle_partition_col, outline=cubicle_partition_outl)
+        # Sinks under the staircase wall, facing south
+        for i in range(4):
+            sxn = 2190 + i * 110
+            _add_furn(f, pygame.Rect(sxn, sy + sh + 12, sink_w, sink_h),
+                      "sink", facing="down")
+
         return f
 
     # ──────────────────────────────────────────────────────────
@@ -1568,6 +2760,81 @@ class SchoolMap:
         # Staircase interior walls
         _add_stair_walls(f, sx, sy, sw, sh, 'right')
         _add_stair_walls(f, rx, ry, rw, rh, 'left')
+
+        # ── Detailed furniture per room ───────────────────────────
+        # Art Room: easels with canvases in three rows
+        easel_w, easel_h = 70, 90
+        for row in range(3):
+            for col in range(5):
+                ex = 80 + col * 180
+                ey = art_y + 40 + row * 180
+                _add_furn(f, pygame.Rect(ex, ey, easel_w, easel_h), "easel")
+        # Teacher's desk
+        _add_furn(f, pygame.Rect(820, art_y + 540, 160, 70), "office_desk", facing="up")
+        _add_furn(f, pygame.Rect(870, art_y + 615, 60, 30), "office_chair")
+
+        # Music Room: piano + drum kit + guitar stands + speaker bookshelf
+        _add_furn(f, pygame.Rect(80, mus_y + 60, 220, 80), "piano")
+        _add_furn(f, pygame.Rect(380, mus_y + 60, 150, 120), "drum_set")
+        for i in range(3):
+            _add_furn(f, pygame.Rect(620 + i * 80, mus_y + 60, 50, 130), "guitar")
+        _add_furn(f, pygame.Rect(880, mus_y + 60, 130, 60),
+                  "bookshelf", color=(92, 58, 34), outline=(55, 34, 22))
+        _add_furn(f, pygame.Rect(80, mus_y + 260, 220, 80), "piano")
+        _add_furn(f, pygame.Rect(400, mus_y + 260, 100, 50), "office_desk", facing="up")
+        _add_furn(f, pygame.Rect(430, mus_y + 314, 40, 30), "office_chair")
+
+        # Science Labs: chemistry benches with beakers / flasks / burner
+        for i in range(3):
+            _add_furn(
+                f,
+                pygame.Rect(120, sci_y + 60 + i * 150, 820, 70),
+                "lab_bench",
+            )
+        # Teacher demo bench (vertical)
+        _add_furn(f, pygame.Rect(980 - 70, sci_y + 60, 60, 470), "lab_bench")
+
+        # Director's Office: presidential desk with a table lamp on top and a sofa-chair
+        _add_furn(f, pygame.Rect(2520, 200, 280, 110), "executive_desk")
+        # Lamp sits ON TOP of the desk, near the back-right corner
+        _add_furn(f, pygame.Rect(2740, 210, 36, 36), "lamp",
+                  color=(255, 235, 170), blocking=False)
+        # Sofa-chair behind the desk (director's seat)
+        _add_furn(f, pygame.Rect(2600, 330, 120, 80), "sofa_chair")
+
+        # Admin Offices: rows of personal desks + chairs
+        for row in range(3):
+            for col in range(2):
+                dx = 2230 + col * 480
+                dy = 1000 + row * 220
+                _add_furn(f, pygame.Rect(dx, dy, 160, 80), "office_desk", facing="down")
+                _add_furn(f, pygame.Rect(dx + 50, dy + 90, 60, 36), "office_chair")
+
+        # Classrooms: single teacher setup against the LEFT wall.
+        # Chalkboard is vertical and faces left (wheels poke to the right).
+        # Chair is east of the chalkboard, teacher's desk is further east.
+        _add_furn(f, pygame.Rect(1066, 2080, 40, 240),
+                  "chalkboard", facing="left")
+        _add_furn(f, pygame.Rect(1140, 2180, 50, 60), "office_chair")
+        _add_furn(f, pygame.Rect(1210, 2150, 180, 120),
+                  "office_desk", facing="left")
+
+        # Conference Room: same teacher setup at the south end of the room
+        cr_cx = 2666  # centre of conference room (x range 2150..3184)
+        _add_furn(f, pygame.Rect(cr_cx - 130, 870, 260, 40),
+                  "chalkboard", facing="up")
+        _add_furn(f, pygame.Rect(cr_cx - 35, 800, 70, 36), "office_chair")
+        _add_furn(f, pygame.Rect(cr_cx - 110, 700, 220, 90),
+                  "office_desk", facing="up")
+
+        # 2F Corridor: lockers along inner walls (matching the 1F main hall feel)
+        locker_thickness2 = 28
+        left_locker_x2 = 1050 + WT
+        right_locker_x2 = 2150 - locker_thickness2
+        for (y0, y1) in [(40, 184), (290, 444), (640, 1090), (1290, 1510)]:
+            _add_furn(f, pygame.Rect(left_locker_x2, y0, locker_thickness2, y1 - y0), "locker")
+        for (y0, y1) in [(40, 144), (340, 584), (784, 1044), (1244, 1700)]:
+            _add_furn(f, pygame.Rect(right_locker_x2, y0, locker_thickness2, y1 - y0), "locker")
 
         return f
 
@@ -1700,6 +2967,27 @@ class SchoolMap:
         f.walls.extend(_vwall_gaps(1500, 100, 450, [(235, DW)]))
         f.walls.append(_vw(1900 - WT, 100, 350))
         f.add_door(Door("rt_antenna_door", 1500, 235, WT, DW, is_vertical=True, color=(100, 100, 120)))
+
+        # ── Rooftop Terrace furniture: patio tables with parasol umbrellas ──
+        # Terrace bounds: x=1200..2400, y=500..1700 (parapet)
+        table_d = 120
+        chair_w, chair_h = 32, 28
+        table_positions = [
+            (1380, 720),
+            (1880, 720),
+            (1380, 1120),
+            (1880, 1120),
+            (1620, 920),  # centre table
+        ]
+        for tx, ty in table_positions:
+            _add_furn(f, pygame.Rect(tx, ty, table_d, table_d), "umbrella_table")
+            # Four chairs around the table (N, S, E, W)
+            cx_t = tx + table_d // 2
+            cy_t = ty + table_d // 2
+            _add_furn(f, pygame.Rect(cx_t - chair_w // 2, ty - chair_h - 6, chair_w, chair_h), "sofa_chair")
+            _add_furn(f, pygame.Rect(cx_t - chair_w // 2, ty + table_d + 6, chair_w, chair_h), "sofa_chair")
+            _add_furn(f, pygame.Rect(tx - chair_w - 6, cy_t - chair_h // 2, chair_w, chair_h), "sofa_chair")
+            _add_furn(f, pygame.Rect(tx + table_d + 6, cy_t - chair_h // 2, chair_w, chair_h), "sofa_chair")
 
         return f
 

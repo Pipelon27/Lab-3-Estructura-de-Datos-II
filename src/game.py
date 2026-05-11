@@ -1205,7 +1205,7 @@ class Game:
                 "label": "Ping Pong Court",
                 "zone": pygame.Rect(3340, 2810, 300, 90),
                 "target_floor": FLOOR_PINGPONG_INTERIOR,
-                "spawn": (650, 640),
+                "spawn": (650, 900),
             },
         ]
         for entry in entrances:
@@ -1347,7 +1347,7 @@ class Game:
         room = floor.get_room_at(tx, ty)
         if floor_id == FLOOR_CAMPUS and room:
             if room.id == "c_tennis":
-                self._go_to_floor(FLOOR_PINGPONG_INTERIOR, 650, 640)
+                self._go_to_floor(FLOOR_PINGPONG_INTERIOR, 650, 900)
                 return True
             if room.id == "c_coliseum":
                 self._go_to_floor(FLOOR_COLISEUM_INTERIOR, 900, 980)
