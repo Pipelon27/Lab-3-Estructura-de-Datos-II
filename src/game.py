@@ -255,14 +255,17 @@ class Game:
         cx, cy = -200, -200
         self.remote_player = None
 
+        self.aiden = Aiden(cx, cy)
+        self.lena = Lena(cx, cy)
+
         if self.character == Character.AIDEN:
-            self.player = Aiden(cx, cy)
+            self.player = self.aiden
             if self.multiplayer:
-                self.remote_player = Lena(cx, cy)
+                self.remote_player = self.lena
         else:
-            self.player = Lena(cx, cy)
+            self.player = self.lena
             if self.multiplayer:
-                self.remote_player = Aiden(cx, cy)
+                self.remote_player = self.aiden
 
         self.inventory = Inventory()
         # Starting items
@@ -279,6 +282,17 @@ class Game:
         self.npc_manager = NPCManager()
         self.npc_manager.load_npcs_from_json()
         from settings import SocialGroup, NPC_SIZE
+
+        # Initialize the sibling as an NPC
+        sched = {"arrival": 0, "class_1": 4, "break_1": 4, "lunch": 3, "activities": 4, "departure": 0, "night": 4}
+        if self.character == Character.AIDEN:
+            self.sibling_npc = NPC("npc_lena", "Lena Parker", SocialGroup.TECH_CLUB, "Hacker", "Sister", sched, {}, "female")
+        else:
+            self.sibling_npc = NPC("npc_aiden", "Aiden Parker", SocialGroup.ATHLETES, "Athlete", "Brother", sched, {}, "male")
+        
+        self.sibling_npc.ai_enabled = True
+        self.npc_manager.npcs[self.sibling_npc.id] = self.sibling_npc
+        self.npc_manager.relationships.add_node(self.sibling_npc.id)
         
         # Position Oscar and observers inside the Ping Pong interior floor
         oscar = self.npc_manager.get_npc_by_id("npc_oscar")
@@ -376,9 +390,12 @@ class Game:
         self.camera.offset.y = max(0, min(target_y, self.camera.map_height - SCREEN_HEIGHT))
         # Ping-pong minigame
         self.pingpong = PingPongGame()
-        self.phone = Phone(self.screen,
-                          time_source=lambda: self.time_of_day_minutes,
-                          player_name=self.character.value)
+        
+        from settings import Character
+        self.aiden_phone = Phone(self.screen, time_source=lambda: self.time_of_day_minutes, player_name="aiden")
+        self.lena_phone = Phone(self.screen, time_source=lambda: self.time_of_day_minutes, player_name="lena")
+        
+        self.phone = self.aiden_phone if self.character == Character.AIDEN else self.lena_phone
 
     def _initialize_director_office(self):
         director = self.npc_manager.get_npc_by_id("npc_director")
@@ -502,7 +519,78 @@ class Game:
     def _init_ui(self):
         self.ui = UI(self.screen)
         self.world_map = WorldMap(self.school_map)
-        self.phone._map_ref = self.world_map
+        self.aiden_phone._map_ref = self.world_map
+        self.lena_phone._map_ref = self.world_map
+
+    def _swap_character(self):
+        if self.multiplayer:
+            self.ui.show_notification("Cannot change character: Roles are already established in co-op mode.", NOTIF_ERROR)
+            return
+
+        from settings import SocialGroup
+        old_floor = self.current_floor
+        old_x, old_y = self.player.rect.center
+
+        # Swap character enum
+        new_char = Character.LENA if self.character == Character.AIDEN else Character.AIDEN
+        self.character = new_char
+
+        # Get the new player instance
+        self.player = self.aiden if new_char == Character.AIDEN else self.lena
+
+        # New player takes position of sibling_npc
+        new_floor = self.sibling_npc.current_floor
+        new_x, new_y = self.sibling_npc.rect.center
+        self.current_floor = new_floor
+        self.player.current_floor = new_floor
+        self.player.rect.center = (new_x, new_y)
+
+        # Update sibling_npc to represent the previous character
+        if new_char == Character.AIDEN:
+            # Sibling is now Lena
+            self.sibling_npc.id = "npc_lena"
+            self.sibling_npc.name = "Lena Parker"
+            self.sibling_npc.group = SocialGroup.TECH_CLUB
+            self.sibling_npc.public_personality = "Hacker"
+            self.sibling_npc.private_personality = "Sister"
+            self.sibling_npc.gender = "female"
+            self.phone = self.aiden_phone
+        else:
+            # Sibling is now Aiden
+            self.sibling_npc.id = "npc_aiden"
+            self.sibling_npc.name = "Aiden Parker"
+            self.sibling_npc.group = SocialGroup.ATHLETES
+            self.sibling_npc.public_personality = "Athlete"
+            self.sibling_npc.private_personality = "Brother"
+            self.sibling_npc.gender = "male"
+            self.phone = self.lena_phone
+
+        self.sibling_npc.current_floor = old_floor
+        self.sibling_npc.rect.center = (old_x, old_y)
+        self.sibling_npc.target_pos = None
+        self.sibling_npc.target_queue = []
+        self.sibling_npc._wander_timer = 3.0  # Give them a few seconds in this direction
+        self.sibling_npc._wander_dx = 100.0 if old_x % 2 == 0 else -100.0  # Force instant movement
+        self.sibling_npc._wander_dy = 0.0
+        self.sibling_npc.start_delay = 0.0
+        self.sibling_npc.ai_enabled = True
+        self.sibling_npc.stop_at_target = False
+        self.sibling_npc._load_sprites()
+        
+        # Ensure sibling NPC is registered in manager with new ID
+        self.npc_manager.npcs = {k: v for k, v in self.npc_manager.npcs.items() if k not in ("npc_aiden", "npc_lena")}
+        self.npc_manager.npcs[self.sibling_npc.id] = self.sibling_npc
+
+        # Snap camera to the new player
+        self.camera.offset.x = self.player.rect.centerx - SCREEN_WIDTH // 2
+        self.camera.offset.y = self.player.rect.centery - SCREEN_HEIGHT // 2
+        self.camera.offset.x = max(0, min(self.camera.offset.x, self.camera.map_width - SCREEN_WIDTH))
+        self.camera.offset.y = max(0, min(self.camera.offset.y, self.camera.map_height - SCREEN_HEIGHT))
+
+        self.ui.show_notification(f"Swapped to {self.character.value.title()}", NOTIF_INFO)
+        self._last_known_level = self.player.level
+        self.state = getattr(self, 'previous_state', GameState.PLAYING)
+
 
     def _init_controller(self):
         """Initialize controller input handling."""
@@ -854,36 +942,7 @@ class Game:
             if sel == 0:
                 self.state = getattr(self, 'previous_state', GameState.PLAYING)
             elif sel == 1:
-                if self.multiplayer:
-                    self.ui.show_notification("Cannot change character: Roles are already established in co-op mode.", NOTIF_ERROR)
-                    return
-                # Character swap logic (same as keyboard)
-                from settings import Character, NOTIF_INFO
-                from src.player import Aiden, Lena
-
-                self.character = Character.LENA if self.character == Character.AIDEN else Character.AIDEN
-
-                old_level = self.player.level
-                old_xp = self.player.xp
-                old_sp = getattr(self.player, 'skill_points', 0)
-                old_hp = self.player.health
-                old_max_hp = self.player.max_health
-
-                old_x, old_y = self.player.rect.center
-                if self.character == Character.AIDEN:
-                    self.player = Aiden(old_x, old_y)
-                else:
-                    self.player = Lena(old_x, old_y)
-
-                self.player.level = old_level
-                self.player.xp = old_xp
-                self.player.skill_points = old_sp
-                self.player.max_health = old_max_hp
-                self.player.health = min(old_hp, self.player.max_health)
-                self._last_known_level = self.player.level
-
-                self.ui.show_notification(f"Swapped to {self.character.value.title()}", NOTIF_INFO)
-                self.state = getattr(self, 'previous_state', GameState.PLAYING)
+                self._swap_character()
             elif sel == 2:  # Main Menu
                 self.return_to_menu = True
                 self.running = False
@@ -1096,36 +1155,7 @@ class Game:
             if sel == 0:  # Resume
                 self.state = getattr(self, 'previous_state', GameState.PLAYING)
             elif sel == 1:  # Change Character
-                if self.multiplayer:
-                    self.ui.show_notification("Cannot change character: Roles are already established in co-op mode.", NOTIF_ERROR)
-                    return
-                from settings import Character, NOTIF_INFO
-                from src.player import Aiden, Lena
-                
-                self.character = Character.LENA if self.character == Character.AIDEN else Character.AIDEN
-                
-                # Preserve stats so swapping doesn't reset progress!
-                old_level = self.player.level
-                old_xp = self.player.xp
-                old_sp = getattr(self.player, 'skill_points', 0)
-                old_hp = self.player.health
-                old_max_hp = self.player.max_health
-
-                old_x, old_y = self.player.rect.center
-                if self.character == Character.AIDEN:
-                    self.player = Aiden(old_x, old_y)
-                else:
-                    self.player = Lena(old_x, old_y)
-                
-                self.player.level = old_level
-                self.player.xp = old_xp
-                self.player.skill_points = old_sp
-                self.player.max_health = old_max_hp
-                self.player.health = min(old_hp, self.player.max_health)
-                self._last_known_level = self.player.level
-                    
-                self.ui.show_notification(f"Swapped to {self.character.value.title()}", NOTIF_INFO)
-                self.state = getattr(self, 'previous_state', GameState.PLAYING)
+                self._swap_character()
             elif sel == 2:  # Main Menu — return to menu without closing the app
                 self.return_to_menu = True
                 self.running = False
@@ -1413,6 +1443,10 @@ class Game:
                 self._try_teleport_to(pt[0], pt[1], pt[2])
         # Always tick UI (notifications)
         self.ui.update(dt)
+        if getattr(self, 'sibling_npc', None):
+            col = (255, 180, 220) if self.character == Character.AIDEN else (100, 150, 255)
+            self.world_map.set_marker(self.sibling_npc.name, self.sibling_npc.current_floor, self.sibling_npc.rect.centerx, self.sibling_npc.rect.centery, color=col)
+            
         if self._bathroom_block_timer > 0:
             self._bathroom_block_timer = max(0.0, self._bathroom_block_timer - dt)
             if self._bathroom_block_timer == 0.0:
@@ -2430,7 +2464,8 @@ class Game:
             day_name = days[(self.day_number - 1) % 5]
             
             # Ensure phone schedule is synced with current day number
-            self.phone.update_day_schedule(self.day_number)
+            self.aiden_phone.update_day_schedule(self.day_number)
+            self.lena_phone.update_day_schedule(self.day_number)
 
             # Silence "Arrival" notification for Day 2+ as requested
             if self.day_number > 1 and self.current_phase == DayPhase.ARRIVAL:
@@ -2445,7 +2480,8 @@ class Game:
         else:
             self.day_number += 1
             self.event_queue.load_day_schedule()
-            self.phone.update_day_schedule(self.day_number)
+            self.aiden_phone.update_day_schedule(self.day_number)
+            self.lena_phone.update_day_schedule(self.day_number)
             self.time_of_day_minutes = 7 * 60
             # Clear NPCs from cafeteria instantly before the new day
             self._move_npcs_out_of_cafeteria(instant=True)

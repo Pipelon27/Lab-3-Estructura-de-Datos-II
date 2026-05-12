@@ -285,6 +285,7 @@ class Phone:
         self._load_avatars()
 
         self._load_initial_social_posts()
+        self._load_initial_messages()
 
         self._map_transition_buf: Optional[pygame.Surface] = None
 
@@ -609,6 +610,35 @@ class Phone:
     def mark_messages_read(self, npc_id: str):
         for m in self.messages.get(npc_id, []):
             m.is_read = True
+
+    def _load_initial_messages(self):
+        import uuid
+        msg_id = str(uuid.uuid4())
+        
+        if self.player_name == "aiden":
+            msg = TextMessage(
+                id=msg_id,
+                sender_npc_id="npc_lena",
+                sender_name="Lena Parker",
+                content="Hi brother, write me if you need anything!",
+                timestamp="08:00am",
+                is_read=False,
+                is_player=False,
+                reply_options=["Hey Lena, thanks!", "Sure, I'll let you know.", "I'm busy right now."]
+            )
+            self.add_text_message("npc_lena", msg)
+        elif self.player_name == "lena":
+            msg = TextMessage(
+                id=msg_id,
+                sender_npc_id="npc_aiden",
+                sender_name="Aiden Parker",
+                content="Hi sister, write me if you need anything!",
+                timestamp="08:00am",
+                is_read=False,
+                is_player=False,
+                reply_options=["Hey Aiden, thanks!", "Sure, I'll let you know.", "I'm busy right now."]
+            )
+            self.add_text_message("npc_aiden", msg)
 
     # ──────────────────────────────────────────────────────────
     #  DRAW
@@ -1776,6 +1806,17 @@ class Phone:
             if os.path.exists(path):
                 img = pygame.image.load(path).convert_alpha()
                 self.avatars["npc_noah_carter"] = img
+                
+            path_aiden = "assets/Imagenes realistas personajes/Aiden Parker.png"
+            if os.path.exists(path_aiden):
+                self.avatars["npc_aiden"] = pygame.image.load(path_aiden).convert_alpha()
+                
+            path_lena = "assets/Imagenes realistas personajes/Lena Aiden.png"
+            path_lena2 = "assets/Imagenes realistas personajes/Lena Parker.png"
+            if os.path.exists(path_lena2):
+                self.avatars["npc_lena"] = pygame.image.load(path_lena2).convert_alpha()
+            elif os.path.exists(path_lena):
+                self.avatars["npc_lena"] = pygame.image.load(path_lena).convert_alpha()
         except Exception:
             pass
 

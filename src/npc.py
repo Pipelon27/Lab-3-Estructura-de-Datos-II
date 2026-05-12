@@ -221,13 +221,19 @@ class NPC:
             "rebels": "REBELS",
             "tech_club": "TECH CLUB",
         }
-        folder = folder_map.get(self.group.value)
-        if not folder:
-            return
+        if self.id == "npc_aiden":
+            path = os.path.join(base_dir, "assets", "Characters BEHIND THE SMILE", "PROTAGONISTS", "Aiden Parker.png")
+        elif self.id == "npc_lena":
+            path = os.path.join(base_dir, "assets", "Characters BEHIND THE SMILE", "PROTAGONISTS", "Lena Parker.png")
+        else:
+            folder = folder_map.get(self.group.value)
+            if not folder:
+                return
 
-        path = os.path.join(base_dir, "assets", "Characters BEHIND THE SMILE", folder, f"{self.name}.png")
-        if not os.path.exists(path):
-            return
+            path = os.path.join(base_dir, "assets", "Characters BEHIND THE SMILE", folder, f"{self.name}.png")
+            if not os.path.exists(path):
+                return
+
 
         sheet = pygame.image.load(path).convert_alpha()
         frame_w, frame_h = 32, 64
