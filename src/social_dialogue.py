@@ -197,14 +197,25 @@ class SocialDialogueManager:
         print(f"[SOCIAL] {self._active_npc.name} ({action}) — {self._active_npc.group.value}")
 
     def handle_input(self, event: pygame.event.Event) -> bool:
-        """Process keyboard input during interaction.
+        """Process input during interaction.
         
         W/S: move cursor
-        SPACE/E: confirm choice
+        E/RETURN: confirm choice
+        MOUSE: select and confirm
         
         Returns True if input was handled, False otherwise.
         """
         if self.state != InteractionState.ACTIVE:
+            return False
+
+        # Mouse Support
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            if self.social_ui:
+                idx = self.social_ui.get_clicked_option(event.pos)
+                if idx is not None:
+                    self._selected_option_idx = idx
+                    self.confirm_choice()
+                    return True
             return False
 
         if event.type != pygame.KEYDOWN:
@@ -226,8 +237,8 @@ class SocialDialogueManager:
                 self.social_ui.set_selected(self._selected_option_idx)
             return True
 
-        # E — confirm
-        elif key == pygame.K_e:
+        # E / RETURN — confirm
+        elif key in (pygame.K_e, pygame.K_RETURN):
             self.confirm_choice()
             return True
 

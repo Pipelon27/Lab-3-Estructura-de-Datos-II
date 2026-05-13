@@ -1000,11 +1000,15 @@ class Game:
 
         # If E is pressed and an NPC is nearby, open dialogue;
         if event.key == pygame.K_e:
+            # Priority 2: Building Entrance
+            if self._try_building_entry_confirm():
+                return
+            
+            # Priority 3: NPC Interaction
             npc = self._nearest_npc(NPC_INTERACTION_RANGE)
             if npc:
                 self._try_interact()
-            elif self._try_building_entry_confirm():
-                pass
+                return
         # SPACE (KEY_INTERACT) and dash aliases trigger dash
         elif event.key in (KEY_INTERACT, KEY_DASH_ALT, KEY_DASH_ALT2):
             self.player.start_dash()
@@ -1102,10 +1106,16 @@ class Game:
                 )
                 self.state = GameState.DIALOGUE
                 self.mission_manager.advance_objective_event("talk_to", npc.id)
+                self.player.vx = 0
+                self.player.vy = 0
+                self.player._dashing = False
             else:
                 # Use new social dialogue system for regular NPCs
                 if self.social_dialogue_manager.try_start(npc, self.player):
                     self.state = GameState.SOCIAL_INTERACTION
+                    self.player.vx = 0
+                    self.player.vy = 0
+                    self.player._dashing = False
 
     def _get_campus_entry_target(self):
         if self.current_floor != FLOOR_CAMPUS:

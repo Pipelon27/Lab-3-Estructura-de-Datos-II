@@ -63,7 +63,7 @@ COMBO_WINDOW            = 30     # frames to chain hits
 # ──────────────────────────────────────────────────────────────
 NPC_SIZE              = 36
 NPC_SPEED             = 2
-NPC_INTERACTION_RANGE = 80
+NPC_INTERACTION_RANGE = 70
 
 # ──────────────────────────────────────────────────────────────
 #  SOCIAL INTERACTION SYSTEM
