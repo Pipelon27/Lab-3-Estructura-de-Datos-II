@@ -16,8 +16,7 @@ from settings import (
     SCREEN_WIDTH, SCREEN_HEIGHT, FPS, TITLE,
     UI_BG, UI_PANEL, UI_BORDER, UI_ACCENT,
     UI_TEXT, UI_TEXT_DIM, BLACK, WHITE,
-    Character, GameState,
-)
+    Character, GameState, VT323_PATH)
 from src.controller import ControllerManager, init_controller
 from src.phone import Phone
 from network.server import GameServer
@@ -45,10 +44,10 @@ class MainMenu:
         self.result   = None          # index chosen, or None
 
         # Fonts — SysFont so it works everywhere out of the box
-        self.font_title    = pygame.font.SysFont("arial", 68, bold=True)
-        self.font_subtitle = pygame.font.SysFont("arial", 22)
-        self.font_option   = pygame.font.SysFont("arial", 34)
-        self.font_hint     = pygame.font.SysFont("arial", 18)
+        self.font_title    = pygame.font.Font(VT323_PATH, 68)
+        self.font_subtitle = pygame.font.Font(VT323_PATH, 22)
+        self.font_option   = pygame.font.Font(VT323_PATH, 34)
+        self.font_hint     = pygame.font.Font(VT323_PATH, 18)
 
         # Simple pulsing animation for the selector
         self._pulse_timer = 0.0
@@ -242,9 +241,9 @@ class HostLobbyMenu:
         self.server = None
         self.room_code = ''.join(random.choices(string.ascii_uppercase, k=3)) + ''.join(random.choices(string.digits, k=3))
         
-        self.font_title = pygame.font.SysFont("arial", 48, bold=True)
-        self.font_code = pygame.font.SysFont("courier", 72, bold=True)
-        self.font_status = pygame.font.SysFont("arial", 24)
+        self.font_title = pygame.font.Font(VT323_PATH, 48)
+        self.font_code = pygame.font.Font(VT323_PATH, 72)
+        self.font_status = pygame.font.Font(VT323_PATH, 24)
 
     def run(self):
         self.server = GameServer(room_code=self.room_code)
@@ -296,9 +295,9 @@ class JoinLobbyMenu:
         self.status_text = "Enter the 6-character room code:"
         self.searching = False
         
-        self.font_title = pygame.font.SysFont("arial", 48, bold=True)
-        self.font_input = pygame.font.SysFont("courier", 72, bold=True)
-        self.font_status = pygame.font.SysFont("arial", 24)
+        self.font_title = pygame.font.Font(VT323_PATH, 48)
+        self.font_input = pygame.font.Font(VT323_PATH, 72)
+        self.font_status = pygame.font.Font(VT323_PATH, 24)
 
     def _discover_and_connect(self):
         ip_port = discover_room(self.input_text, timeout=5.0)

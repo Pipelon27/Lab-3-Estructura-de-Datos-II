@@ -15,7 +15,7 @@ from enum import Enum
 from dataclasses import dataclass, field
 from typing import Optional, Callable
 
-from settings import SCREEN_WIDTH, SCREEN_HEIGHT, WHITE, BLACK, KEY_MAP
+from settings import SCREEN_WIDTH, SCREEN_HEIGHT, WHITE, BLACK, KEY_MAP, VT323_PATH
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -259,14 +259,14 @@ class Phone:
         self._surf = pygame.Surface((PHONE_W, PHONE_H))
 
         # Fonts
-        self._f_stat  = pygame.font.SysFont("arial", 10, bold=True)
-        self._f_sec   = pygame.font.SysFont("arial", 12, bold=True)
-        self._f_title = pygame.font.SysFont("arial", 12, bold=True)
-        self._f_body  = pygame.font.SysFont("arial", 11)
-        self._f_sub   = pygame.font.SysFont("arial", 10)
-        self._f_badge = pygame.font.SysFont("arial",  9, bold=True)
+        self._f_stat  = pygame.font.Font(VT323_PATH, 10)
+        self._f_sec   = pygame.font.Font(VT323_PATH, 12)
+        self._f_title = pygame.font.Font(VT323_PATH, 12)
+        self._f_body  = pygame.font.Font(VT323_PATH, 11)
+        self._f_sub   = pygame.font.Font(VT323_PATH, 10)
+        self._f_badge = pygame.font.Font(VT323_PATH, 9)
         try:
-            self._f_ico = pygame.font.SysFont("segoeuiemoji", 15)
+            self._f_ico = pygame.font.Font(VT323_PATH, 15)
         except Exception:
             self._f_ico = self._f_sec
 
@@ -285,6 +285,7 @@ class Phone:
         self._load_avatars()
 
         self._load_initial_social_posts()
+        self._load_initial_messages()
 
         self._map_transition_buf: Optional[pygame.Surface] = None
 
@@ -610,6 +611,35 @@ class Phone:
         for m in self.messages.get(npc_id, []):
             m.is_read = True
 
+    def _load_initial_messages(self):
+        import uuid
+        msg_id = str(uuid.uuid4())
+        
+        if self.player_name == "aiden":
+            msg = TextMessage(
+                id=msg_id,
+                sender_npc_id="npc_lena",
+                sender_name="Lena Parker",
+                content="Hi brother, write me if you need anything!",
+                timestamp="08:00am",
+                is_read=False,
+                is_player=False,
+                reply_options=["Hey Lena, thanks!", "Sure, I'll let you know.", "I'm busy right now."]
+            )
+            self.add_text_message("npc_lena", msg)
+        elif self.player_name == "lena":
+            msg = TextMessage(
+                id=msg_id,
+                sender_npc_id="npc_aiden",
+                sender_name="Aiden Parker",
+                content="Hi sister, write me if you need anything!",
+                timestamp="08:00am",
+                is_read=False,
+                is_player=False,
+                reply_options=["Hey Aiden, thanks!", "Sure, I'll let you know.", "I'm busy right now."]
+            )
+            self.add_text_message("npc_aiden", msg)
+
     # ──────────────────────────────────────────────────────────
     #  DRAW
     # ──────────────────────────────────────────────────────────
@@ -913,7 +943,7 @@ class Phone:
 
         ir = r.inflate(-80, -120)
         ir.center = r.center
-        pygame.draw.rect(s, WHITE, ir, border_radius=20)
+        pygame.draw.rect(s, PH_CARD, ir, border_radius=20)
         self._draw_app_glyph(s, app, ir)
         name = next((lb for a, lb in self._HOME_APPS if a == app), "App")
         tt = self._f_sec.render(name, True, PH_TEXT)
@@ -1272,8 +1302,8 @@ class Phone:
         y_list = tab_y + tab_h
         avail_h = ch - (y_list - cy)
 
-        # White background for the list
-        pygame.draw.rect(s, WHITE, (cx, y_list, cw, avail_h))
+        # Dark background for the list
+        pygame.draw.rect(s, PH_SCREEN, (cx, y_list, cw, avail_h))
 
         if self.active_chat is not None:
             self._chat_view(s, cx, cy, cw, ch)
@@ -1308,16 +1338,16 @@ class Phone:
                 yoff += IH
                 continue
 
-            # Hover/Selected effect could go here, but WhatsApp is usually plain white
-            # Separator line
-            pygame.draw.line(s, (230, 230, 230), (cx + 70, card.bottom - 1), (cx + cw, card.bottom - 1))
-
+            # Hover/Selected effect could go here
+            # Separator line (Darker for dark mode)
+            pygame.draw.line(s, PH_BD, (cx + 70, card.bottom - 1), (cx + cw, card.bottom - 1))
+            
             # Avatar
             avc = (cx + 35, card.centery)
             self._draw_avatar(s, npc_id, contact_name, avc, 24)
 
             # Name (Contact Name, never "Tú")
-            self._text(s, contact_name, self._f_title, (10, 10, 10), cx + 70, card.y + 12)
+            self._text(s, contact_name, self._f_title, PH_TEXT, cx + 70, card.y + 12)
             
             # Preview (Last message content)
             prev_text = last.content
@@ -1325,10 +1355,10 @@ class Phone:
                 prev_text = "✓ " + prev_text # Checkmark for player messages
             
             prev = prev_text[:30] + ("…" if len(prev_text) > 30 else "")
-            self._text(s, prev, self._f_sub, (100, 100, 100), cx + 70, card.y + 32)
+            self._text(s, prev, self._f_sub, PH_TEXT_S, cx + 70, card.y + 32)
 
             # Time on the right
-            time_s = self._f_badge.render(last.timestamp, True, (130, 130, 130))
+            time_s = self._f_badge.render(last.timestamp, True, PH_TEXT_D)
             s.blit(time_s, (cx + cw - time_s.get_width() - 12, card.y + 14))
 
             if unread > 0:
@@ -1558,7 +1588,7 @@ class Phone:
             bx = rect.right - 8
             by = rect.top - 2
             pygame.draw.circle(screen, PH_RED, (bx, by), 7)
-            bt = pygame.font.SysFont("arial", 9, bold=True).render(
+            bt = pygame.font.Font(VT323_PATH, 9).render(
                 str(unread), True, WHITE)
             screen.blit(bt, bt.get_rect(center=(bx, by)))
         # Hover glow
@@ -1616,10 +1646,7 @@ class Phone:
             return False
 
         if self._view == "map" and self._map_ref:
-            if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-                self._map_close_to_home()
-                return True
-            # Direct exit from map without clicking button (handled by world_map.py ESC/B button)
+            # Let world_map handle the event first (handles both teleport cancel and map exit)
             close = self._map_ref.handle_event(event)
             if close:
                 self._map_close_to_home()
@@ -1776,6 +1803,17 @@ class Phone:
             if os.path.exists(path):
                 img = pygame.image.load(path).convert_alpha()
                 self.avatars["npc_noah_carter"] = img
+                
+            path_aiden = "assets/Imagenes realistas personajes/Aiden Parker.png"
+            if os.path.exists(path_aiden):
+                self.avatars["npc_aiden"] = pygame.image.load(path_aiden).convert_alpha()
+                
+            path_lena = "assets/Imagenes realistas personajes/Lena Aiden.png"
+            path_lena2 = "assets/Imagenes realistas personajes/Lena Parker.png"
+            if os.path.exists(path_lena2):
+                self.avatars["npc_lena"] = pygame.image.load(path_lena2).convert_alpha()
+            elif os.path.exists(path_lena):
+                self.avatars["npc_lena"] = pygame.image.load(path_lena).convert_alpha()
         except Exception:
             pass
 

@@ -21,8 +21,7 @@ from settings import (
     UI_TEXT, UI_TEXT_DIM, WHITE, BLACK,
     FLOOR_NAMES, FLOOR_SIZES,
     FLOOR_CAMPUS, FLOOR_1F, FLOOR_2F, FLOOR_BASEMENT, FLOOR_ROOFTOP,
-    NOTIF_INFO, NOTIF_WARNING,
-)
+    NOTIF_INFO, NOTIF_WARNING, VT323_PATH)
 
 
 class WorldMap:
@@ -76,11 +75,11 @@ class WorldMap:
 
 
         # Fonts
-        self._font_tab    = pygame.font.SysFont("arial", 18, bold=True)
-        self._font_room   = pygame.font.SysFont("arial", 11)
-        self._font_tip_t  = pygame.font.SysFont("arial", 16, bold=True)
-        self._font_tip    = pygame.font.SysFont("arial", 14)
-        self._font_header = pygame.font.SysFont("arial", 28, bold=True)
+        self._font_tab    = pygame.font.Font(VT323_PATH, 18)
+        self._font_room   = pygame.font.Font(VT323_PATH, 11)
+        self._font_tip_t  = pygame.font.Font(VT323_PATH, 16)
+        self._font_tip    = pygame.font.Font(VT323_PATH, 14)
+        self._font_header = pygame.font.Font(VT323_PATH, 28)
 
         self._centre_on_floor(self.current_tab)
         self._refresh_room_selection()
@@ -172,7 +171,7 @@ class WorldMap:
                                 tx, ty = 900, 1100 # Default interior spawn
                             elif rid == "c_tennis":
                                 target_tab = self.school_map.FLOOR_PINGPONG_INTERIOR
-                                tx, ty = 800, 1000 # Default interior spawn
+                                tx, ty = 650, 900 # Default interior spawn
                             elif rid == "c_building":
                                 target_tab = 0 # Campus
                                 tx, ty = 2000, 2100 # In front of Main Building
@@ -462,10 +461,7 @@ class WorldMap:
             ww = max(1, int(wall.width * z))
             wh = max(1, int(wall.height * z))
             wall_rect = pygame.Rect(wx, wy, ww, wh)
-            if hasattr(floor, "_draw_topdown_wall"):
-                floor._draw_topdown_wall(screen, wall_rect)
-            else:
-                pygame.draw.rect(screen, (90, 90, 100), wall_rect)
+            pygame.draw.rect(screen, (90, 90, 100), wall_rect)
 
         door_col = (200, 200, 230)
         for door in getattr(floor, "doors", []):

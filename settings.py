@@ -63,7 +63,15 @@ COMBO_WINDOW            = 30     # frames to chain hits
 # ──────────────────────────────────────────────────────────────
 NPC_SIZE              = 36
 NPC_SPEED             = 2
-NPC_INTERACTION_RANGE = 80
+NPC_INTERACTION_RANGE = 70
+
+# ──────────────────────────────────────────────────────────────
+#  SOCIAL INTERACTION SYSTEM
+# ──────────────────────────────────────────────────────────────
+NPC_SOCIAL_RANGE      = 90       # px — world-space trigger range for interaction prompts
+ALLY_THRESHOLD        = 70       # relationship ≥ 70 = allied
+FEAR_SPREAD_RADIUS    = 220      # px — nearby NPCs that feel high fear
+SOCIAL_COOLDOWN       = 30.0     # seconds before re-interacting with same NPC
 
 # ──────────────────────────────────────────────────────────────
 #  XP / LEVELING
@@ -90,6 +98,7 @@ MAPS_DIR    = os.path.join(ASSETS_DIR, "maps")
 SOUNDS_DIR  = os.path.join(ASSETS_DIR, "sounds")
 FONTS_DIR   = os.path.join(ASSETS_DIR, "fonts")
 DATA_DIR    = os.path.join(BASE_DIR, "data")
+VT323_PATH  = os.path.join(DATA_DIR, "VT323-Regular.ttf")
 SRC_DIR     = os.path.join(BASE_DIR, "src")
 
 # ──────────────────────────────────────────────────────────────
@@ -160,6 +169,7 @@ class GameState(Enum):
     PLAYING          = auto()
     PAUSED           = auto()
     DIALOGUE         = auto()
+    SOCIAL_INTERACTION = auto()
     COMBAT           = auto()
     HACKING          = auto()
     PINGPONG         = auto()

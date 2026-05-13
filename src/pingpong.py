@@ -24,8 +24,7 @@ from settings import (
     KEY_DOWN,
     KEY_DASH,
     DASH_SPEED,
-    DASH_DURATION,
-)
+    DASH_DURATION, VT323_PATH)
 from src.controller import get_controller, XBOX_START
 
 
@@ -48,7 +47,7 @@ class PingPongGame:
         self._taunt_msg = ""
         self._taunt_timer = 0.0
         # characters are now square sprites (larger)
-        self.sprite_size = 64
+        self.sprite_size = 80
         # will be positioned relative to court in reset()
         self.opp_x = 0
         self.opp_y = 0
@@ -122,12 +121,12 @@ class PingPongGame:
         self._opp_hit_timer = 0.0
         self._player_anim_timer = 0.0
         self._opp_anim_timer = 0.0
-        self._sprite_disp_w = 64
-        self._sprite_disp_h = 128
+        self._sprite_disp_w = 80
+        self._sprite_disp_h = 160
         self._sprites_loaded = False
         # Ping pong racket vertical offset (pixels from top of sprite when drawn)
         # Adjust this value if you want the racket higher or lower.
-        self.racket_offset = 110
+        self.racket_offset = 138
         self._bg = None
         self._bg_loaded = False
 
@@ -311,16 +310,29 @@ class PingPongGame:
             hx = sprite_left - swing + offset_left
             handle_rect = pygame.Rect(hx - 22, hy - 3, 22, 6)
             px = hx - 22 - 12 + offset_left - paddle_forward
-        py = hy
+        
+        # Move paddle face upward (negative = up, positive = down)
+        paddle_up_offset = -6
+        py = hy + paddle_up_offset
 
-        pygame.draw.rect(screen, handle_color, handle_rect, border_radius=3)
+        pygame.draw.rect(screen, handle_color, handle_rect, border_radius=2)
 
-        # Horizontal paddle (wider than tall for ping pong racket look)
-        pr_x, pr_y = 17, 11
-        paddle_surf = pygame.Surface((pr_x * 2, pr_y * 2), pygame.SRCALPHA)
-        pygame.draw.ellipse(paddle_surf, paddle_rim, (0, 0, pr_x * 2, pr_y * 2))
-        pygame.draw.ellipse(paddle_surf, paddle_face, (2, 2, pr_x * 2 - 4, pr_y * 2 - 4))
-        screen.blit(paddle_surf, (px - pr_x, py - pr_y))
+        # Oval racket shape (elliptical)
+        pr_w, pr_h = 36, 22
+        paddle_surf = pygame.Surface((pr_w, pr_h), pygame.SRCALPHA)
+        
+        # Outer rim (ellipse)
+        pygame.draw.ellipse(paddle_surf, paddle_rim, (0, 0, pr_w, pr_h))
+        # Red face (ellipse)
+        pygame.draw.ellipse(paddle_surf, paddle_face, (2, 2, pr_w - 4, pr_h - 4))
+        # Center highlight for 2D depth
+        pygame.draw.ellipse(paddle_surf, (230, 60, 60), (5, 5, pr_w - 10, pr_h - 10))
+        
+        # Rotate slightly upward (+25 for player facing right, -25 for opponent facing left)
+        angle = 25 if facing_right else -25
+        rotated = pygame.transform.rotate(paddle_surf, angle)
+        r_rect = rotated.get_rect(center=(px, py))
+        screen.blit(rotated, r_rect.topleft)
 
     def _queue_oscar_extra_ball(self, player_rect: pygame.Rect, delay: float = 0.0, strong: bool = False):
         """Spawn an extra ball from Oscar's current position."""
@@ -1033,19 +1045,19 @@ class PingPongGame:
 
         return None
 
-    def _draw_table_legs(self, screen, bot_l, bot_r, leg_color=(55, 38, 20)):
+    def _draw_table_legs(self, screen, bot_l, bot_r, leg_color=(18, 18, 18)):
         """Draw two legs — one centred on each short end of the table."""
-        leg_h = 22
-        leg_w = 8
+        leg_h = 40  # taller legs for stronger presence
+        leg_w = 26  # much wider legs per request
         # One leg per side, centred horizontally between bot_l and bot_r extremes
         left_cx  = bot_l[0] + 36   # inset from left corner
         right_cx = bot_r[0] - 36   # inset from right corner
         for cx, cy in [(left_cx, bot_l[1]), (right_cx, bot_r[1])]:
             pygame.draw.rect(screen, leg_color,
                              (cx - leg_w // 2, cy, leg_w, leg_h))
-            # small foot shadow
-            pygame.draw.rect(screen, (30, 20, 10),
-                             (cx - leg_w // 2 - 2, cy + leg_h - 3, leg_w + 4, 4))
+            # small foot shadow (darker, matching leg size)
+            pygame.draw.rect(screen, (8, 8, 8),
+                             (cx - leg_w // 2 - 5, cy + leg_h - 5, leg_w + 10, 6))
 
     def draw(self, screen: pygame.Surface):
         # Allow drawing the end screen, menu, or countdown even when `active` is False
@@ -1055,11 +1067,19 @@ class PingPongGame:
         if not self._bg_loaded:
             try:
                 import os
-                raw = pygame.image.load(
-                    os.path.join("assets", "UI", "ping pong.png")
-                ).convert()
-                self._bg = pygame.transform.scale(raw, (SCREEN_WIDTH, SCREEN_HEIGHT))
-            except Exception:
+                # Tile the floor using the orange vertical planks tile from the Room Builder tileset
+                tp = os.path.join("assets", "BehindTheSmile_Assets", "BehindTheSmile_Assets", "campus", "Room_Builder_free_32x32.png")
+                tileset = pygame.image.load(tp).convert()
+                # Row 12 (0-indexed) corresponds to the tan vertical planks floor without top border (Y = 12 * 32 = 384)
+                # Using X=0 to include the plank border
+                tile = tileset.subsurface(pygame.Rect(0, 384, 32, 32))
+                
+                self._bg = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
+                for tx in range(0, SCREEN_WIDTH, 32):
+                    for ty in range(0, SCREEN_HEIGHT, 32):
+                        self._bg.blit(tile, (tx, ty))
+            except Exception as e:
+                print(f"[PingPong] Failed to tile floor background: {e}")
                 self._bg = None
             self._bg_loaded = True
         if self._bg:
@@ -1083,7 +1103,30 @@ class PingPongGame:
             ]
             pygame.draw.polygon(screen, (80, 130, 90), inner)
             net_x = (top_l[0] + top_r[0]) // 2
-            pygame.draw.rect(screen, (220, 220, 220), (net_x - 4, top_l[1] - 6, 8, bot_l[1] - top_l[1] + 12))
+            net_rect = pygame.Rect(net_x - 4, top_l[1] - 6, 8, bot_l[1] - top_l[1] + 12)
+            pygame.draw.rect(screen, (220, 220, 220), net_rect)
+
+            post_color = (200, 200, 200)
+            top_post = pygame.Rect(net_x - 6, top_l[1] - 18, 12, 22)
+            bottom_post = pygame.Rect(net_x - 8, bot_l[1] - 12, 16, 32)
+            pygame.draw.rect(screen, post_color, top_post)
+            pygame.draw.rect(screen, post_color, bottom_post)
+
+            def lerp_point(a, b, t: float):
+                return (a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t)
+
+            line_colour = (230, 230, 230)
+            # Horizontal center line
+            left_pt = lerp_point(top_l, bot_l, 0.5)
+            right_pt = lerp_point(top_r, bot_r, 0.5)
+            pygame.draw.line(
+                screen,
+                line_colour,
+                (int(left_pt[0]), int(left_pt[1])),
+                (int(right_pt[0]), int(right_pt[1])),
+                width=3,
+            )
+
             self._draw_table_legs(screen, bot_l, bot_r)
             # draw characters
             player_sprite_x = int(self.player_x - self.sprite_size // 2)
@@ -1111,13 +1154,13 @@ class PingPongGame:
             pygame.draw.rect(screen, (16, 16, 28), (panel_x, panel_y, panel_w, panel_h), border_radius=14)
             pygame.draw.rect(screen, UI_ACCENT, (panel_x, panel_y, panel_w, panel_h), 2, border_radius=14)
 
-            title_font = pygame.font.SysFont("arial", 34, bold=True)
+            title_font = pygame.font.Font(VT323_PATH, 34)
             title = "Ping Pong - Controls"
             screen.blit(title_font.render(title, True, UI_ACCENT), (SCREEN_WIDTH // 2 - title_font.size(title)[0] // 2, panel_y + 18))
 
             # prompt to start / controls hint
-            hint_font = pygame.font.SysFont("arial", 28, bold=True)
-            small = pygame.font.SysFont("arial", 18)
+            hint_font = pygame.font.Font(VT323_PATH, 28)
+            small = pygame.font.Font(VT323_PATH, 18)
 
             if using_controller:
                 hint = "Press A to Start"
@@ -1148,8 +1191,32 @@ class PingPongGame:
             ]
             pygame.draw.polygon(screen, (80, 130, 90), inner)
             net_x = (top_l[0] + top_r[0]) // 2
-            pygame.draw.rect(screen, (220, 220, 220), (net_x - 4, top_l[1] - 6, 8, bot_l[1] - top_l[1] + 12))
+            net_rect = pygame.Rect(net_x - 4, top_l[1] - 6, 8, bot_l[1] - top_l[1] + 12)
+            pygame.draw.rect(screen, (220, 220, 220), net_rect)
+
+            post_color = (200, 200, 200)
+            top_post = pygame.Rect(net_x - 6, top_l[1] - 18, 12, 22)
+            bottom_post = pygame.Rect(net_x - 8, bot_l[1] - 12, 16, 32)
+            pygame.draw.rect(screen, post_color, top_post)
+            pygame.draw.rect(screen, post_color, bottom_post)
+
+            def lerp_point(a, b, t: float):
+                return (a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t)
+
+            line_colour = (230, 230, 230)
+            # Horizontal center line
+            left_pt = lerp_point(top_l, bot_l, 0.5)
+            right_pt = lerp_point(top_r, bot_r, 0.5)
+            pygame.draw.line(
+                screen,
+                line_colour,
+                (int(left_pt[0]), int(left_pt[1])),
+                (int(right_pt[0]), int(right_pt[1])),
+                width=3,
+            )
+
             self._draw_table_legs(screen, bot_l, bot_r)
+
             # draw characters
             player_sprite_x = int(self.player_x - self.sprite_size // 2)
             player_sprite_y = int(self.player_y - self.sprite_size // 2)
@@ -1161,12 +1228,12 @@ class PingPongGame:
             ctimer = max(0.0, self.countdown_timer)
             if getattr(self, 'countdown_go_shown', False):
                 txt = "Let's Go!"
-                font = pygame.font.SysFont("arial", 64, bold=True)
+                font = pygame.font.Font(VT323_PATH, 64)
                 surf = font.render(txt, True, UI_ACCENT)
                 screen.blit(surf, surf.get_rect(center=(SCREEN_WIDTH//2, SCREEN_HEIGHT//2)))
             else:
                 num = int(math.ceil(ctimer)) if ctimer > 0 else 1
-                font = pygame.font.SysFont("arial", 128, bold=True)
+                font = pygame.font.Font(VT323_PATH, 128)
                 surf = font.render(str(num), True, UI_ACCENT)
                 screen.blit(surf, surf.get_rect(center=(SCREEN_WIDTH//2, SCREEN_HEIGHT//2)))
             return
@@ -1186,7 +1253,32 @@ class PingPongGame:
         pygame.draw.polygon(screen, (80, 130, 90), inner)
         # net (center vertical)
         net_x = (top_l[0] + top_r[0]) // 2
-        pygame.draw.rect(screen, (220, 220, 220), (net_x - 4, top_l[1] - 6, 8, bot_l[1] - top_l[1] + 12))
+        net_rect = pygame.Rect(net_x - 4, top_l[1] - 6, 8, bot_l[1] - top_l[1] + 12)
+        pygame.draw.rect(screen, (220, 220, 220), net_rect)
+
+        # Net support posts (top/back and bottom/front)
+        post_color = (200, 200, 200)
+        top_post = pygame.Rect(net_x - 6, top_l[1] - 18, 12, 22)
+        bottom_post = pygame.Rect(net_x - 8, bot_l[1] - 12, 16, 32)
+        pygame.draw.rect(screen, post_color, top_post)
+        pygame.draw.rect(screen, post_color, bottom_post)
+
+        # Sideline division lines (horizontal doubles guides)
+        def lerp_point(a, b, t: float):
+            return (a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t)
+
+        line_colour = (230, 230, 230)
+        # Horizontal center line
+        left_pt = lerp_point(top_l, bot_l, 0.5)
+        right_pt = lerp_point(top_r, bot_r, 0.5)
+        pygame.draw.line(
+            screen,
+            line_colour,
+            (int(left_pt[0]), int(left_pt[1])),
+            (int(right_pt[0]), int(right_pt[1])),
+            width=3,
+        )
+
         self._draw_table_legs(screen, bot_l, bot_r)
 
         # draw characters with sprite animations
@@ -1255,7 +1347,7 @@ class PingPongGame:
         filled = int((self.player_score / self.score_limit) * (bar_w - 4))
         pygame.draw.rect(screen, (40, 200, 80), (px + 2, py + 2, max(0, filled), bar_h - 4), border_radius=6)
         # numeric
-        smallf = pygame.font.SysFont("arial", 18, bold=True)
+        smallf = pygame.font.Font(VT323_PATH, 18)
         text = f"{self.player_score} / {self.score_limit}"
         screen.blit(smallf.render(text, True, (255, 255, 255)), (px + 6, py - 2))
         # opponent bar (right)
@@ -1277,7 +1369,7 @@ class PingPongGame:
         progress = self._get_super_shot_progress()
         fill_w = int((super_w - 4) * progress)
         pygame.draw.rect(screen, (240, 210, 60), (sx + 2, sy + 2, max(0, fill_w), super_h - 4), border_radius=6)
-        sfont = pygame.font.SysFont("arial", 16, bold=True)
+        sfont = pygame.font.Font(VT323_PATH, 16)
         if self._super_shot_available():
             st = "Super Shot READY (Auto on hit)"
             scol = (255, 230, 80)
@@ -1291,7 +1383,7 @@ class PingPongGame:
 
         # taunt
         if self._taunt_msg:
-            tfont = pygame.font.SysFont("arial", 20)
+            tfont = pygame.font.Font(VT323_PATH, 20)
             tw = tfont.size(self._taunt_msg)[0]
             screen.blit(tfont.render(self._taunt_msg, True, (240, 200, 60)), ((SCREEN_WIDTH - tw) // 2, SCREEN_HEIGHT - 115))
 
@@ -1305,15 +1397,15 @@ class PingPongGame:
             by = (SCREEN_HEIGHT - box_h) // 2
             pygame.draw.rect(screen, (20, 20, 30), (bx, by, box_w, box_h))
             pygame.draw.rect(screen, UI_ACCENT, (bx, by, box_w, box_h), 2)
-            title_font = pygame.font.SysFont("arial", 36, bold=True)
-            msg_font = pygame.font.SysFont("arial", 22)
+            title_font = pygame.font.Font(VT323_PATH, 36)
+            msg_font = pygame.font.Font(VT323_PATH, 22)
             lines = str(self.end_message).split("\n")
             y = by + 20
             for i, line in enumerate(lines):
                 font = title_font if i == 0 else msg_font
                 surf = font.render(line, True, WHITE)
                 screen.blit(surf, surf.get_rect(center=(SCREEN_WIDTH // 2, y + (i * 36))))
-            hint = self.font_hint if hasattr(self, 'font_hint') else pygame.font.SysFont("arial", 16)
+            hint = self.font_hint if hasattr(self, 'font_hint') else pygame.font.Font(VT323_PATH, 16)
             screen.blit(hint.render("Press SPACE to exit", True, UI_TEXT_DIM), (SCREEN_WIDTH // 2 - 110, by + box_h - 32))
 
         # ──── ESC Pause Menu ─────────────────────────────────────────────────
@@ -1329,15 +1421,15 @@ class PingPongGame:
             pygame.draw.rect(screen, (14, 14, 24), (pm_x, pm_y, pm_w, pm_h), border_radius=16)
             pygame.draw.rect(screen, UI_ACCENT, (pm_x, pm_y, pm_w, pm_h), 2, border_radius=16)
 
-            ptitle_font = pygame.font.SysFont("arial", 30, bold=True)
+            ptitle_font = pygame.font.Font(VT323_PATH, 30)
             ptitle = "PAUSED"
             tw = ptitle_font.size(ptitle)[0]
             screen.blit(ptitle_font.render(ptitle, True, UI_ACCENT),
                         (pm_x + (pm_w - tw) // 2, pm_y + 20))
 
             options = ["Resume", "Settings", "Quit"]
-            opt_font = pygame.font.SysFont("arial", 24, bold=True)
-            dim_font = pygame.font.SysFont("arial", 24)
+            opt_font = pygame.font.Font(VT323_PATH, 24)
+            dim_font = pygame.font.Font(VT323_PATH, 24)
             sel = getattr(self, '_pause_sel', 0)
             for i, label in enumerate(options):
                 oy = pm_y + 90 + i * 52
@@ -1358,7 +1450,7 @@ class PingPongGame:
                     screen.blit(dim_font.render(label, True, UI_TEXT_DIM),
                                 (pm_x + (pm_w - lw) // 2, oy))
 
-            nav_font = pygame.font.SysFont("arial", 14)
+            nav_font = pygame.font.Font(VT323_PATH, 14)
             nav = "↑↓ Navigate   Enter - Select   ESC - Resume"
             nw = nav_font.size(nav)[0]
             screen.blit(nav_font.render(nav, True, UI_TEXT_DIM),

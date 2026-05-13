@@ -28,8 +28,7 @@ from settings import (
     KEY_HELP, KEY_PAUSE, KEY_MAP,
     KEY_LIGHT_ATTACK, KEY_HEAVY_ATTACK, KEY_BLOCK, KEY_DASH, KEY_DASH_ALT, KEY_DASH_ALT2,
     KEY_HACK, KEY_PHONE,
-    MOTIVATIONAL_MESSAGES,
-)
+    MOTIVATIONAL_MESSAGES, VT323_PATH)
 from src.phone      import Phone
 from src.map        import SchoolMap
 from src.player     import Aiden, Lena
@@ -45,35 +44,17 @@ from src.dialogue   import DialogueSystem
 from src.ui         import UI
 from src.world_map  import WorldMap
 from src.pingpong   import PingPongGame
+from src.social_reputation import ReputationManager
+from src.social_dialogue import SocialDialogueManager
+from src.social_ui import SocialInteractionUI
 from src.controller import get_controller, init_controller, update_controller, XBOX_A
+from src.schedule_manager import ScheduleManager
 
 FLOOR_COLISEUM_INTERIOR = 5
 FLOOR_PINGPONG_INTERIOR = 6
 
 
-# Pools for dynamically generated classroom NPC names
-CLASS_FIRST_NAMES = [
-    # Hispanic/Latin
-    "Adrian", "Brianna", "Carlos", "Daniela", "Elena", "Felipe",
-    "Gabriela", "Hector", "Isabella", "Javier", "Karina", "Lorenzo",
-    "Mariana", "Nicolas", "Olivia", "Pablo", "Renata", "Santiago",
-    "Tatiana", "Valeria",
-    # Asian
-    "Yuki", "Kenji", "Mei", "Chen", "Ji-soo", "Haruto", "Aoi", "Wei", "Sora", "Min-ho",
-    # African
-    "Amara", "Kwame", "Zuri", "Nala", "Kofi", "Imani", "Jabari", "Keisha", "Tunde", "Zola",
-    # Middle Eastern / Arabic
-    "Fatima", "Omar", "Aaliyah", "Zaid", "Layla", "Hassan", "Inaya", "Malik", "Soraya", "Idris",
-    # European / Other
-    "Sven", "Lars", "Dimitri", "Matteo", "Chloe", "Hans", "Ingrid", "Luca", "Olga", "Stefan"
-]
 
-CLASS_LAST_NAMES = [
-    "Alvarez", "Benitez", "Castillo", "Dominguez", "Espinoza",
-    "Fernandez", "Garcia", "Herrera", "Ibarra", "Juarez",
-    "Lopez", "Martinez", "Navarro", "Ortega", "Paredes",
-    "Quintero", "Ramirez", "Serrano", "Torres", "Vargas"
-]
 
 
 class Game:
@@ -135,25 +116,9 @@ class Game:
         self._time_scale: float = 1.2   # minutes advanced per real-time second (was 2.0)
         self._last_time_minutes: float = self.time_of_day_minutes
 
-        # Classroom simulation state
-        self._classroom_groups: list[dict] = []
-        self._class_cycle_index: int = 0
-        self._class_phase: str = "classroom"
-        self._class_event_schedule = [
-            (570, "cafeteria"),   # 09:30 AM
-            (660, "classroom"),   # 11:00 AM (Break ends)
-            (810, "cafeteria"),   # 01:30 PM (Lunch starts)
-            (900, "classroom"),   # 03:00 PM (Lunch ends)
-        ]
-        self._classroom_room_defs = [
-            ("f2_classrooms", "General Studies", 8),
-            ("f2_music_room", "Music Ensemble", 6),
-            ("f2_art_room", "Art Studio", 6),
-            ("f2_conference", "Faculty Seminar", 5),
-        ]
-        self._cafeteria_rect: pygame.Rect | None = None
-        self._class_spawn_counter: int = 0
-        self._class_used_names: set[str] = set()
+        # Schedule state (cafeteria timing for non-classroom NPCs)
+        self._caf_seat_pool: list = []
+        self._school_day_ended: bool = False  # True once 4 PM hits — clock freezes
 
         # ── Intro cinematic state ──
         self._cine_phase: str = "car"       # car | exit | dialogue | mission | guide
@@ -255,14 +220,17 @@ class Game:
         cx, cy = -200, -200
         self.remote_player = None
 
+        self.aiden = Aiden(cx, cy)
+        self.lena = Lena(cx, cy)
+
         if self.character == Character.AIDEN:
-            self.player = Aiden(cx, cy)
+            self.player = self.aiden
             if self.multiplayer:
-                self.remote_player = Lena(cx, cy)
+                self.remote_player = self.lena
         else:
-            self.player = Lena(cx, cy)
+            self.player = self.lena
             if self.multiplayer:
-                self.remote_player = Aiden(cx, cy)
+                self.remote_player = self.aiden
 
         self.inventory = Inventory()
         # Starting items
@@ -279,6 +247,17 @@ class Game:
         self.npc_manager = NPCManager()
         self.npc_manager.load_npcs_from_json()
         from settings import SocialGroup, NPC_SIZE
+
+        # Initialize the sibling as an NPC
+        sched = {"arrival": 0, "class_1": 4, "break_1": 4, "lunch": 3, "activities": 4, "departure": 0, "night": 4}
+        if self.character == Character.AIDEN:
+            self.sibling_npc = NPC("npc_lena", "Lena Parker", SocialGroup.TECH_CLUB, "Hacker", "Sister", sched, {}, "female")
+        else:
+            self.sibling_npc = NPC("npc_aiden", "Aiden Parker", SocialGroup.ATHLETES, "Athlete", "Brother", sched, {}, "male")
+        
+        self.sibling_npc.ai_enabled = True
+        self.npc_manager.npcs[self.sibling_npc.id] = self.sibling_npc
+        self.npc_manager.relationships.add_node(self.sibling_npc.id)
         
         # Position Oscar and observers inside the Ping Pong interior floor
         oscar = self.npc_manager.get_npc_by_id("npc_oscar")
@@ -331,9 +310,8 @@ class Game:
             self.npc_manager.npcs[gordon.id] = gordon
             self.npc_manager.relationships.add_node(gordon.id)
 
-        # Ensure fixed story NPC placement and classroom simulation seeds
+        # Ensure fixed story NPC placement
         self._initialize_director_office()
-        self._setup_classroom_groups()
 
         # ── Position Noah Carter in the Entrance for the intro cinematic ──
         noah_carter = self.npc_manager.get_npc_by_id("npc_noah_carter")
@@ -359,6 +337,10 @@ class Game:
         # Ensure Noah's spawn area is clear
         self._clear_noah_area(radius=160)
 
+        # ── Initialize Schedule Manager for NPC routines ──
+        self.schedule_manager = ScheduleManager()
+        self.schedule_manager.assign_subgroups(self.npc_manager)
+
     def _init_systems(self):
         self.reputation      = ReputationSystem()
         self.mission_manager = MissionManager()
@@ -376,9 +358,23 @@ class Game:
         self.camera.offset.y = max(0, min(target_y, self.camera.map_height - SCREEN_HEIGHT))
         # Ping-pong minigame
         self.pingpong = PingPongGame()
-        self.phone = Phone(self.screen,
-                          time_source=lambda: self.time_of_day_minutes,
-                          player_name=self.character.value)
+        
+        # ── NEW SOCIAL SYSTEMS ────────────────────────────────
+        self.social_reputation_manager = ReputationManager()
+        self.social_reputation_manager.set_reputation_system(self.reputation)
+        
+        self.social_dialogue_manager = SocialDialogueManager()
+        self.social_dialogue_manager.reputation_manager = self.social_reputation_manager
+        
+        self.social_ui = SocialInteractionUI()
+        self.social_dialogue_manager.social_ui = self.social_ui
+        # ──────────────────────────────────────────────────────
+        
+        from settings import Character
+        self.aiden_phone = Phone(self.screen, time_source=lambda: self.time_of_day_minutes, player_name="aiden")
+        self.lena_phone = Phone(self.screen, time_source=lambda: self.time_of_day_minutes, player_name="lena")
+        
+        self.phone = self.aiden_phone if self.character == Character.AIDEN else self.lena_phone
 
     def _initialize_director_office(self):
         director = self.npc_manager.get_npc_by_id("npc_director")
@@ -394,106 +390,18 @@ class Game:
         director.bound_rect = office.rect.inflate(-120, -120)
         director.rect.center = office.rect.center
 
-    def _setup_classroom_groups(self):
-        floor2 = self.school_map.get_floor(FLOOR_2F)
-        floor1 = self.school_map.get_floor(FLOOR_1F)
-        if not floor2:
-            return
-        cafeteria = floor1.rooms.get("f1_cafeteria") if floor1 else None
-        self._cafeteria_rect = cafeteria.rect.inflate(-120, -120) if cafeteria else None
-
-        groups: list[dict] = []
-        for room_id, topic, count in self._classroom_room_defs:
-            room = floor2.rooms.get(room_id)
-            if not room:
-                continue
-            
-            # Setup initial classroom layout: Teacher on the left 25%, Students in the rest
-            teacher_area_w = int(room.rect.width * 0.25)
-            student_area_w = room.rect.width - teacher_area_w
-            
-            teacher = self._create_class_npc(role="Teacher")
-            teacher.show_name = True
-            teacher.current_floor = FLOOR_2F
-            teacher.rect.centerx = room.rect.x + teacher_area_w // 2
-            teacher.rect.centery = room.rect.centery
-            # Restrict teacher to a narrow vertical strip to simulate patrolling
-            teacher.bound_rect = pygame.Rect(room.rect.x + 20, room.rect.y + 40, teacher_area_w - 40, room.rect.height - 80)
-            teacher.ignore_schedule = True
-            teacher.ai_enabled = True
-            teacher_home = (teacher.rect.centerx, teacher.rect.centery)
-
-            students = []
-            student_homes = []
-            cols = 4 if count > 6 else 3
-            rows = (count + cols - 1) // cols
-            for i in range(count):
-                student = self._create_class_npc(role="Student")
-                student.current_floor = FLOOR_2F
-                
-                r, c = i // cols, i % cols
-                cell_w = (student_area_w - 100) // cols
-                cell_h = (room.rect.height - 100) // rows
-                
-                student.rect.centerx = room.rect.x + teacher_area_w + 50 + c * cell_w + cell_w // 2
-                student.rect.centery = room.rect.y + 50 + r * cell_h + cell_h // 2
-                
-                student.bound_rect = room.rect.inflate(-60, -60)
-                student.ignore_schedule = True
-                student.ai_enabled = False # Students stay still in class
-                students.append(student)
-                student_homes.append((student.rect.centerx, student.rect.centery))
-
-            groups.append({
-                "room_id": room_id,
-                "topic": topic,
-                "teacher": teacher,
-                "students": students,
-                "teacher_home": teacher_home,
-                "student_homes": student_homes,
-            })
-
-        # Register NPCs into manager
-        for group in groups:
-            teacher = group["teacher"]
-            tid = f"npc_class_teacher_{group['room_id']}"
-            teacher.id = tid
-            # Removed topic suffix to keep only the name as requested
-            self._register_npc(teacher)
-            for idx, student in enumerate(group["students"], start=1):
-                student.id = f"npc_class_student_{group['room_id']}_{idx}"
-                self._register_npc(student)
-
-        self._classroom_groups = groups
-        self._class_phase = "classroom"
-
-    def _create_class_npc(self, role: str) -> NPC:
-        from settings import NPC_SIZE
-        gender = random.choice(["male", "female"])
-        first = random.choice(CLASS_FIRST_NAMES)
-        
-        if role == "Teacher":
-            # User requested to use 'Teacher' instead of Mr/Mrs
-            name = f"Teacher {first}"
-        else:
-            # Students only get the first name
-            name = first
-            
-        while name in self._class_used_names:
-            first = random.choice(CLASS_FIRST_NAMES)
-            if role == "Teacher":
-                name = f"Teacher {first}"
-            else:
-                name = first
-                
-        self._class_used_names.add(name)
-        group = random.choice(list(SocialGroup))
-        npc = NPC(f"temp_{role.lower()}_{self._class_spawn_counter}", name, group,
-                  f"{role} in class", f"{role} secrets", gender=gender)
-        self._class_spawn_counter += 1
-        npc.ai_enabled = True
-        npc.show_name = True
-        return npc
+    def _is_npc_on_camera(self, npc) -> bool:
+        """Return True if the NPC is on the same floor as the player AND within the camera viewport.
+        This is used to prevent teleporting visible NPCs."""
+        if npc.current_floor != self.current_floor:
+            return False
+        # Calculate screen-space position of the NPC
+        cam = self.camera
+        margin = 64  # extra margin so NPCs don't pop in/out at edges
+        screen_x = npc.rect.centerx - cam.offset.x
+        screen_y = npc.rect.centery - cam.offset.y
+        return (-margin <= screen_x <= cam.view_w + margin and
+                -margin <= screen_y <= cam.view_h + margin)
 
     def _register_npc(self, npc: NPC):
         self.npc_manager.npcs[npc.id] = npc
@@ -502,7 +410,78 @@ class Game:
     def _init_ui(self):
         self.ui = UI(self.screen)
         self.world_map = WorldMap(self.school_map)
-        self.phone._map_ref = self.world_map
+        self.aiden_phone._map_ref = self.world_map
+        self.lena_phone._map_ref = self.world_map
+
+    def _swap_character(self):
+        if self.multiplayer:
+            self.ui.show_notification("Cannot change character: Roles are already established in co-op mode.", NOTIF_ERROR)
+            return
+
+        from settings import SocialGroup
+        old_floor = self.current_floor
+        old_x, old_y = self.player.rect.center
+
+        # Swap character enum
+        new_char = Character.LENA if self.character == Character.AIDEN else Character.AIDEN
+        self.character = new_char
+
+        # Get the new player instance
+        self.player = self.aiden if new_char == Character.AIDEN else self.lena
+
+        # New player takes position of sibling_npc
+        new_floor = self.sibling_npc.current_floor
+        new_x, new_y = self.sibling_npc.rect.center
+        self.current_floor = new_floor
+        self.player.current_floor = new_floor
+        self.player.rect.center = (new_x, new_y)
+
+        # Update sibling_npc to represent the previous character
+        if new_char == Character.AIDEN:
+            # Sibling is now Lena
+            self.sibling_npc.id = "npc_lena"
+            self.sibling_npc.name = "Lena Parker"
+            self.sibling_npc.group = SocialGroup.TECH_CLUB
+            self.sibling_npc.public_personality = "Hacker"
+            self.sibling_npc.private_personality = "Sister"
+            self.sibling_npc.gender = "female"
+            self.phone = self.aiden_phone
+        else:
+            # Sibling is now Aiden
+            self.sibling_npc.id = "npc_aiden"
+            self.sibling_npc.name = "Aiden Parker"
+            self.sibling_npc.group = SocialGroup.ATHLETES
+            self.sibling_npc.public_personality = "Athlete"
+            self.sibling_npc.private_personality = "Brother"
+            self.sibling_npc.gender = "male"
+            self.phone = self.lena_phone
+
+        self.sibling_npc.current_floor = old_floor
+        self.sibling_npc.rect.center = (old_x, old_y)
+        self.sibling_npc.target_pos = None
+        self.sibling_npc.target_queue = []
+        self.sibling_npc._wander_timer = 3.0  # Give them a few seconds in this direction
+        self.sibling_npc._wander_dx = 100.0 if old_x % 2 == 0 else -100.0  # Force instant movement
+        self.sibling_npc._wander_dy = 0.0
+        self.sibling_npc.start_delay = 0.0
+        self.sibling_npc.ai_enabled = True
+        self.sibling_npc.stop_at_target = False
+        self.sibling_npc._load_sprites()
+        
+        # Ensure sibling NPC is registered in manager with new ID
+        self.npc_manager.npcs = {k: v for k, v in self.npc_manager.npcs.items() if k not in ("npc_aiden", "npc_lena")}
+        self.npc_manager.npcs[self.sibling_npc.id] = self.sibling_npc
+
+        # Snap camera to the new player
+        self.camera.offset.x = self.player.rect.centerx - SCREEN_WIDTH // 2
+        self.camera.offset.y = self.player.rect.centery - SCREEN_HEIGHT // 2
+        self.camera.offset.x = max(0, min(self.camera.offset.x, self.camera.map_width - SCREEN_WIDTH))
+        self.camera.offset.y = max(0, min(self.camera.offset.y, self.camera.map_height - SCREEN_HEIGHT))
+
+        self.ui.show_notification(f"Swapped to {self.character.value.title()}", NOTIF_INFO)
+        self._last_known_level = self.player.level
+        self.state = getattr(self, 'previous_state', GameState.PLAYING)
+
 
     def _init_controller(self):
         """Initialize controller input handling."""
@@ -701,9 +680,7 @@ class Game:
             self._handle_controller_wallet(controller)
         elif self.state == GameState.MAP:
             self._handle_controller_map(controller)
-        elif self.state == GameState.DAY_OVER:
-            if controller.is_confirm_pressed():
-                self._begin_day_transition()
+
 
     def _toggle_pause(self):
         """Toggle pause state."""
@@ -854,36 +831,7 @@ class Game:
             if sel == 0:
                 self.state = getattr(self, 'previous_state', GameState.PLAYING)
             elif sel == 1:
-                if self.multiplayer:
-                    self.ui.show_notification("Cannot change character: Roles are already established in co-op mode.", NOTIF_ERROR)
-                    return
-                # Character swap logic (same as keyboard)
-                from settings import Character, NOTIF_INFO
-                from src.player import Aiden, Lena
-
-                self.character = Character.LENA if self.character == Character.AIDEN else Character.AIDEN
-
-                old_level = self.player.level
-                old_xp = self.player.xp
-                old_sp = getattr(self.player, 'skill_points', 0)
-                old_hp = self.player.health
-                old_max_hp = self.player.max_health
-
-                old_x, old_y = self.player.rect.center
-                if self.character == Character.AIDEN:
-                    self.player = Aiden(old_x, old_y)
-                else:
-                    self.player = Lena(old_x, old_y)
-
-                self.player.level = old_level
-                self.player.xp = old_xp
-                self.player.skill_points = old_sp
-                self.player.max_health = old_max_hp
-                self.player.health = min(old_hp, self.player.max_health)
-                self._last_known_level = self.player.level
-
-                self.ui.show_notification(f"Swapped to {self.character.value.title()}", NOTIF_INFO)
-                self.state = getattr(self, 'previous_state', GameState.PLAYING)
+                self._swap_character()
             elif sel == 2:  # Main Menu
                 self.return_to_menu = True
                 self.running = False
@@ -984,6 +932,10 @@ class Game:
             # When ping-pong is active, let the minigame handle ESC itself
             if self.state == GameState.PINGPONG:
                 pass  # fall through to state-specific dispatch below
+            elif self.state == GameState.SOCIAL_INTERACTION:
+                # Close social interaction on ESC
+                self.social_dialogue_manager.force_close()
+                self.state = GameState.PLAYING
             elif self.state == GameState.PAUSED:
                 self.state = getattr(self, 'previous_state', GameState.PLAYING)
             elif self.state == GameState.PLAYING:
@@ -1017,6 +969,7 @@ class Game:
             GameState.PLAYING:          self._keys_playing,
             GameState.INTRO_CINEMATIC:  self._keys_cinematic,
             GameState.DIALOGUE:         lambda e: self.dialogue_system.handle_input(e),
+            GameState.SOCIAL_INTERACTION: lambda e: self.social_dialogue_manager.handle_input(e),
             GameState.PINGPONG:        lambda e: self.pingpong.handle_input(e),
             GameState.COMBAT:           lambda e: self.combat_system.handle_input(e, self.player),
             GameState.HACKING:          lambda e: self.hacking_game.handle_input(e),
@@ -1032,11 +985,11 @@ class Game:
     # ── key handlers per state ────────────────────────────────
 
     def _keys_playing(self, event: pygame.event.Event):
-        # ── Car panel active: SPACE confirms, ESC dismisses ──
+        # ── Car panel active: E confirms, ESC dismisses ──
         if self._car_panel_active:
             if self._car_panel_input_delay > 0:
                 return  # ignore input during delay
-            if event.key == KEY_INTERACT:
+            if event.key == pygame.K_e:
                 self._car_panel_active = False
                 self._start_car_departure()
             elif event.key == KEY_PAUSE:
@@ -1044,18 +997,19 @@ class Game:
                 self._car_panel_cooldown = 1.0  # prevent re-trigger
             return
 
-        # If SPACE (KEY_INTERACT) and an NPC is nearby, open dialogue;
-        # otherwise treat SPACE (and dash aliases) as dash.
-        if event.key == KEY_INTERACT:
+        # If E is pressed and an NPC is nearby, open dialogue;
+        if event.key == pygame.K_e:
+            # Priority 2: Building Entrance
+            if self._try_building_entry_confirm():
+                return
+            
+            # Priority 3: NPC Interaction
             npc = self._nearest_npc(NPC_INTERACTION_RANGE)
             if npc:
                 self._try_interact()
-            elif self._try_building_entry_confirm():
-                pass
-            else:
-                self.player.start_dash()
-        elif event.key in (KEY_DASH_ALT, KEY_DASH_ALT2):
-            # alt dash keys still trigger dash
+                return
+        # SPACE (KEY_INTERACT) and dash aliases trigger dash
+        elif event.key in (KEY_INTERACT, KEY_DASH_ALT, KEY_DASH_ALT2):
             self.player.start_dash()
         elif event.key == KEY_INVENTORY:
             # Inventory removed - open wallet instead
@@ -1096,36 +1050,7 @@ class Game:
             if sel == 0:  # Resume
                 self.state = getattr(self, 'previous_state', GameState.PLAYING)
             elif sel == 1:  # Change Character
-                if self.multiplayer:
-                    self.ui.show_notification("Cannot change character: Roles are already established in co-op mode.", NOTIF_ERROR)
-                    return
-                from settings import Character, NOTIF_INFO
-                from src.player import Aiden, Lena
-                
-                self.character = Character.LENA if self.character == Character.AIDEN else Character.AIDEN
-                
-                # Preserve stats so swapping doesn't reset progress!
-                old_level = self.player.level
-                old_xp = self.player.xp
-                old_sp = getattr(self.player, 'skill_points', 0)
-                old_hp = self.player.health
-                old_max_hp = self.player.max_health
-
-                old_x, old_y = self.player.rect.center
-                if self.character == Character.AIDEN:
-                    self.player = Aiden(old_x, old_y)
-                else:
-                    self.player = Lena(old_x, old_y)
-                
-                self.player.level = old_level
-                self.player.xp = old_xp
-                self.player.skill_points = old_sp
-                self.player.max_health = old_max_hp
-                self.player.health = min(old_hp, self.player.max_health)
-                self._last_known_level = self.player.level
-                    
-                self.ui.show_notification(f"Swapped to {self.character.value.title()}", NOTIF_INFO)
-                self.state = getattr(self, 'previous_state', GameState.PLAYING)
+                self._swap_character()
             elif sel == 2:  # Main Menu — return to menu without closing the app
                 self.return_to_menu = True
                 self.running = False
@@ -1171,13 +1096,25 @@ class Game:
         """Interact with nearest NPC."""
         npc = self._nearest_npc(NPC_INTERACTION_RANGE)
         if npc:
+            # Check if this NPC has a dialogue_id (story NPC using old system)
             dlg_id = npc.get_dialogue_id(self.character)
             if dlg_id:
+                # Use old dialogue system for story NPCs
                 self.dialogue_system.start_dialogue(
                     dlg_id, npc, self.player, self.reputation,
                 )
                 self.state = GameState.DIALOGUE
                 self.mission_manager.advance_objective_event("talk_to", npc.id)
+                self.player.vx = 0
+                self.player.vy = 0
+                self.player._dashing = False
+            else:
+                # Use new social dialogue system for regular NPCs
+                if self.social_dialogue_manager.try_start(npc, self.player):
+                    self.state = GameState.SOCIAL_INTERACTION
+                    self.player.vx = 0
+                    self.player.vy = 0
+                    self.player._dashing = False
 
     def _get_campus_entry_target(self):
         if self.current_floor != FLOOR_CAMPUS:
@@ -1205,7 +1142,7 @@ class Game:
                 "label": "Ping Pong Court",
                 "zone": pygame.Rect(3340, 2810, 300, 90),
                 "target_floor": FLOOR_PINGPONG_INTERIOR,
-                "spawn": (650, 760),
+                "spawn": (650, 900),
             },
         ]
         for entry in entrances:
@@ -1347,7 +1284,7 @@ class Game:
         room = floor.get_room_at(tx, ty)
         if floor_id == FLOOR_CAMPUS and room:
             if room.id == "c_tennis":
-                self._go_to_floor(FLOOR_PINGPONG_INTERIOR, 650, 760)
+                self._go_to_floor(FLOOR_PINGPONG_INTERIOR, 650, 900)
                 return True
             if room.id == "c_coliseum":
                 self._go_to_floor(FLOOR_COLISEUM_INTERIOR, 900, 980)
@@ -1411,8 +1348,13 @@ class Game:
             pt = self.phone.consume_pending_teleport()
             if pt:
                 self._try_teleport_to(pt[0], pt[1], pt[2])
-        # Always tick UI (notifications)
+        # Always tick UI (notifications) and social UI
         self.ui.update(dt)
+        self.social_ui.update(dt)
+        if getattr(self, 'sibling_npc', None):
+            col = (255, 180, 220) if self.character == Character.AIDEN else (100, 150, 255)
+            self.world_map.set_marker(self.sibling_npc.name, self.sibling_npc.current_floor, self.sibling_npc.rect.centerx, self.sibling_npc.rect.centery, color=col)
+            
         if self._bathroom_block_timer > 0:
             self._bathroom_block_timer = max(0.0, self._bathroom_block_timer - dt)
             if self._bathroom_block_timer == 0.0:
@@ -1460,7 +1402,8 @@ class Game:
             self.npc_manager.update_on_floor(
                 dt, self.current_floor, floor, npc_walls,
                 classrooms_restricted=True,
-                restricted_rooms=stair_restricted)
+                restricted_rooms=stair_restricted,
+                is_visible=self._is_npc_on_camera)
 
             # Camera: centre on Entrance Roundabout before player spawns
             if not self._player_spawned:
@@ -1562,12 +1505,18 @@ class Game:
             if result is not None:
                 self.state = GameState.PLAYING
                 self._apply_dialogue_result(result)
+        elif self.state == GameState.SOCIAL_INTERACTION:
+            # Update social dialogue manager
+            self.social_dialogue_manager.update(dt)
+            # Check if interaction is finished
+            if self.social_dialogue_manager.get_state().name == "IDLE":
+                self.state = GameState.PLAYING
         elif self.state == GameState.TRADING:
             result = self.trade_system.update()
             if result is not None:
                 self.state = GameState.PLAYING
 
-        if self.state in (GameState.PLAYING, GameState.COMBAT, GameState.DIALOGUE, GameState.PINGPONG):
+        if self.state in (GameState.PLAYING, GameState.COMBAT, GameState.DIALOGUE, GameState.SOCIAL_INTERACTION, GameState.PINGPONG):
             self._tick_time(dt)
             self._update_class_schedule()
 
@@ -1614,6 +1563,10 @@ class Game:
         for npc in npcs_on_floor:
             if npc.id == "npc_gordon":
                 walls.append(npc.rect)
+                continue
+            if npc.id.startswith("npc_oscar_obs"):
+                walls.append(npc.rect)
+                continue
             
         previous_rect = self.player.rect.copy()
         
@@ -1754,10 +1707,8 @@ class Game:
                 if door.locked:
                     npc_walls.append(door.rect)
         
-        # Classroom and Staircase restriction for generic NPCs
-        is_class_session = (self._class_phase == "classroom")
+        # Staircase and building-entry restriction for generic NPCs
         restricted = [
-            "f2_art_room", "f2_music_room", "f2_conference", "f2_classrooms",
             "f1_stairs_2f", "f1_basement_stairs", "f2_stairs_1f", "f2_stairs_rooftop", "bs_stairs_1f"
         ]
         if self.current_floor == FLOOR_CAMPUS:
@@ -1770,17 +1721,10 @@ class Game:
             # Host or Solo: run full NPC AI
             self.npc_manager.update_on_floor(
                 current_dt, self.current_floor, floor, npc_walls,
-                classrooms_restricted=(is_class_session or self.current_floor == FLOOR_CAMPUS),
-                restricted_rooms=restricted
+                classrooms_restricted=(self.current_floor == FLOOR_CAMPUS),
+                restricted_rooms=restricted,
+                is_visible=self._is_npc_on_camera
             )
-
-        # Apply pending bound_rect for classroom NPCs that have stopped
-        for group in self._classroom_groups:
-            for npc in [group["teacher"]] + group["students"]:
-                pending = getattr(npc, '_pending_bound_rect', None)
-                if pending and not npc.ai_enabled and npc.target_pos is None:
-                    npc.bound_rect = pending
-                    npc._pending_bound_rect = None
 
         # NPC-NPC collision separation inside the cafeteria
         floor1_ref = self.school_map.get_floor(FLOOR_1F)
@@ -1850,6 +1794,8 @@ class Game:
     # ── time of day ───────────────────────────────────────────
 
     def _tick_time(self, dt: float):
+        if self._school_day_ended:
+            return  # Clock frozen after 4 PM
         increment = dt * self._time_scale
         if increment <= 0:
             return
@@ -1859,22 +1805,24 @@ class Game:
         previous = self._last_time_minutes
         current = self.time_of_day_minutes
         self._last_time_minutes = current
-        if not self._classroom_groups:
-            return
 
-        # --- Staggered entry/exit for non-classroom NPCs ---
+        # --- Staggered entry/exit for NPCs ---
         # 09:30 AM (570 mins) - Move random 1F NPCs to cafeteria (Break Time starts)
         if previous < 570 <= current:
+            self.ui.trigger_announcement("BREAK TIME!", "Class dismissed - Cafeteria is now open")
+            get_controller().rumble(0.7, 0.7, 500)
             self._move_random_npcs_to_cafeteria()
-        
+
         # 11:00 AM (660 mins) - Break Time is Over notification & leaving
         if previous < 660 <= current:
             self.ui.show_notification("Break Time is Over! Head back to class", NOTIF_WARNING, 4.0)
             get_controller().rumble(0.5, 0.5, 400)
             self._move_npcs_out_of_cafeteria()
-        
+
         # 01:30 PM (810 mins) - Return to cafeteria for lunch
         if previous < 810 <= current:
+            self.ui.trigger_announcement("LUNCH TIME!", "Today's lunch is: Hamburger with French fries")
+            get_controller().rumble(0.7, 0.7, 500)
             self._move_random_npcs_to_cafeteria()
 
         # 03:00 PM (900 mins) - Lunch Time is Over notification & leaving
@@ -1883,34 +1831,24 @@ class Game:
             get_controller().rumble(0.5, 0.5, 400)
             self._move_npcs_out_of_cafeteria()
 
-        # Check for School Day Over (4:00 PM = 960 mins)
-        if current >= 960 and self.state == GameState.PLAYING:
-            self.state = GameState.DAY_OVER
+        # 4:00 PM (960 mins) — Freeze clock, notify player, start NPC departure
+        if current >= 960:
+            self.time_of_day_minutes = 960  # Freeze at exactly 4:00 PM
+            if not self._school_day_ended:
+                self._school_day_ended = True
+                self.ui.trigger_announcement("SCHOOL'S OUT!", "Head to the bus to go home")
+                self.ui.show_notification("\U0001f6d1 School's out! Head to the bus to go home.", NOTIF_INFO, 8.0)
+                get_controller().rumble(0.7, 0.7, 500)
+                self._trigger_npc_departure()
             return
 
-        for trigger_minutes, destination in self._class_event_schedule:
-            # handle wrap-around midnight: detect crossing by comparing ranges
-            if previous <= current:
-                crossed = previous < trigger_minutes <= current
-            else:
-                crossed = previous < trigger_minutes or trigger_minutes <= current
-            
-            if crossed and self._class_phase != destination:
-                # Visual announcements for major schedule shifts
-                if trigger_minutes == 570: # 09:30 AM
-                    self.ui.trigger_announcement("BREAK TIME!", "Class dismissed - Cafeteria is now open")
-                    get_controller().rumble(0.7, 0.7, 500) # Vibrate for 0.5s
-                elif trigger_minutes == 810: # 01:30 PM
-                    self.ui.trigger_announcement("LUNCH TIME!", "Today's lunch is: Hamburger with French fries")
-                    get_controller().rumble(0.7, 0.7, 500) # Vibrate for 0.5s
+        # Update ScheduleManager for NPC routines
+        if hasattr(self, 'schedule_manager'):
+            self.schedule_manager.update(
+                current, self.npc_manager, self.school_map, self.current_floor,
+                is_visible=self._is_npc_on_camera
+            )
 
-                # Disable students going to cafeteria during morning break (9:30 AM)
-                if destination == "cafeteria" and trigger_minutes == 570:
-                    self._move_class_groups("break")
-                    continue
-                
-                self._move_class_groups(destination)
-            
         # Update cafeteria door visual/physical state
         floor1 = self.school_map.get_floor(FLOOR_1F)
         if floor1:
@@ -1918,134 +1856,78 @@ class Game:
                 if getattr(door, "id", "") == "door_cafeteria":
                     door.locked = not self._is_cafeteria_open()
 
-    def _move_class_groups(self, destination: str):
-        """Move classroom NPC groups between classrooms, corridor break, and cafeteria."""
-        if not self._classroom_groups:
-            return
-
-        floor2 = self.school_map.get_floor(FLOOR_2F)
-        floor1 = self.school_map.get_floor(FLOOR_1F)
-        corridor = floor2.rooms.get("f2_corridor") if floor2 else None
-        cafeteria_rect = self._cafeteria_rect
-
-        # Each room has: inside_door (inside the room near exit) and
-        # corridor_pos (just outside in the corridor). NPCs walk:
-        #   exit:  home → inside_door → corridor_pos → destination
-        #   enter: origin → corridor_pos → inside_door → home seat
-        _room_waypoints = {
-            # f2_classrooms: triple-door gap at x=1480..1720 in wall at y=1950
-            "f2_classrooms": {
-                "inside":  (1600, 1970),
-                "corridor": (1600, 1930),
-            },
-            # f2_art_room: double-door gap at y=456..616 in wall at x=1050
-            "f2_art_room": {
-                "inside":  (1030, 536),
-                "corridor": (1080, 536),
-            },
-            # f2_music_room: double-door gap at y=1106..1266 in wall at x=1050
-            "f2_music_room": {
-                "inside":  (1030, 1186),
-                "corridor": (1080, 1186),
-            },
-            # f2_conference: double-door gap at y=600..760 in wall at x=2150
-            "f2_conference": {
-                "inside":  (2170, 680),
-                "corridor": (2130, 680),
-            },
+    def _trigger_npc_departure(self):
+        """At 4:00 PM, all NPCs start walking towards the exit."""
+        blocked_ids = {
+            "npc_gordon", "npc_oscar", "npc_director",
+            "npc_oscar_obs1", "npc_oscar_obs2", "npc_oscar_obs3", "npc_oscar_obs4",
+            "npc_bath_m_attendant", "npc_bath_f_attendant",
         }
 
-        valid_phase = destination if destination in {"classroom", "cafeteria", "break"} else "classroom"
-        self._class_phase = valid_phase
+        count = 0
+        for npc in self.npc_manager.npcs.values():
+            if npc.id in blocked_ids:
+                continue
+            if getattr(npc, "ignore_schedule", False):
+                continue
 
-        for group in self._classroom_groups:
-            teacher: NPC = group["teacher"]
-            students: list[NPC] = group["students"]
-            room_id = group["room_id"]
-            room = floor2.rooms.get(room_id) if floor2 else None
-            wp = _room_waypoints.get(room_id, {})
-            inside_door = wp.get("inside")
-            corridor_pos = wp.get("corridor")
+            # Varied walk speed for organic feel (±15%)
+            npc.speed_multiplier = random.uniform(0.85, 1.15)
+            npc.start_delay = count * 0.3 + random.uniform(0, 2)
+            npc.ai_enabled = True
+            npc.stop_at_target = True
+            npc.bound_rect = None
 
-            if valid_phase == "classroom":
-                # Return to classroom: corridor_pos → inside_door → home seat
-                # DON'T restore bound_rect now — NPCs are still in corridor.
-                # Store pending bound_rect; it'll be applied after they stop.
-                home = group.get("teacher_home")
-                if home:
-                    teacher.bound_rect = None  # free to walk back
-                    teacher.ai_enabled = True
-                    teacher.stop_at_target = True
-                    teacher.speed_multiplier = 1.0
-                    teacher._pending_bound_rect = pygame.Rect(
-                        room.rect.x + 20, room.rect.y + 40,
-                        int(room.rect.width * 0.25) - 40, room.rect.height - 80) if room else None
-                    if corridor_pos and inside_door:
-                        teacher.target_pos = corridor_pos
-                        teacher.target_queue = [inside_door, home]
+            # NPCs on other floors need to get to campus
+            if npc.current_floor != FLOOR_CAMPUS:
+                if self._is_npc_on_camera(npc):
+                    # NPC is visible — walk to stairs first, then teleport
+                    # after leaving the camera. Queue stair waypoints.
+                    from src.stair_routes import build_multi_floor_route
+                    route = build_multi_floor_route(npc.current_floor, FLOOR_CAMPUS)
+                    if route:
+                        first_wp = route[0] if not isinstance(route[0], str) else (
+                            npc.rect.centerx, npc.rect.centery)
+                        npc.target_pos = first_wp
+                        # After floor switch, walk to the exit
+                        exit_x = random.randint(100, 1100)
+                        exit_y = 2850 + random.randint(0, 100)
+                        npc.target_queue = route[1:] + [(exit_x, 2400), (exit_x, exit_y)]
                     else:
-                        teacher.target_pos = home
-                        teacher.target_queue = []
-                for idx, (npc, home_pos) in enumerate(zip(students, group.get("student_homes", []))):
-                    npc.bound_rect = None  # free to walk back
-                    npc.ai_enabled = True
-                    npc.stop_at_target = True
-                    npc.speed_multiplier = 1.0
-                    npc.start_delay = (idx + 1) * 0.5
-                    npc._pending_bound_rect = room.rect.inflate(-60, -60) if room else None
-                    if corridor_pos and inside_door:
-                        npc.target_pos = corridor_pos
-                        npc.target_queue = [inside_door, home_pos]
-                    else:
-                        npc.target_pos = home_pos
+                        # Fallback: just walk offscreen on current floor
+                        npc.target_pos = (npc.rect.centerx + 800, npc.rect.centery)
                         npc.target_queue = []
-
-            elif valid_phase == "cafeteria" and cafeteria_rect:
-                self._caf_seat_pool = []  # fresh seats
-                # Remove bound_rect so students can leave the room
-                teacher.bound_rect = None
-                seat = self._get_cafeteria_seat()
-                teacher.ai_enabled = True
-                teacher.stop_at_target = True
-                teacher.speed_multiplier = 1.4
-                if inside_door and corridor_pos:
-                    teacher.target_pos = inside_door
-                    teacher.target_queue = [corridor_pos, seat]
                 else:
-                    teacher.target_pos = seat
-                    teacher.target_queue = []
-                for idx, npc in enumerate(students):
-                    npc.bound_rect = None  # free from room
-                    seat = self._get_cafeteria_seat()
-                    npc.ai_enabled = True
-                    npc.stop_at_target = True
-                    npc.speed_multiplier = 1.2
-                    npc.start_delay = (idx + 1) * 0.5
-                    if inside_door and corridor_pos:
-                        npc.target_pos = inside_door
-                        npc.target_queue = [corridor_pos, seat]
-                    else:
-                        npc.target_pos = seat
-                        npc.target_queue = []
-
-            elif valid_phase == "break" and corridor:
-                # Remove bound_rect so students can leave the room
-                # Exit: inside_door → corridor_pos → random spot in corridor
-                break_rect = corridor.rect.inflate(-160, -160)
-                for idx, npc in enumerate([teacher] + students):
-                    npc.bound_rect = None  # free from room
-                    npc.ai_enabled = True
-                    npc.stop_at_target = True
-                    npc.speed_multiplier = 1.1
-                    npc.start_delay = idx * 0.5
-                    tx = random.randint(break_rect.left + 20, break_rect.right - 20)
-                    ty = random.randint(break_rect.top + 20, break_rect.bottom - 20)
-                    if inside_door and corridor_pos:
-                        npc.target_pos = inside_door
-                        npc.target_queue = [corridor_pos, (tx, ty)]
-                    else:
-                        npc.target_pos = (tx, ty)
-                        npc.target_queue = []
+                    # NPC is NOT visible — safe to teleport
+                    npc.current_floor = FLOOR_CAMPUS
+                    npc.rect.center = (
+                        2000 + random.randint(-200, 200),
+                        2050 + random.randint(-50, 50),
+                    )
+                    # Walk to parking lot / road exit
+                    exit_x = random.randint(100, 1100)
+                    exit_y = 2850 + random.randint(0, 100)
+                    npc.target_pos = (
+                        npc.rect.centerx + random.randint(-30, 30),
+                        npc.rect.centery + random.randint(-30, 30),
+                    )
+                    npc.target_queue = [
+                        (exit_x, 2400),
+                        (exit_x, exit_y),
+                    ]
+            else:
+                # Already on campus — walk to exit
+                exit_x = random.randint(100, 1100)
+                exit_y = 2850 + random.randint(0, 100)
+                npc.target_pos = (
+                    npc.rect.centerx + random.randint(-30, 30),
+                    npc.rect.centery + random.randint(-30, 30),
+                )
+                npc.target_queue = [
+                    (exit_x, 2400),
+                    (exit_x, exit_y),
+                ]
+            count += 1
 
     def _clear_noah_area(self, radius: int = 140):
         """Push random NPCs away from Noah's current position during the cinematic."""
@@ -2104,10 +1986,7 @@ class Game:
             (FLOOR_CAMPUS, pygame.Rect(2780, 1080, 980, 650), None),      # Athletic Coliseum campus side
             (FLOOR_COLISEUM_INTERIOR, pygame.Rect(320, 260, 1160, 650), None),
             (FLOOR_1F, pygame.Rect(1120, 120, 960, 1650), None),          # 1F main hall
-            (FLOOR_ROOFTOP, pygame.Rect(1250, 50, 1100, 900), None),      # ROOFTOP (favoring rooftop over reception)
             (FLOOR_ROOFTOP, pygame.Rect(1250, 50, 1100, 900), None),      # ROOFTOP (double weight)
-            (FLOOR_1F, pygame.Rect(120, 1780, 820, 420), "male"),         # men's bathroom
-            (FLOOR_1F, pygame.Rect(2260, 2020, 780, 300), "female"),      # women's bathroom
             (FLOOR_1F, pygame.Rect(120, 120, 850, 720), None),            # lab / infirmary side
             (FLOOR_1F, pygame.Rect(2260, 120, 780, 480), None),           # library wing
             (FLOOR_2F, pygame.Rect(1120, 120, 960, 1650), None),          # 2F corridor
@@ -2158,6 +2037,10 @@ class Game:
             return floor_id, area
 
         for idx, npc in enumerate(sorted(candidates, key=lambda n: n.id)):
+            # NEVER teleport NPCs visible on camera
+            if self._is_npc_on_camera(npc):
+                continue
+
             floor_id, area = choose_area(npc, idx)
             floor = floors[floor_id]
             inner = area.inflate(-70, -70)
@@ -2181,7 +2064,9 @@ class Game:
                     break
 
             if not placed:
-                npc.rect.center = inner.center
+                from src.npc import get_safe_spawn_point
+                rx, ry = get_safe_spawn_point(inner, blockers, npc.rect.copy())
+                npc.rect.center = (rx, ry)
 
             npc.current_floor = floor_id
             npc.current_zone = -1
@@ -2190,10 +2075,12 @@ class Game:
             npc.ai_enabled = True
             npc.stop_at_target = False
             npc.target_queue = []
-            npc.target_pos = (
-                random.randint(inner.left, inner.right),
-                random.randint(inner.top, inner.bottom),
-            ) if random.random() < 0.75 else None
+            if random.random() < 0.75:
+                from src.npc import get_safe_spawn_point
+                tx, ty = get_safe_spawn_point(inner, blockers, npc.rect.copy())
+                npc.target_pos = (tx, ty)
+            else:
+                npc.target_pos = None
 
     def _clear_bus_path(self):
         """Ensure no NPCs block the road during the bus cinematic and departure."""
@@ -2395,22 +2282,7 @@ class Game:
                     npc.speed_multiplier = 1.2
                     count += 1
 
-        # Also handle classroom-group NPCs that are seated in the cafeteria
-        for group in self._classroom_groups:
-            for npc in [group["teacher"]] + group["students"]:
-                if getattr(npc, "ignore_schedule", False): continue
-                if instant: continue
-                room = floor1.get_room_at(npc.rect.centerx, npc.rect.centery)
-                if room and room.id == "f1_cafeteria":
-                    wps = self._cafeteria_exit_waypoints(npc)
-                    npc.bound_rect = None
-                    npc.target_pos = wps[0]
-                    npc.target_queue = wps[1:]
-                    npc.start_delay = count * 0.35
-                    npc.stop_at_target = True
-                    npc.ai_enabled = True
-                    npc.speed_multiplier = 1.2
-                    count += 1
+
 
     # ── day cycle ─────────────────────────────────────────────
 
@@ -2426,7 +2298,8 @@ class Game:
             day_name = days[(self.day_number - 1) % 5]
             
             # Ensure phone schedule is synced with current day number
-            self.phone.update_day_schedule(self.day_number)
+            self.aiden_phone.update_day_schedule(self.day_number)
+            self.lena_phone.update_day_schedule(self.day_number)
 
             # Silence "Arrival" notification for Day 2+ as requested
             if self.day_number > 1 and self.current_phase == DayPhase.ARRIVAL:
@@ -2434,19 +2307,19 @@ class Game:
             else:
                 msg = f"📅 {day_name} — {phase_label}"
                 self.ui.show_notification(msg, NOTIF_INFO)
-            self.npc_manager.update_schedules(self.current_phase, self.school_map)
+            self.npc_manager.update_schedules(self.current_phase, self.school_map, is_visible=self._is_npc_on_camera)
             self._spread_first_floor_npcs()
             if random.random() < 0.3:
                 self._random_event()
         else:
             self.day_number += 1
             self.event_queue.load_day_schedule()
-            self.phone.update_day_schedule(self.day_number)
+            self.aiden_phone.update_day_schedule(self.day_number)
+            self.lena_phone.update_day_schedule(self.day_number)
             self.time_of_day_minutes = 7 * 60
             # Clear NPCs from cafeteria instantly before the new day
             self._move_npcs_out_of_cafeteria(instant=True)
-            # Return classroom students to their seats
-            self._move_class_groups("classroom")
+
             self._advance_phase()
 
     def _random_event(self):
@@ -2589,6 +2462,7 @@ class Game:
             GameState.COMBAT:            lambda: (self._draw_world(), self.combat_system.draw(self.screen, self.camera)),
             GameState.HACKING:           lambda: self.hacking_game.draw(self.screen),
             GameState.DIALOGUE:          lambda: (self._draw_world(), self.dialogue_system.draw(self.screen)),
+            GameState.SOCIAL_INTERACTION: lambda: (self._draw_world(), self.social_ui.draw(self.screen)),
             GameState.PINGPONG:          lambda: self.pingpong.draw(self.screen),
             GameState.TRADING:           lambda: (self._draw_world(), self.trade_system.draw(self.screen)),
             GameState.PAUSED:            lambda: (self._draw_world(), self.ui.draw_pause_menu(self.screen, getattr(self, 'pause_sel', 0), self.pause_options)),
@@ -2607,7 +2481,7 @@ class Game:
             ),
             GameState.GAME_OVER:         lambda: self.ui.draw_game_over(self.screen, self.reputation.calculate_ending()),
             GameState.MAP:               lambda: self._draw_map(),
-            GameState.DAY_OVER:           lambda: self._draw_day_over(),
+
             GameState.INTRO_CINEMATIC:    lambda: self._draw_cinematic(),
         }
         fn = draw_table.get(self.state, self._draw_world)
@@ -2618,7 +2492,7 @@ class Game:
 
         # HUD overlay
         if (
-            self.state in (GameState.PLAYING, GameState.COMBAT, GameState.DIALOGUE)
+            self.state in (GameState.PLAYING, GameState.COMBAT, GameState.DIALOGUE, GameState.SOCIAL_INTERACTION)
             and not self.phone.is_fullscreen()
         ):
             floor = self.school_map.get_floor(self.current_floor)
@@ -2639,6 +2513,9 @@ class Game:
                 self.ui.phone_icon_rect,
                 unread=self.phone.unread_count,
             )
+            # Building entry prompt
+            if self.current_floor == FLOOR_CAMPUS and self._entry_prompt_target:
+                self._draw_entry_prompt(self._entry_prompt_target["label"])
         # Notifications always on top (suppress during cinematic)
         if self.state != GameState.INTRO_CINEMATIC:
             self.ui.draw_notifications(self.screen)
@@ -2657,7 +2534,7 @@ class Game:
     def _draw_world(self):
         """Render floor, NPCs, player."""
         # Smooth camera zoom
-        target_zoom = 1.0 if self.current_floor == FLOOR_CAMPUS else 1.5
+        target_zoom = 1.0 if self.current_floor == FLOOR_CAMPUS else 1.25
         current_zoom = getattr(self.camera, 'zoom', 1.0)
         if abs(current_zoom - target_zoom) > 0.01:
             new_zoom = current_zoom + (target_zoom - current_zoom) * 0.05
@@ -2688,7 +2565,14 @@ class Game:
             floor.draw_foreground(target_surf, self.camera, self.player)
 
         for npc in self.npc_manager.get_npcs_on_floor(self.current_floor):
-            npc.draw(target_surf, self.camera)
+            if self._is_npc_on_camera(npc):
+                npc.draw(target_surf, self.camera)
+
+        # Draw interaction prompt for nearest NPC in range
+        if self.state == GameState.PLAYING:
+            nearest_npc = self._nearest_npc(NPC_INTERACTION_RANGE)
+            if nearest_npc:
+                nearest_npc.draw_interaction_prompt(target_surf, self.camera)
 
         # Hide player sprite during drive_away phase (player is "inside" the car)
         if not (self._car_departure_active and self._car_depart_phase == "drive_away"):
@@ -2718,9 +2602,9 @@ class Game:
         pygame.draw.rect(self.screen, (26, 30, 38), panel, border_radius=8)
         pygame.draw.rect(self.screen, (160, 170, 190), panel, 2, border_radius=8)
         is_controller = bool(self.controller and self.controller.connected)
-        key_hint = "[A]" if is_controller else "[SPACE]"
+        key_hint = "[A]" if is_controller else "[E]"
         text = f"Enter {building_name}?  {key_hint} yes  |  move away to cancel"
-        fnt = pygame.font.SysFont("arial", 22, bold=True)
+        fnt = pygame.font.Font(VT323_PATH, 22)
         surf = fnt.render(text, True, (232, 236, 245))
         self.screen.blit(surf, (panel.centerx - surf.get_width() // 2,
                                 panel.centery - surf.get_height() // 2))
@@ -2902,23 +2786,12 @@ class Game:
         self._noah_guide_active = False
         self._cinematic_stairs_unlocked = False
         self._cine_phase = "done"
-        # Make sure Noah Carter is freed from the cinematic role
-        noah = self.npc_manager.get_npc_by_id("npc_noah_carter")
-        if noah:
-            noah.ai_enabled = True
-            noah.ignore_schedule = False
-            floor2 = self.school_map.get_floor(FLOOR_2F)
-            if floor2:
-                corridor = floor2.rooms.get("f2_corridor")
-                if corridor:
-                    noah.bound_rect = corridor.rect.inflate(-40, -40)
-                    # Place Noah in the corridor away from doors (center-left of corridor)
-                    noah.rect.center = (corridor.rect.centerx - 200, corridor.rect.centery)
+        
         # Ensure player is placed at entrance if still off-screen
         if not self._player_spawned or self.player.rect.x < 0:
             f0 = self.school_map.get_floor(0)
             if f0:
-                entrance = f0.rooms.get("campus_entrance_roundabout")
+                entrance = f0.rooms.get("c_roundabout")
                 if entrance:
                     self.player.rect.center = entrance.rect.center
                     if self.remote_player:
@@ -2932,6 +2805,20 @@ class Game:
                 if self.remote_player:
                     self.remote_player.rect.center = (2040, 2650)
             self._player_spawned = True
+
+        # Free Noah and move him to Floor 2
+        noah = self.npc_manager.get_npc_by_id("npc_noah_carter")
+        if noah:
+            noah.current_floor = FLOOR_2F
+            noah.ai_enabled = True
+            noah.ignore_schedule = False
+            floor2 = self.school_map.get_floor(FLOOR_2F)
+            if floor2:
+                corridor = floor2.rooms.get("f2_corridor")
+                if corridor:
+                    noah.bound_rect = corridor.rect.inflate(-40, -40)
+                    noah.rect.center = (corridor.rect.centerx - 200, corridor.rect.centery)
+        
         self.camera.update(self.player)
 
     def _add_noah_contact(self):
@@ -3067,7 +2954,7 @@ class Game:
             dim = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
             dim.fill((0, 0, 0, 100))
             self.screen.blit(dim, (0, 0))
-            font_sm = pygame.font.SysFont("Arial", 20)
+            font_sm = pygame.font.Font(VT323_PATH, 20)
             lbl = font_sm.render("Ravenside High — Entrance", True, (180, 180, 180))
             self.screen.blit(lbl, lbl.get_rect(center=(SCREEN_WIDTH // 2, 40)))
 
@@ -3092,7 +2979,7 @@ class Game:
         if self._cine_phase == "guide":
             self._draw_mission_box("Follow Noah Carter through the school.")
             if self._noah_wait_for_player:
-                font = pygame.font.SysFont("Arial", 22, bold=True)
+                font = pygame.font.Font(VT323_PATH, 22)
                 txt = font.render("Noah is waiting for you...", True, (255, 220, 100))
                 self.screen.blit(txt, txt.get_rect(center=(SCREEN_WIDTH // 2, 150)))
 
@@ -3103,7 +2990,7 @@ class Game:
 
         # ── Prompt to advance ──
         if self._cine_phase in ("dialogue", "final_dialogue"):
-            font_hint = pygame.font.SysFont("Arial", 16)
+            font_hint = pygame.font.Font(VT323_PATH, 16)
             hint = font_hint.render("Press SPACE to continue", True, (160, 160, 160))
             self.screen.blit(hint, hint.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT - 30)))
 
@@ -3117,7 +3004,7 @@ class Game:
         skip_surf.fill((20, 20, 30, 200))
         self.screen.blit(skip_surf, (skip_x, skip_y))
         pygame.draw.rect(self.screen, (180, 180, 200), skip_rect, 2, border_radius=8)
-        font_skip = pygame.font.SysFont("Arial", 15, bold=True)
+        font_skip = pygame.font.Font(VT323_PATH, 15)
         skip_label = font_skip.render("Skip  >>>", True, (220, 220, 240))
         self.screen.blit(skip_label, skip_label.get_rect(center=skip_rect.center))
         # Yellow selection frame when focused (same style as wallet/FF button)
@@ -3171,17 +3058,17 @@ class Game:
             # Fallback: Draw initials in a stylized circle
             pygame.draw.circle(self.screen, (40, 50, 70), (av_cx, av_cy), av_radius - 2)
             initial = speaker[0].upper() if speaker else "?"
-            f_init = pygame.font.SysFont("arial", 48, bold=True)
+            f_init = pygame.font.Font(VT323_PATH, 48)
             txt = f_init.render(initial, True, UI_ACCENT)
             self.screen.blit(txt, txt.get_rect(center=(av_cx, av_cy)))
 
         # Speaker name (same style as dialogue.py)
-        font_name = pygame.font.SysFont("arial", 22, bold=True)
+        font_name = pygame.font.Font(VT323_PATH, 22)
         self.screen.blit(font_name.render(speaker, True, UI_ACCENT),
                          (box.x + 18, box.y + 12))
 
         # Dialogue text (with word wrap, same as dialogue.py)
-        font_text = pygame.font.SysFont("arial", 20)
+        font_text = pygame.font.Font(VT323_PATH, 20)
         self._draw_cinematic_wrapped_text(text, font_text, UI_TEXT,
                                            box.x + 18, box.y + 42, box.width - 36)
 
@@ -3212,52 +3099,14 @@ class Game:
         pygame.draw.rect(surf, (100, 180, 255, 180), surf.get_rect(), 2, border_radius=10)
         self.screen.blit(surf, (bx, by))
 
-        icon_font = pygame.font.SysFont("Arial", 16, bold=True)
+        icon_font = pygame.font.Font(VT323_PATH, 16)
         icon = icon_font.render("MISSION", True, (100, 180, 255))
         self.screen.blit(icon, (bx + 15, by + 8))
 
-        txt_font = pygame.font.SysFont("Arial", 20)
+        txt_font = pygame.font.Font(VT323_PATH, 20)
         txt = txt_font.render(mission_text, True, WHITE)
         self.screen.blit(txt, (bx + 15, by + 30))
 
-    def _draw_day_over(self):
-        """Draw the end-of-day overlay with a 'Next Day' button."""
-        self._draw_world() # Keep game visible in background
-        
-        overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
-        overlay.fill((0, 0, 0, 180))
-        self.screen.blit(overlay, (0, 0))
-        
-        title_font = pygame.font.SysFont("Arial", 64, bold=True)
-        btn_font = pygame.font.SysFont("Arial", 32)
-        
-        # Title
-        text = title_font.render("School Day Is Over!", True, WHITE)
-        rect = text.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 50))
-        self.screen.blit(text, rect)
-        
-        # Button
-        btn_rect = pygame.Rect(0, 0, 300, 60)
-        btn_rect.center = (SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 50)
-        
-        mouse_pos = pygame.mouse.get_pos()
-        controller_connected = self.controller and self.controller.connected
-        hover = btn_rect.collidepoint(mouse_pos)
-        color = (100, 150, 255) if (hover or controller_connected) else (60, 100, 200)
-        
-        pygame.draw.rect(self.screen, color, btn_rect, border_radius=10)
-        outline_col = (255, 220, 50) if controller_connected else WHITE
-        pygame.draw.rect(self.screen, outline_col, btn_rect, 3, border_radius=10)
-        
-        label = "Go to next day"
-        if controller_connected:
-            label = "\u24B6  Go to next day"  # circled A symbol
-        btn_text = btn_font.render(label, True, WHITE)
-        self.screen.blit(btn_text, btn_text.get_rect(center=btn_rect.center))
-        
-        # Handle button click
-        if pygame.mouse.get_pressed()[0] and hover:
-            self._begin_day_transition()
 
     def _begin_day_transition(self):
         """Show the 'Day X' fullscreen transition, then start the next day."""
@@ -3296,12 +3145,14 @@ class Game:
         
         # Reset school systems for a new day
         self.event_queue.load_day_schedule()
-        self._class_phase = "arrival"
+        self._school_day_ended = False
         self._advance_phase() # Triggers notifications
         
         # Re-init NPCs for the new day positions
-        self.npc_manager.update_schedules(self.current_phase, self.school_map)
+        self.npc_manager.update_schedules(self.current_phase, self.school_map, is_visible=self._is_npc_on_camera)
         self._spread_first_floor_npcs()
+        if hasattr(self, 'schedule_manager'):
+            self.schedule_manager.reset_day()
         
         # Close cafeteria
         floor1 = self.school_map.get_floor(FLOOR_1F)
@@ -3456,7 +3307,7 @@ class Game:
         pygame.draw.rect(self.screen, WHITE, (bx, by, box_w, box_h), 3, border_radius=16)
 
         # Title
-        title_font = pygame.font.SysFont("Arial", 28, bold=True)
+        title_font = pygame.font.Font(VT323_PATH, 28)
         title = title_font.render("End the day and go home?", True, WHITE)
         self.screen.blit(title, title.get_rect(center=(SCREEN_WIDTH // 2, by + 60)))
 
@@ -3486,7 +3337,7 @@ class Game:
         pygame.draw.rect(self.screen, cancel_color, cancel_rect, border_radius=10)
         pygame.draw.rect(self.screen, can_outline, cancel_rect, 3, border_radius=10)
 
-        font = pygame.font.SysFont("Arial", 20, bold=True)
+        font = pygame.font.Font(VT323_PATH, 20)
         acc_text = font.render("\u24B6 Accept" if controller_connected and sel == "accept" else "Accept", True, WHITE)
         can_text = font.render("\u24B7 Cancel" if controller_connected and sel == "cancel" else "Cancel", True, WHITE)
 
@@ -3507,15 +3358,15 @@ class Game:
         self.screen.fill((0, 0, 0))
 
         # "Day X" title
-        day_font = pygame.font.SysFont("Arial", 80, bold=True)
+        day_font = pygame.font.Font(VT323_PATH, 80)
         day_text = day_font.render(f"Day {self._day_transition_target_day}", True, WHITE)
         self.screen.blit(day_text, day_text.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 20)))
 
         # Subtitle
-        sub_font = pygame.font.SysFont("Arial", 28)
+        sub_font = pygame.font.Font(VT323_PATH, 28)
         sub_text = sub_font.render("A new day begins...", True, (160, 160, 180))
         self.screen.blit(sub_text, sub_text.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 50)))
         # Subtitle
-        sub_font = pygame.font.SysFont("Arial", 28)
+        sub_font = pygame.font.Font(VT323_PATH, 28)
         sub_text = sub_font.render("A new day begins...", True, (160, 160, 180))
         self.screen.blit(sub_text, sub_text.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 50)))
