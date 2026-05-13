@@ -175,6 +175,8 @@ class NPC:
         self.color = GROUP_COLORS.get(group.value, MEDIUM_GRAY)
 
         self.ignore_schedule = False
+        self.subgroup: str = ""          # assigned by ScheduleManager
+        self.walk_speed_variance: float = random.uniform(0.9, 1.1)
 
         # ──────── SOCIAL COMPONENT ────────────────────────────
         # Personal relationship metrics with the player
@@ -294,15 +296,8 @@ class NPC:
             floor = school_map.get_floor(self.current_floor)
             if floor and floor.rooms:
                 room = random.choice(list(floor.rooms.values()))
-                for _ in range(10):
-                    if room.rect.width > 60 and room.rect.height > 60:
-                        self.rect.x = room.rect.x + random.randint(30, room.rect.width - 60)
-                        self.rect.y = room.rect.y + random.randint(30, room.rect.height - 60)
-                    else:
-                        self.rect.x = room.rect.x
-                        self.rect.y = room.rect.y
-                    if not any(self.rect.colliderect(w) for w in floor.walls):
-                        break
+                rx, ry = get_safe_spawn_point(room.rect, floor.walls, self.rect)
+                self.rect.center = (rx, ry)
                 return
 
         # Spawn near the mapped spawn point with some randomness
@@ -397,6 +392,30 @@ class NPC:
             dist = (dx_raw**2 + dy_raw**2)**0.5
             
             if dist > 15:
+                # Stuck detection
+                if not hasattr(self, '_stuck_timer'):
+                    self._stuck_timer = 0.0
+                    self._last_pos = self.rect.center
+                
+                if walls and (self.rect.centerx - self._last_pos[0])**2 + (self.rect.centery - self._last_pos[1])**2 < 4:
+                    self._stuck_timer += dt
+                else:
+                    self._stuck_timer = 0.0
+                self._last_pos = self.rect.center
+                
+                if self._stuck_timer > 1.5:
+                    self._stuck_timer = 0.0
+                    # Skip to next waypoint or give up
+                    if getattr(self, "target_queue", None) and len(self.target_queue) > 0:
+                        self.target_pos = None # will pick up next waypoint on next frame
+                    else:
+                        self.target_pos = None
+                        if getattr(self, "stop_at_target", False):
+                            self.ai_enabled = False
+                            self.stop_at_target = False
+                        self._wander_timer = 0
+                    return
+
                 speed = NPC_SPEED * getattr(self, 'speed_multiplier', 1.0) * 1.5
                 self._wander_dx = (dx_raw / dist) * speed
                 self._wander_dy = (dy_raw / dist) * speed
@@ -411,15 +430,13 @@ class NPC:
                     next_target = self.target_queue.pop(0)
                     
                     if isinstance(next_target, str):
-                        # Handle floor transitions
-                        if next_target == "SWITCH_TO_F1":
-                            self.current_floor = 1
-                            # Spawn at Floor 1 stairs
-                            self.rect.center = (2150 + 40, 1720 + 140)
-                        elif next_target == "SWITCH_TO_F2":
-                            self.current_floor = 2
-                            # Spawn at Floor 2 stairs
-                            self.rect.center = (2150 + 40, 1720 + 140)
+                        # Handle floor transitions (SWITCH_TO_F0..F6)
+                        if next_target.startswith("SWITCH_TO_F"):
+                            try:
+                                floor_id = int(next_target[len("SWITCH_TO_F"):])
+                                self.current_floor = floor_id
+                            except ValueError:
+                                pass
                         
                         # Get the next coordinate target if it exists
                         if self.target_queue:
@@ -436,10 +453,10 @@ class NPC:
                     self._wander_timer = 0 # Resume normal wandering
         
         elif self._wander_timer <= 0:
-            self._wander_timer = random.uniform(2, 5)
+            self._wander_timer = random.uniform(1, 3)
             speed = NPC_SPEED * getattr(self, 'speed_multiplier', 1.0)
-            self._wander_dx = random.choice([-1, 0, 0, 1]) * speed
-            self._wander_dy = random.choice([-1, 0, 0, 1]) * speed
+            self._wander_dx = random.choice([-1, 0, 1]) * speed
+            self._wander_dy = random.choice([-1, 0, 1]) * speed
             if self._wander_dx > 0:
                 self.direction = Direction.RIGHT
             elif self._wander_dx < 0:
@@ -478,8 +495,11 @@ class NPC:
             collided = collided or self.rect.topleft != before_clamp.topleft
 
         if collided:
-            self._wander_dx = 0
-            self._wander_dy = 0
+            if not getattr(self, "target_pos", None):
+                self._wander_timer = 0 # Repick direction immediately next frame
+            else:
+                self._wander_dx = 0
+                self._wander_dy = 0
             self._wander_timer = min(self._wander_timer, 0.25)
 
         # Animation state update
@@ -591,8 +611,24 @@ class NPC:
 
 
 # ══════════════════════════════════════════════════════════════
-#  NPC MANAGER
+#  NPC MANAGER & HELPERS
 # ══════════════════════════════════════════════════════════════
+
+def get_safe_spawn_point(room_rect, floor_walls, npc_rect, max_attempts=40) -> tuple[int, int]:
+    """Find a random coordinate inside room_rect that does not collide with floor_walls.
+    Returns (x, y). If all attempts fail, returns the room center."""
+    import random
+    inner = room_rect.inflate(-60, -60)
+    if inner.width <= 0 or inner.height <= 0:
+        inner = room_rect
+    for _ in range(max_attempts):
+        x = random.randint(inner.left, inner.right)
+        y = random.randint(inner.top, inner.bottom)
+        npc_rect.center = (x, y)
+        if not any(npc_rect.colliderect(w) for w in floor_walls):
+            return x, y
+    return inner.centerx, inner.centery
+
 
 class NPCManager:
     """Owns all NPCs, the global relationship graph, and zone queries."""
@@ -729,8 +765,13 @@ class NPCManager:
 
     # ── schedule update ───────────────────────────────────────
 
-    def update_schedules(self, phase: DayPhase, school_map=None):
-        """Move every NPC to the zone their schedule dictates."""
+    def update_schedules(self, phase: DayPhase, school_map=None, is_visible=None):
+        """Move every NPC to the zone their schedule dictates.
+        
+        Args:
+            is_visible: Optional callback(npc) -> bool. If provided,
+                NPCs where is_visible returns True will NOT be teleported.
+        """
         from settings import FLOOR_CAMPUS, FLOOR_1F, FLOOR_2F
         special_ids = {"npc_director", "npc_oscar", "npc_noah_carter", "npc_gordon",
                        "npc_oscar_obs1", "npc_oscar_obs2", "npc_oscar_obs3", "npc_oscar_obs4",
@@ -746,47 +787,42 @@ class NPCManager:
                 if target_zone == 3:
                     npc.current_zone = 3
                     continue
+                # Skip teleportation if NPC is visible on camera
+                if is_visible and is_visible(npc):
+                    npc.current_zone = target_zone  # Update zone logically
+                    continue
                 npc.move_to_zone(target_zone, school_map)
 
             # Natural behavior for generic NPCs: scatter within valid rooms on their current floor
             # Only scatter if we JUST changed zone or if they aren't on any floor yet
             if npc.id not in special_ids and school_map and (npc.current_zone != target_zone or npc.current_floor == -1):
+                # Skip scattering if NPC is visible on camera
+                if is_visible and is_visible(npc):
+                    continue
                 floor = school_map.get_floor(npc.current_floor)
                 if floor and floor.rooms:
-                    # Filter out campus building interiors/facades so NPCs don't spawn on roofs
+                    # Filter out campus building interiors/facades, stairs, and bathrooms
                     _campus_excluded = {
                         "c_building", "f1_cafeteria",
                         "c_tennis", "c_coliseum", "c_coliseum_court",
+                        "f1_stairs_2f", "f1_basement_stairs",
+                        "f2_stairs_1f", "f2_stairs_rooftop", "bs_stairs_1f",
+                        "f1_men_bath", "f1_women_bath"
                     }
                     valid_rooms = [r for r in floor.rooms.values() if r.id not in _campus_excluded]
                     if valid_rooms:
                         room = random.choice(valid_rooms)
-                        placed = False
-                        for _ in range(20):
-                            if room.rect.width > 60 and room.rect.height > 60:
-                                rx = room.rect.x + random.randint(30, room.rect.width - 60)
-                                ry = room.rect.y + random.randint(30, room.rect.height - 60)
-                            else:
-                                rx = room.rect.x
-                                ry = room.rect.y
-                            
-                            npc.rect.x = rx
-                            npc.rect.y = ry
-                            if not any(npc.rect.colliderect(w) for w in floor.walls):
-                                placed = True
-                                break
+                        rx, ry = get_safe_spawn_point(room.rect, floor.walls, npc.rect)
+                        npc.rect.center = (rx, ry)
                         
-                        if placed:
-                            # Natural movement: Give them a target inside the room to walk towards
-                            if random.random() < 0.6:
-                                npc.target_pos = (
-                                    room.rect.x + random.randint(30, max(31, room.rect.width - 30)),
-                                    room.rect.y + random.randint(30, max(31, room.rect.height - 30))
-                                )
-                                npc.target_queue = []
-                                npc.stop_at_target = False
-                            else:
-                                npc.target_pos = None
+                        # Natural movement: Give them a target inside the room to walk towards
+                        if random.random() < 0.6:
+                            tx, ty = get_safe_spawn_point(room.rect, floor.walls, npc.rect.copy())
+                            npc.target_pos = (tx, ty)
+                            npc.target_queue = []
+                            npc.stop_at_target = False
+                        else:
+                            npc.target_pos = None
 
             npc.having_bad_day = False      # reset each phase
 
@@ -798,7 +834,8 @@ class NPCManager:
             npc.update(dt)
 
     def update_on_floor(self, dt: float, floor_id: int, floor=None, walls: list[pygame.Rect] | None = None,
-                        classrooms_restricted: bool = False, restricted_rooms: list[str] | None = None):
+                        classrooms_restricted: bool = False, restricted_rooms: list[str] | None = None,
+                        is_visible=None):
         """Tick AI for NPCs on the given floor."""
         npcs = self.get_npcs_on_floor(floor_id)
         for npc in npcs:
@@ -820,19 +857,25 @@ class NPCManager:
                         else: npc.rect.y += 2
 
             # 2. Build wall list including static walls + other NPCs (avoid self)
-            combined_walls: list[pygame.Rect] = list(walls) if walls else []
+            npc_is_visible = is_visible(npc) if is_visible else True
             previous_rect = npc.rect.copy()
-            for other in npcs:
-                if other is npc:
-                    continue
-                # If NPC is seeking a target (e.g., exiting a room), 
-                # ignore other NPCs to avoid bottlenecks at narrow doors
-                if npc.target_pos is not None:
-                    continue
-                combined_walls.append(other.rect.copy())
             
-            npc.update(dt, combined_walls)
-            
+            if not npc_is_visible:
+                # Off-camera optimization: ghost movement
+                npc.update(dt, None)
+            else:
+                combined_walls: list[pygame.Rect] = list(walls) if walls else []
+                for other in npcs:
+                    if other is npc:
+                        continue
+                    # If NPC is seeking a target (e.g., exiting a room), 
+                    # ignore other NPCs to avoid bottlenecks at narrow doors
+                    if npc.target_pos is not None:
+                        continue
+                    combined_walls.append(other.rect.copy())
+                
+                npc.update(dt, combined_walls)
+                
             # Classroom restriction for generic wanderers
             if classrooms_restricted and restricted_rooms and npc.id.startswith("npc_rnd_"):
                 room = floor.get_room_at(npc.rect.centerx, npc.rect.centery)
