@@ -1646,10 +1646,7 @@ class Phone:
             return False
 
         if self._view == "map" and self._map_ref:
-            if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-                self._map_close_to_home()
-                return True
-            # Direct exit from map without clicking button (handled by world_map.py ESC/B button)
+            # Let world_map handle the event first (handles both teleport cancel and map exit)
             close = self._map_ref.handle_event(event)
             if close:
                 self._map_close_to_home()
