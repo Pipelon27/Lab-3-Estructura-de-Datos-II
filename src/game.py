@@ -2514,6 +2514,9 @@ class Game:
                 self.ui.phone_icon_rect,
                 unread=self.phone.unread_count,
             )
+            # Building entry prompt
+            if self.current_floor == FLOOR_CAMPUS and self._entry_prompt_target:
+                self._draw_entry_prompt(self._entry_prompt_target["label"])
         # Notifications always on top (suppress during cinematic)
         if self.state != GameState.INTRO_CINEMATIC:
             self.ui.draw_notifications(self.screen)
@@ -2600,7 +2603,7 @@ class Game:
         pygame.draw.rect(self.screen, (26, 30, 38), panel, border_radius=8)
         pygame.draw.rect(self.screen, (160, 170, 190), panel, 2, border_radius=8)
         is_controller = bool(self.controller and self.controller.connected)
-        key_hint = "[A]" if is_controller else "[SPACE]"
+        key_hint = "[A]" if is_controller else "[E]"
         text = f"Enter {building_name}?  {key_hint} yes  |  move away to cancel"
         fnt = pygame.font.SysFont("arial", 22, bold=True)
         surf = fnt.render(text, True, (232, 236, 245))
@@ -2784,23 +2787,12 @@ class Game:
         self._noah_guide_active = False
         self._cinematic_stairs_unlocked = False
         self._cine_phase = "done"
-        # Make sure Noah Carter is freed from the cinematic role
-        noah = self.npc_manager.get_npc_by_id("npc_noah_carter")
-        if noah:
-            noah.ai_enabled = True
-            noah.ignore_schedule = False
-            floor2 = self.school_map.get_floor(FLOOR_2F)
-            if floor2:
-                corridor = floor2.rooms.get("f2_corridor")
-                if corridor:
-                    noah.bound_rect = corridor.rect.inflate(-40, -40)
-                    # Place Noah in the corridor away from doors (center-left of corridor)
-                    noah.rect.center = (corridor.rect.centerx - 200, corridor.rect.centery)
+        
         # Ensure player is placed at entrance if still off-screen
         if not self._player_spawned or self.player.rect.x < 0:
             f0 = self.school_map.get_floor(0)
             if f0:
-                entrance = f0.rooms.get("campus_entrance_roundabout")
+                entrance = f0.rooms.get("c_roundabout")
                 if entrance:
                     self.player.rect.center = entrance.rect.center
                     if self.remote_player:
@@ -2814,6 +2806,20 @@ class Game:
                 if self.remote_player:
                     self.remote_player.rect.center = (2040, 2650)
             self._player_spawned = True
+
+        # Free Noah and move him to Floor 2
+        noah = self.npc_manager.get_npc_by_id("npc_noah_carter")
+        if noah:
+            noah.current_floor = FLOOR_2F
+            noah.ai_enabled = True
+            noah.ignore_schedule = False
+            floor2 = self.school_map.get_floor(FLOOR_2F)
+            if floor2:
+                corridor = floor2.rooms.get("f2_corridor")
+                if corridor:
+                    noah.bound_rect = corridor.rect.inflate(-40, -40)
+                    noah.rect.center = (corridor.rect.centerx - 200, corridor.rect.centery)
+        
         self.camera.update(self.player)
 
     def _add_noah_contact(self):
