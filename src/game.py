@@ -45,6 +45,9 @@ from src.dialogue   import DialogueSystem
 from src.ui         import UI
 from src.world_map  import WorldMap
 from src.pingpong   import PingPongGame
+from src.social_reputation import ReputationManager
+from src.social_dialogue import SocialDialogueManager
+from src.social_ui import SocialInteractionUI
 from src.controller import get_controller, init_controller, update_controller, XBOX_A
 
 FLOOR_COLISEUM_INTERIOR = 5
@@ -390,6 +393,17 @@ class Game:
         self.camera.offset.y = max(0, min(target_y, self.camera.map_height - SCREEN_HEIGHT))
         # Ping-pong minigame
         self.pingpong = PingPongGame()
+        
+        # ── NEW SOCIAL SYSTEMS ────────────────────────────────
+        self.social_reputation_manager = ReputationManager()
+        self.social_reputation_manager.set_reputation_system(self.reputation)
+        
+        self.social_dialogue_manager = SocialDialogueManager()
+        self.social_dialogue_manager.reputation_manager = self.social_reputation_manager
+        
+        self.social_ui = SocialInteractionUI()
+        self.social_dialogue_manager.social_ui = self.social_ui
+        # ──────────────────────────────────────────────────────
         
         from settings import Character
         self.aiden_phone = Phone(self.screen, time_source=lambda: self.time_of_day_minutes, player_name="aiden")
@@ -1043,6 +1057,10 @@ class Game:
             # When ping-pong is active, let the minigame handle ESC itself
             if self.state == GameState.PINGPONG:
                 pass  # fall through to state-specific dispatch below
+            elif self.state == GameState.SOCIAL_INTERACTION:
+                # Close social interaction on ESC
+                self.social_dialogue_manager.force_close()
+                self.state = GameState.PLAYING
             elif self.state == GameState.PAUSED:
                 self.state = getattr(self, 'previous_state', GameState.PLAYING)
             elif self.state == GameState.PLAYING:
@@ -1076,6 +1094,7 @@ class Game:
             GameState.PLAYING:          self._keys_playing,
             GameState.INTRO_CINEMATIC:  self._keys_cinematic,
             GameState.DIALOGUE:         lambda e: self.dialogue_system.handle_input(e),
+            GameState.SOCIAL_INTERACTION: lambda e: self.social_dialogue_manager.handle_input(e),
             GameState.PINGPONG:        lambda e: self.pingpong.handle_input(e),
             GameState.COMBAT:           lambda e: self.combat_system.handle_input(e, self.player),
             GameState.HACKING:          lambda e: self.hacking_game.handle_input(e),
@@ -1091,11 +1110,11 @@ class Game:
     # ── key handlers per state ────────────────────────────────
 
     def _keys_playing(self, event: pygame.event.Event):
-        # ── Car panel active: SPACE confirms, ESC dismisses ──
+        # ── Car panel active: E confirms, ESC dismisses ──
         if self._car_panel_active:
             if self._car_panel_input_delay > 0:
                 return  # ignore input during delay
-            if event.key == KEY_INTERACT:
+            if event.key == pygame.K_e:
                 self._car_panel_active = False
                 self._start_car_departure()
             elif event.key == KEY_PAUSE:
@@ -1103,18 +1122,15 @@ class Game:
                 self._car_panel_cooldown = 1.0  # prevent re-trigger
             return
 
-        # If SPACE (KEY_INTERACT) and an NPC is nearby, open dialogue;
-        # otherwise treat SPACE (and dash aliases) as dash.
-        if event.key == KEY_INTERACT:
+        # If E is pressed and an NPC is nearby, open dialogue;
+        if event.key == pygame.K_e:
             npc = self._nearest_npc(NPC_INTERACTION_RANGE)
             if npc:
                 self._try_interact()
             elif self._try_building_entry_confirm():
                 pass
-            else:
-                self.player.start_dash()
-        elif event.key in (KEY_DASH_ALT, KEY_DASH_ALT2):
-            # alt dash keys still trigger dash
+        # SPACE (KEY_INTERACT) and dash aliases trigger dash
+        elif event.key in (KEY_INTERACT, KEY_DASH_ALT, KEY_DASH_ALT2):
             self.player.start_dash()
         elif event.key == KEY_INVENTORY:
             # Inventory removed - open wallet instead
@@ -1201,13 +1217,19 @@ class Game:
         """Interact with nearest NPC."""
         npc = self._nearest_npc(NPC_INTERACTION_RANGE)
         if npc:
+            # Check if this NPC has a dialogue_id (story NPC using old system)
             dlg_id = npc.get_dialogue_id(self.character)
             if dlg_id:
+                # Use old dialogue system for story NPCs
                 self.dialogue_system.start_dialogue(
                     dlg_id, npc, self.player, self.reputation,
                 )
                 self.state = GameState.DIALOGUE
                 self.mission_manager.advance_objective_event("talk_to", npc.id)
+            else:
+                # Use new social dialogue system for regular NPCs
+                if self.social_dialogue_manager.try_start(npc, self.player):
+                    self.state = GameState.SOCIAL_INTERACTION
 
     def _get_campus_entry_target(self):
         if self.current_floor != FLOOR_CAMPUS:
@@ -1441,8 +1463,9 @@ class Game:
             pt = self.phone.consume_pending_teleport()
             if pt:
                 self._try_teleport_to(pt[0], pt[1], pt[2])
-        # Always tick UI (notifications)
+        # Always tick UI (notifications) and social UI
         self.ui.update(dt)
+        self.social_ui.update(dt)
         if getattr(self, 'sibling_npc', None):
             col = (255, 180, 220) if self.character == Character.AIDEN else (100, 150, 255)
             self.world_map.set_marker(self.sibling_npc.name, self.sibling_npc.current_floor, self.sibling_npc.rect.centerx, self.sibling_npc.rect.centery, color=col)
@@ -1596,12 +1619,18 @@ class Game:
             if result is not None:
                 self.state = GameState.PLAYING
                 self._apply_dialogue_result(result)
+        elif self.state == GameState.SOCIAL_INTERACTION:
+            # Update social dialogue manager
+            self.social_dialogue_manager.update(dt)
+            # Check if interaction is finished
+            if self.social_dialogue_manager.get_state().name == "IDLE":
+                self.state = GameState.PLAYING
         elif self.state == GameState.TRADING:
             result = self.trade_system.update()
             if result is not None:
                 self.state = GameState.PLAYING
 
-        if self.state in (GameState.PLAYING, GameState.COMBAT, GameState.DIALOGUE, GameState.PINGPONG):
+        if self.state in (GameState.PLAYING, GameState.COMBAT, GameState.DIALOGUE, GameState.SOCIAL_INTERACTION, GameState.PINGPONG):
             self._tick_time(dt)
             self._update_class_schedule()
 
@@ -2629,6 +2658,7 @@ class Game:
             GameState.COMBAT:            lambda: (self._draw_world(), self.combat_system.draw(self.screen, self.camera)),
             GameState.HACKING:           lambda: self.hacking_game.draw(self.screen),
             GameState.DIALOGUE:          lambda: (self._draw_world(), self.dialogue_system.draw(self.screen)),
+            GameState.SOCIAL_INTERACTION: lambda: (self._draw_world(), self.social_ui.draw(self.screen)),
             GameState.PINGPONG:          lambda: self.pingpong.draw(self.screen),
             GameState.TRADING:           lambda: (self._draw_world(), self.trade_system.draw(self.screen)),
             GameState.PAUSED:            lambda: (self._draw_world(), self.ui.draw_pause_menu(self.screen, getattr(self, 'pause_sel', 0), self.pause_options)),
@@ -2658,7 +2688,7 @@ class Game:
 
         # HUD overlay
         if (
-            self.state in (GameState.PLAYING, GameState.COMBAT, GameState.DIALOGUE)
+            self.state in (GameState.PLAYING, GameState.COMBAT, GameState.DIALOGUE, GameState.SOCIAL_INTERACTION)
             and not self.phone.is_fullscreen()
         ):
             floor = self.school_map.get_floor(self.current_floor)
@@ -2729,6 +2759,12 @@ class Game:
 
         for npc in self.npc_manager.get_npcs_on_floor(self.current_floor):
             npc.draw(target_surf, self.camera)
+
+        # Draw interaction prompt for nearest NPC in range
+        if self.state == GameState.PLAYING:
+            nearest_npc = self._nearest_npc(NPC_INTERACTION_RANGE)
+            if nearest_npc:
+                nearest_npc.draw_interaction_prompt(target_surf, self.camera)
 
         # Hide player sprite during drive_away phase (player is "inside" the car)
         if not (self._car_departure_active and self._car_depart_phase == "drive_away"):

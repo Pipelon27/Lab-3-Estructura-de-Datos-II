@@ -176,6 +176,26 @@ class NPC:
 
         self.ignore_schedule = False
 
+        # ──────── SOCIAL COMPONENT ────────────────────────────
+        # Personal relationship metrics with the player
+        self.relationship: int = 50        # personal relationship (0–100)
+        self.npc_trust: int = 50           # personal trust
+        self.npc_fear: int = 0             # personal fear
+        self.traits: list[str] = []        # e.g. ["Manipulative", "Observant"]
+        self.interaction_cooldown: float = 0.0
+
+        # Social memory (persistent per session)
+        self.last_interaction_type: str | None = None   # "respond"|"ignore"|"intimidate"
+        self.interaction_count: int = 0
+        self.intimidation_count: int = 0
+        self.avoidance_tendency: float = 0.0  # 0.0–1.0
+
+        # Behavioral state derived from memory
+        self.is_afraid: bool = False
+        self.is_allied: bool = False
+        self.emotional_state: str = "neutral"  # "neutral"|"nervous"|"open"|"hostile"
+        # ───────────────────────────────────────────────────
+
         # Movement / AI state
         self.target_pos: tuple[int, int] | None = None
         self.target_queue: list[tuple[int, int]] = []
@@ -299,6 +319,54 @@ class NPC:
     def reveal_mask(self):
         """Permanently reveal the private face."""
         self.mask_revealed = True
+
+    # ── SOCIAL COMPONENT ──────────────────────────────────────
+
+    def update_social_memory(self, action_type: str):
+        """Update internal social state based on interaction action.
+        
+        Parameters
+        ----------
+        action_type : str
+            "respond", "ignore", or "intimidate"
+        """
+        self.interaction_count += 1
+        self.last_interaction_type = action_type
+
+        if action_type == "intimidate":
+            self.intimidation_count += 1
+            self.is_afraid = True
+            self.emotional_state = "nervous"
+            self.avoidance_tendency = min(1.0, self.avoidance_tendency + 0.15)
+        elif action_type == "respond":
+            self.emotional_state = "open"
+            self.avoidance_tendency = max(0.0, self.avoidance_tendency - 0.1)
+        elif action_type == "ignore":
+            self.avoidance_tendency = min(1.0, self.avoidance_tendency + 0.05)
+            self.emotional_state = "neutral"
+
+    def draw_interaction_prompt(self, screen: pygame.Surface, camera):
+        """Draw the '[E] Talk' prompt above NPC when in interaction range.
+        
+        Called during normal game draw to show prompt to player.
+        """
+        from settings import NPC_SOCIAL_RANGE, UI_ACCENT, UI_TEXT
+        
+        # Check if we should draw (will be called conditionally from game loop)
+        prompt_text = "[E] Talk"
+        font = pygame.font.SysFont("arial", 12, bold=True)
+        text_surf = font.render(prompt_text, True, UI_ACCENT)
+        
+        # Draw above NPC sprite
+        dr = camera.apply(self)
+        text_rect = text_surf.get_rect(midbottom=(dr.centerx, dr.top - 15))
+        
+        # Draw semi-transparent background
+        bg_rect = text_rect.inflate(6, 4)
+        bg_surf = pygame.Surface(bg_rect.size, pygame.SRCALPHA)
+        pygame.draw.rect(bg_surf, (0, 0, 0, 180), bg_surf.get_rect(), border_radius=3)
+        screen.blit(bg_surf, bg_rect)
+        screen.blit(text_surf, text_rect)
 
     def get_dialogue_id(self, character: Character) -> str | None:
         """Return a dialogue tree id for this NPC when talking to *character*."""
