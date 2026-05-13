@@ -98,6 +98,7 @@ MAPS_DIR    = os.path.join(ASSETS_DIR, "maps")
 SOUNDS_DIR  = os.path.join(ASSETS_DIR, "sounds")
 FONTS_DIR   = os.path.join(ASSETS_DIR, "fonts")
 DATA_DIR    = os.path.join(BASE_DIR, "data")
+VT323_PATH  = os.path.join(DATA_DIR, "VT323-Regular.ttf")
 SRC_DIR     = os.path.join(BASE_DIR, "src")
 
 # ──────────────────────────────────────────────────────────────

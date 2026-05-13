@@ -14,8 +14,7 @@ from settings import (
     UI_BG, UI_PANEL, UI_BORDER, UI_ACCENT,
     UI_TEXT, UI_TEXT_DIM, WHITE,
     NOTIF_SUCCESS, NOTIF_WARNING,
-    SCREEN_WIDTH, SCREEN_HEIGHT,
-)
+    SCREEN_WIDTH, SCREEN_HEIGHT, VT323_PATH)
 
 
 # ══════════════════════════════════════════════════════════════
@@ -215,9 +214,9 @@ class Inventory:
         """Render the full-screen inventory panel."""
         screen.fill(UI_BG)
 
-        font_title = pygame.font.SysFont("arial", 34, bold=True)
-        font_item  = pygame.font.SysFont("arial", 22)
-        font_desc  = pygame.font.SysFont("arial", 16)
+        font_title = pygame.font.Font(VT323_PATH, 34)
+        font_item  = pygame.font.Font(VT323_PATH, 22)
+        font_desc  = pygame.font.Font(VT323_PATH, 16)
 
         screen.blit(
             font_title.render(f"Inventory  ({self.count()}/{self.max_capacity})",

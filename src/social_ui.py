@@ -11,8 +11,7 @@ import pygame
 from settings import (
     SCREEN_WIDTH, SCREEN_HEIGHT,
     UI_BG, UI_PANEL, UI_BORDER, UI_ACCENT, UI_TEXT, UI_TEXT_DIM,
-    NOTIF_SUCCESS, NOTIF_ERROR,
-)
+    NOTIF_SUCCESS, NOTIF_ERROR, VT323_PATH)
 
 
 class SocialInteractionUI:
@@ -137,12 +136,12 @@ class SocialInteractionUI:
         screen.blit(panel_surf, panel_rect)
 
         # NPC name at top
-        font_name = pygame.font.SysFont("arial", 16, bold=True)
+        font_name = pygame.font.Font(VT323_PATH, 16)
         name_text = font_name.render(f"[ {self._npc.name.upper()} ]", True, UI_ACCENT)
         screen.blit(name_text, (20, panel_y + 12))
 
         # NPC dialogue line
-        font_line = pygame.font.SysFont("arial", 13)
+        font_line = pygame.font.Font(VT323_PATH, 13)
         line_text = font_line.render(self._npc_line if hasattr(self, '_npc_line') else "...", 
                                      True, UI_TEXT)
         # Wrap text to fit panel width
@@ -171,7 +170,7 @@ class SocialInteractionUI:
         else:
             # Draw NPC Response
             response_y = panel_rect.y + 100
-            font_resp = pygame.font.SysFont("arial", 18, italic=True)
+            font_resp = pygame.font.Font(VT323_PATH, 18)
             max_text_width = panel_rect.width - 80
             resp_lines = self._wrap_text(f'"{self._response_text}"', font_resp, max_text_width)
             
@@ -187,7 +186,7 @@ class SocialInteractionUI:
                 for d in self._response_deltas:
                     color = NOTIF_SUCCESS if d.delta > 0 else NOTIF_ERROR
                     sign = "+" if d.delta > 0 else ""
-                    dt_surf = pygame.font.SysFont("arial", 14, bold=True).render(
+                    dt_surf = pygame.font.Font(VT323_PATH, 14).render(
                         f"{sign}{d.delta} {d.group.upper()}", True, color
                     )
                     screen.blit(dt_surf, (delta_x, delta_y))
@@ -216,7 +215,7 @@ class SocialInteractionUI:
         cursor = " ► " if is_selected else "   "
         
         # Label
-        font = pygame.font.SysFont("arial", 16, bold=is_selected)
+        font = pygame.font.Font(VT323_PATH, 16)
         label_text = f"{cursor}{opt['label']}"
         max_text_width = width - 80
         
@@ -235,7 +234,7 @@ class SocialInteractionUI:
                 f"+{d.delta}" if d.delta > 0 else str(d.delta)
                 for d in opt["deltas"][:2]  # Show first 2 deltas
             ])
-            deltas_surf = pygame.font.SysFont("arial", 10).render(deltas_text, True, UI_TEXT_DIM)
+            deltas_surf = pygame.font.Font(VT323_PATH, 10).render(deltas_text, True, UI_TEXT_DIM)
             screen.blit(deltas_surf, (x + width - deltas_surf.get_width() - 10, y + 6))
 
     def _draw_right_panel(self, screen: pygame.Surface, progress: float):
@@ -261,17 +260,17 @@ class SocialInteractionUI:
         screen.blit(panel_surf, panel_rect)
 
         # NPC name header
-        font_header = pygame.font.SysFont("arial", 12, bold=True)
+        font_header = pygame.font.Font(VT323_PATH, 12)
         name_surf = font_header.render(self._npc.name[:14], True, UI_ACCENT)
         screen.blit(name_surf, (self.right_panel_x + 8, panel_y + 8))
 
         # Group label
         group_label = f"[{self._npc.group.value.upper()}]"
-        group_surf = pygame.font.SysFont("arial", 10).render(group_label, True, UI_TEXT_DIM)
+        group_surf = pygame.font.Font(VT323_PATH, 10).render(group_label, True, UI_TEXT_DIM)
         screen.blit(group_surf, (self.right_panel_x + 8, panel_y + 24))
 
         # Metrics
-        font_metric = pygame.font.SysFont("arial", 10)
+        font_metric = pygame.font.Font(VT323_PATH, 10)
         metrics_y = panel_y + 44
         
         # Respect

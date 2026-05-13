@@ -14,8 +14,7 @@ from settings import (
     UI_TEXT, UI_TEXT_DIM, WHITE, BLACK,
     NOTIF_SUCCESS, NOTIF_WARNING, NOTIF_ERROR,
     SCREEN_WIDTH, SCREEN_HEIGHT,
-    ItemCategory,
-)
+    ItemCategory, VT323_PATH)
 
 
 class TradeSystem:
@@ -172,9 +171,9 @@ class TradeSystem:
 
         screen.fill(UI_BG)
 
-        font_title = pygame.font.SysFont("arial", 32, bold=True)
-        font_item  = pygame.font.SysFont("arial", 22)
-        font_sm    = pygame.font.SysFont("arial", 16)
+        font_title = pygame.font.Font(VT323_PATH, 32)
+        font_item  = pygame.font.Font(VT323_PATH, 22)
+        font_sm    = pygame.font.Font(VT323_PATH, 16)
 
         npc_name = self.npc.name if self.npc else "NPC"
 

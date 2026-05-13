@@ -1,3 +1,4 @@
+from settings import VT323_PATH
 import pygame
 import os
 
@@ -10,7 +11,7 @@ if not os.path.exists(path):
 ts = pygame.image.load(path)
 w, h = ts.get_size()
 surf = ts.copy()
-font = pygame.font.SysFont('arial', 12, bold=True)
+font = pygame.font.Font(VT323_PATH, 12)
 
 # Draw grid
 for x in range(0, w, 32):

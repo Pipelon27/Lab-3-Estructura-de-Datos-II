@@ -22,8 +22,7 @@ from settings import (
     UI_BG, UI_PANEL, UI_BORDER, UI_ACCENT,
     UI_TEXT, UI_TEXT_DIM, WHITE, BLACK,
     NOTIF_SUCCESS, NOTIF_ERROR, NOTIF_INFO,
-    SCREEN_WIDTH, SCREEN_HEIGHT,
-)
+    SCREEN_WIDTH, SCREEN_HEIGHT, VT323_PATH)
 
 
 class HackPhase(Enum):
@@ -215,10 +214,10 @@ class HackingMinigame:
 
         screen.fill((10, 15, 10))    # terminal green-black
 
-        font_big   = pygame.font.SysFont("consolas", 32, bold=True)
-        font_med   = pygame.font.SysFont("consolas", 24)
-        font_sm    = pygame.font.SysFont("consolas", 18)
-        font_hint  = pygame.font.SysFont("consolas", 16)
+        font_big   = pygame.font.Font(VT323_PATH, 32)
+        font_med   = pygame.font.Font(VT323_PATH, 24)
+        font_sm    = pygame.font.Font(VT323_PATH, 18)
+        font_hint  = pygame.font.Font(VT323_PATH, 16)
 
         cx = SCREEN_WIDTH // 2
 

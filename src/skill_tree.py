@@ -22,8 +22,7 @@ from settings import (
     UI_BG, UI_PANEL, UI_BORDER, UI_ACCENT,
     UI_TEXT, UI_TEXT_DIM, WHITE, NOTIF_SUCCESS, NOTIF_WARNING,
     SCREEN_WIDTH, SCREEN_HEIGHT,
-    XP_PER_LEVEL, SKILL_POINT_PER_LEVEL,
-)
+    XP_PER_LEVEL, SKILL_POINT_PER_LEVEL, VT323_PATH)
 
 
 # ══════════════════════════════════════════════════════════════
@@ -216,10 +215,10 @@ class SkillTree:
         """Render the full skill-tree screen as a graphical tree."""
         screen.fill(UI_BG)
 
-        font_title = pygame.font.SysFont("arial", 32, bold=True)
-        font_node  = pygame.font.SysFont("arial", 18, bold=True)
-        font_desc  = pygame.font.SysFont("arial", 16)
-        font_info  = pygame.font.SysFont("arial", 18)
+        font_title = pygame.font.Font(VT323_PATH, 32)
+        font_node  = pygame.font.Font(VT323_PATH, 18)
+        font_desc  = pygame.font.Font(VT323_PATH, 16)
+        font_info  = pygame.font.Font(VT323_PATH, 18)
 
         # Header
         screen.blit(

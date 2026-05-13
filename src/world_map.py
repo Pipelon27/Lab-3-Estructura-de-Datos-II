@@ -21,8 +21,7 @@ from settings import (
     UI_TEXT, UI_TEXT_DIM, WHITE, BLACK,
     FLOOR_NAMES, FLOOR_SIZES,
     FLOOR_CAMPUS, FLOOR_1F, FLOOR_2F, FLOOR_BASEMENT, FLOOR_ROOFTOP,
-    NOTIF_INFO, NOTIF_WARNING,
-)
+    NOTIF_INFO, NOTIF_WARNING, VT323_PATH)
 
 
 class WorldMap:
@@ -76,11 +75,11 @@ class WorldMap:
 
 
         # Fonts
-        self._font_tab    = pygame.font.SysFont("arial", 18, bold=True)
-        self._font_room   = pygame.font.SysFont("arial", 11)
-        self._font_tip_t  = pygame.font.SysFont("arial", 16, bold=True)
-        self._font_tip    = pygame.font.SysFont("arial", 14)
-        self._font_header = pygame.font.SysFont("arial", 28, bold=True)
+        self._font_tab    = pygame.font.Font(VT323_PATH, 18)
+        self._font_room   = pygame.font.Font(VT323_PATH, 11)
+        self._font_tip_t  = pygame.font.Font(VT323_PATH, 16)
+        self._font_tip    = pygame.font.Font(VT323_PATH, 14)
+        self._font_header = pygame.font.Font(VT323_PATH, 28)
 
         self._centre_on_floor(self.current_tab)
         self._refresh_room_selection()

@@ -30,8 +30,7 @@ from settings import (
     ZONE_NAMES, ZONE_CONNECTIONS,
     FLOOR_NAMES,
     Character, Ending,
-    MOTIVATIONAL_MESSAGES,
-)
+    MOTIVATIONAL_MESSAGES, VT323_PATH)
 
 
 # ══════════════════════════════════════════════════════════════
@@ -76,13 +75,13 @@ class UI:
         self._notifs: list[Notification] = []
 
         # Fonts (created once)
-        self.font_hud_sm  = pygame.font.SysFont("arial", 16)
-        self.font_hud_md  = pygame.font.SysFont("arial", 20)
-        self.font_hud_lg  = pygame.font.SysFont("arial", 26, bold=True)
-        self.font_hud_time = pygame.font.SysFont("arial", 24, bold=True)
-        self.font_title   = pygame.font.SysFont("arial", 48, bold=True)
-        self.font_menu    = pygame.font.SysFont("arial", 30)
-        self.font_hint    = pygame.font.SysFont("arial", 16)
+        self.font_hud_sm  = pygame.font.Font(VT323_PATH, 16)
+        self.font_hud_md  = pygame.font.Font(VT323_PATH, 20)
+        self.font_hud_lg  = pygame.font.Font(VT323_PATH, 26)
+        self.font_hud_time = pygame.font.Font(VT323_PATH, 24)
+        self.font_title   = pygame.font.Font(VT323_PATH, 48)
+        self.font_menu    = pygame.font.Font(VT323_PATH, 30)
+        self.font_hint    = pygame.font.Font(VT323_PATH, 16)
         
         # HUD icons: wallet + phone, bottom-right.
         _icon_h    = 44
@@ -177,7 +176,7 @@ class UI:
 
         timer = getattr(self, '_level_up_timer', 0)
         if timer > 0:
-            font = pygame.font.SysFont("arial", 80, bold=True)
+            font = pygame.font.Font(VT323_PATH, 80)
             text_str = "LEVEL UP!"
             text = font.render(text_str, True, (255, 215, 0))
             outline = font.render(text_str, True, (0, 0, 0))
@@ -230,7 +229,7 @@ class UI:
             screen.blit(icon_surf, icon_rect)
 
         # Title
-        title_font = pygame.font.SysFont("arial", 54, bold=True)
+        title_font = pygame.font.Font(VT323_PATH, 54)
         title_surf = title_font.render(self._announcement_title, True, UI_ACCENT)
         title_surf.set_alpha(alpha)
         screen.blit(title_surf, (panel_rect.x + 130, cy - 35))

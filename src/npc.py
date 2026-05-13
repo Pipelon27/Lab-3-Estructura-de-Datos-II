@@ -22,8 +22,7 @@ from settings import (
     MEDIUM_GRAY, WHITE, UI_TEXT_DIM, BLACK,
     Character, SocialGroup, DayPhase, Direction,
     FLOOR_1F,
-    DATA_DIR,
-)
+    DATA_DIR, VT323_PATH)
 
 
 # ══════════════════════════════════════════════════════════════
@@ -349,7 +348,7 @@ class NPC:
         
         # Check if we should draw (will be called conditionally from game loop)
         prompt_text = "[E] Talk"
-        font = pygame.font.SysFont("arial", 12, bold=True)
+        font = pygame.font.Font(VT323_PATH, 12)
         text_surf = font.render(prompt_text, True, UI_ACCENT)
         
         # Draw above NPC sprite
@@ -556,7 +555,7 @@ class NPC:
             
             # Name label (can be hidden for observers)
             if getattr(self, 'show_name', True):
-                font = pygame.font.SysFont("arial", 13)
+                font = pygame.font.Font(VT323_PATH, 13)
                 label = font.render(self.name, True, WHITE)
                 screen.blit(label, label.get_rect(center=(draw_rect.centerx, draw_rect.top - 10)))
                 
@@ -570,7 +569,7 @@ class NPC:
 
             # Name label (can be hidden for observers)
             if getattr(self, 'show_name', True):
-                font = pygame.font.SysFont("arial", 13)
+                font = pygame.font.Font(VT323_PATH, 13)
                 label = font.render(self.name, True, WHITE)
                 screen.blit(label, label.get_rect(center=(dr.centerx, dr.top - 10)))
 

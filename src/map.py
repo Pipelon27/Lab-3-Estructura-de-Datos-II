@@ -16,8 +16,7 @@ from settings import (
     FLOOR_CAMPUS, FLOOR_1F, FLOOR_2F, FLOOR_BASEMENT, FLOOR_ROOFTOP,
     ZONE_NAMES, ZONE_CONNECTIONS,
     MEDIUM_GRAY, WHITE, BLACK, UI_TEXT_DIM, UI_ACCENT,
-    Character,
-)
+    Character, VT323_PATH)
 
 
 # ══════════════════════════════════════════════════════════════
@@ -312,7 +311,7 @@ class Floor:
                     wx += tw
                 screen.set_clip(old_clip)
 
-        font14 = pygame.font.SysFont("arial", 14)
+        font14 = pygame.font.Font(VT323_PATH, 14)
 
         for room in sorted(self.rooms.values(), key=lambda r: r.is_staircase):
             r = camera.apply_rect(room.rect)
@@ -718,7 +717,7 @@ class Floor:
 
         # Transitions drawing - only for interior floors (to show the exit)
         if self.id != 0:
-            font_sm = pygame.font.SysFont("arial", 13, bold=True)
+            font_sm = pygame.font.Font(VT323_PATH, 13)
             for tr in self.transitions:
                 r = camera.apply_rect(tr.rect)
                 if r.right < 0 or r.left > sw:
@@ -1795,7 +1794,7 @@ class Floor:
                         sign_rect = pygame.Rect(facade_rect.x + 14, facade_rect.y + 8, facade_rect.width - 28, 26)
                         pygame.draw.rect(screen, (72, 72, 82), sign_rect)
                         pygame.draw.rect(screen, (205, 205, 215), sign_rect, 2)
-                        sign_font = pygame.font.SysFont("arial", max(11, min(17, sign_rect.height - 7)), bold=True)
+                        sign_font = pygame.font.Font(VT323_PATH, max(11, min(17, sign_rect.height - 7)))
                         sign_txt = sign_font.render(spec["sign"], True, (230, 232, 240))
                         screen.blit(sign_txt, (sign_rect.centerx - sign_txt.get_width() // 2,
                                                sign_rect.centery - sign_txt.get_height() // 2))
@@ -1838,7 +1837,7 @@ class Floor:
 
                         # Building Nameplate
                         if rid == "c_building":
-                            font_title = pygame.font.SysFont("arial", 24, bold=True)
+                            font_title = pygame.font.Font(VT323_PATH, 24)
                             text = font_title.render("RAVENSIDE HIGH SCHOOL", True, (220, 230, 240))
                             tw, th = text.get_size()
                             # Positioned above the door

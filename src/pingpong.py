@@ -24,8 +24,7 @@ from settings import (
     KEY_DOWN,
     KEY_DASH,
     DASH_SPEED,
-    DASH_DURATION,
-)
+    DASH_DURATION, VT323_PATH)
 from src.controller import get_controller, XBOX_START
 
 
@@ -1155,13 +1154,13 @@ class PingPongGame:
             pygame.draw.rect(screen, (16, 16, 28), (panel_x, panel_y, panel_w, panel_h), border_radius=14)
             pygame.draw.rect(screen, UI_ACCENT, (panel_x, panel_y, panel_w, panel_h), 2, border_radius=14)
 
-            title_font = pygame.font.SysFont("arial", 34, bold=True)
+            title_font = pygame.font.Font(VT323_PATH, 34)
             title = "Ping Pong - Controls"
             screen.blit(title_font.render(title, True, UI_ACCENT), (SCREEN_WIDTH // 2 - title_font.size(title)[0] // 2, panel_y + 18))
 
             # prompt to start / controls hint
-            hint_font = pygame.font.SysFont("arial", 28, bold=True)
-            small = pygame.font.SysFont("arial", 18)
+            hint_font = pygame.font.Font(VT323_PATH, 28)
+            small = pygame.font.Font(VT323_PATH, 18)
 
             if using_controller:
                 hint = "Press A to Start"
@@ -1229,12 +1228,12 @@ class PingPongGame:
             ctimer = max(0.0, self.countdown_timer)
             if getattr(self, 'countdown_go_shown', False):
                 txt = "Let's Go!"
-                font = pygame.font.SysFont("arial", 64, bold=True)
+                font = pygame.font.Font(VT323_PATH, 64)
                 surf = font.render(txt, True, UI_ACCENT)
                 screen.blit(surf, surf.get_rect(center=(SCREEN_WIDTH//2, SCREEN_HEIGHT//2)))
             else:
                 num = int(math.ceil(ctimer)) if ctimer > 0 else 1
-                font = pygame.font.SysFont("arial", 128, bold=True)
+                font = pygame.font.Font(VT323_PATH, 128)
                 surf = font.render(str(num), True, UI_ACCENT)
                 screen.blit(surf, surf.get_rect(center=(SCREEN_WIDTH//2, SCREEN_HEIGHT//2)))
             return
@@ -1348,7 +1347,7 @@ class PingPongGame:
         filled = int((self.player_score / self.score_limit) * (bar_w - 4))
         pygame.draw.rect(screen, (40, 200, 80), (px + 2, py + 2, max(0, filled), bar_h - 4), border_radius=6)
         # numeric
-        smallf = pygame.font.SysFont("arial", 18, bold=True)
+        smallf = pygame.font.Font(VT323_PATH, 18)
         text = f"{self.player_score} / {self.score_limit}"
         screen.blit(smallf.render(text, True, (255, 255, 255)), (px + 6, py - 2))
         # opponent bar (right)
@@ -1370,7 +1369,7 @@ class PingPongGame:
         progress = self._get_super_shot_progress()
         fill_w = int((super_w - 4) * progress)
         pygame.draw.rect(screen, (240, 210, 60), (sx + 2, sy + 2, max(0, fill_w), super_h - 4), border_radius=6)
-        sfont = pygame.font.SysFont("arial", 16, bold=True)
+        sfont = pygame.font.Font(VT323_PATH, 16)
         if self._super_shot_available():
             st = "Super Shot READY (Auto on hit)"
             scol = (255, 230, 80)
@@ -1384,7 +1383,7 @@ class PingPongGame:
 
         # taunt
         if self._taunt_msg:
-            tfont = pygame.font.SysFont("arial", 20)
+            tfont = pygame.font.Font(VT323_PATH, 20)
             tw = tfont.size(self._taunt_msg)[0]
             screen.blit(tfont.render(self._taunt_msg, True, (240, 200, 60)), ((SCREEN_WIDTH - tw) // 2, SCREEN_HEIGHT - 115))
 
@@ -1398,15 +1397,15 @@ class PingPongGame:
             by = (SCREEN_HEIGHT - box_h) // 2
             pygame.draw.rect(screen, (20, 20, 30), (bx, by, box_w, box_h))
             pygame.draw.rect(screen, UI_ACCENT, (bx, by, box_w, box_h), 2)
-            title_font = pygame.font.SysFont("arial", 36, bold=True)
-            msg_font = pygame.font.SysFont("arial", 22)
+            title_font = pygame.font.Font(VT323_PATH, 36)
+            msg_font = pygame.font.Font(VT323_PATH, 22)
             lines = str(self.end_message).split("\n")
             y = by + 20
             for i, line in enumerate(lines):
                 font = title_font if i == 0 else msg_font
                 surf = font.render(line, True, WHITE)
                 screen.blit(surf, surf.get_rect(center=(SCREEN_WIDTH // 2, y + (i * 36))))
-            hint = self.font_hint if hasattr(self, 'font_hint') else pygame.font.SysFont("arial", 16)
+            hint = self.font_hint if hasattr(self, 'font_hint') else pygame.font.Font(VT323_PATH, 16)
             screen.blit(hint.render("Press SPACE to exit", True, UI_TEXT_DIM), (SCREEN_WIDTH // 2 - 110, by + box_h - 32))
 
         # ──── ESC Pause Menu ─────────────────────────────────────────────────
@@ -1422,15 +1421,15 @@ class PingPongGame:
             pygame.draw.rect(screen, (14, 14, 24), (pm_x, pm_y, pm_w, pm_h), border_radius=16)
             pygame.draw.rect(screen, UI_ACCENT, (pm_x, pm_y, pm_w, pm_h), 2, border_radius=16)
 
-            ptitle_font = pygame.font.SysFont("arial", 30, bold=True)
+            ptitle_font = pygame.font.Font(VT323_PATH, 30)
             ptitle = "PAUSED"
             tw = ptitle_font.size(ptitle)[0]
             screen.blit(ptitle_font.render(ptitle, True, UI_ACCENT),
                         (pm_x + (pm_w - tw) // 2, pm_y + 20))
 
             options = ["Resume", "Settings", "Quit"]
-            opt_font = pygame.font.SysFont("arial", 24, bold=True)
-            dim_font = pygame.font.SysFont("arial", 24)
+            opt_font = pygame.font.Font(VT323_PATH, 24)
+            dim_font = pygame.font.Font(VT323_PATH, 24)
             sel = getattr(self, '_pause_sel', 0)
             for i, label in enumerate(options):
                 oy = pm_y + 90 + i * 52
@@ -1451,7 +1450,7 @@ class PingPongGame:
                     screen.blit(dim_font.render(label, True, UI_TEXT_DIM),
                                 (pm_x + (pm_w - lw) // 2, oy))
 
-            nav_font = pygame.font.SysFont("arial", 14)
+            nav_font = pygame.font.Font(VT323_PATH, 14)
             nav = "↑↓ Navigate   Enter - Select   ESC - Resume"
             nw = nav_font.size(nav)[0]
             screen.blit(nav_font.render(nav, True, UI_TEXT_DIM),

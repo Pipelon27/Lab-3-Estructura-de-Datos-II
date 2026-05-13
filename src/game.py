@@ -28,8 +28,7 @@ from settings import (
     KEY_HELP, KEY_PAUSE, KEY_MAP,
     KEY_LIGHT_ATTACK, KEY_HEAVY_ATTACK, KEY_BLOCK, KEY_DASH, KEY_DASH_ALT, KEY_DASH_ALT2,
     KEY_HACK, KEY_PHONE,
-    MOTIVATIONAL_MESSAGES,
-)
+    MOTIVATIONAL_MESSAGES, VT323_PATH)
 from src.phone      import Phone
 from src.map        import SchoolMap
 from src.player     import Aiden, Lena
@@ -2605,7 +2604,7 @@ class Game:
         is_controller = bool(self.controller and self.controller.connected)
         key_hint = "[A]" if is_controller else "[E]"
         text = f"Enter {building_name}?  {key_hint} yes  |  move away to cancel"
-        fnt = pygame.font.SysFont("arial", 22, bold=True)
+        fnt = pygame.font.Font(VT323_PATH, 22)
         surf = fnt.render(text, True, (232, 236, 245))
         self.screen.blit(surf, (panel.centerx - surf.get_width() // 2,
                                 panel.centery - surf.get_height() // 2))
@@ -2955,7 +2954,7 @@ class Game:
             dim = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
             dim.fill((0, 0, 0, 100))
             self.screen.blit(dim, (0, 0))
-            font_sm = pygame.font.SysFont("Arial", 20)
+            font_sm = pygame.font.Font(VT323_PATH, 20)
             lbl = font_sm.render("Ravenside High — Entrance", True, (180, 180, 180))
             self.screen.blit(lbl, lbl.get_rect(center=(SCREEN_WIDTH // 2, 40)))
 
@@ -2980,7 +2979,7 @@ class Game:
         if self._cine_phase == "guide":
             self._draw_mission_box("Follow Noah Carter through the school.")
             if self._noah_wait_for_player:
-                font = pygame.font.SysFont("Arial", 22, bold=True)
+                font = pygame.font.Font(VT323_PATH, 22)
                 txt = font.render("Noah is waiting for you...", True, (255, 220, 100))
                 self.screen.blit(txt, txt.get_rect(center=(SCREEN_WIDTH // 2, 150)))
 
@@ -2991,7 +2990,7 @@ class Game:
 
         # ── Prompt to advance ──
         if self._cine_phase in ("dialogue", "final_dialogue"):
-            font_hint = pygame.font.SysFont("Arial", 16)
+            font_hint = pygame.font.Font(VT323_PATH, 16)
             hint = font_hint.render("Press SPACE to continue", True, (160, 160, 160))
             self.screen.blit(hint, hint.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT - 30)))
 
@@ -3005,7 +3004,7 @@ class Game:
         skip_surf.fill((20, 20, 30, 200))
         self.screen.blit(skip_surf, (skip_x, skip_y))
         pygame.draw.rect(self.screen, (180, 180, 200), skip_rect, 2, border_radius=8)
-        font_skip = pygame.font.SysFont("Arial", 15, bold=True)
+        font_skip = pygame.font.Font(VT323_PATH, 15)
         skip_label = font_skip.render("Skip  >>>", True, (220, 220, 240))
         self.screen.blit(skip_label, skip_label.get_rect(center=skip_rect.center))
         # Yellow selection frame when focused (same style as wallet/FF button)
@@ -3059,17 +3058,17 @@ class Game:
             # Fallback: Draw initials in a stylized circle
             pygame.draw.circle(self.screen, (40, 50, 70), (av_cx, av_cy), av_radius - 2)
             initial = speaker[0].upper() if speaker else "?"
-            f_init = pygame.font.SysFont("arial", 48, bold=True)
+            f_init = pygame.font.Font(VT323_PATH, 48)
             txt = f_init.render(initial, True, UI_ACCENT)
             self.screen.blit(txt, txt.get_rect(center=(av_cx, av_cy)))
 
         # Speaker name (same style as dialogue.py)
-        font_name = pygame.font.SysFont("arial", 22, bold=True)
+        font_name = pygame.font.Font(VT323_PATH, 22)
         self.screen.blit(font_name.render(speaker, True, UI_ACCENT),
                          (box.x + 18, box.y + 12))
 
         # Dialogue text (with word wrap, same as dialogue.py)
-        font_text = pygame.font.SysFont("arial", 20)
+        font_text = pygame.font.Font(VT323_PATH, 20)
         self._draw_cinematic_wrapped_text(text, font_text, UI_TEXT,
                                            box.x + 18, box.y + 42, box.width - 36)
 
@@ -3100,11 +3099,11 @@ class Game:
         pygame.draw.rect(surf, (100, 180, 255, 180), surf.get_rect(), 2, border_radius=10)
         self.screen.blit(surf, (bx, by))
 
-        icon_font = pygame.font.SysFont("Arial", 16, bold=True)
+        icon_font = pygame.font.Font(VT323_PATH, 16)
         icon = icon_font.render("MISSION", True, (100, 180, 255))
         self.screen.blit(icon, (bx + 15, by + 8))
 
-        txt_font = pygame.font.SysFont("Arial", 20)
+        txt_font = pygame.font.Font(VT323_PATH, 20)
         txt = txt_font.render(mission_text, True, WHITE)
         self.screen.blit(txt, (bx + 15, by + 30))
 
@@ -3308,7 +3307,7 @@ class Game:
         pygame.draw.rect(self.screen, WHITE, (bx, by, box_w, box_h), 3, border_radius=16)
 
         # Title
-        title_font = pygame.font.SysFont("Arial", 28, bold=True)
+        title_font = pygame.font.Font(VT323_PATH, 28)
         title = title_font.render("End the day and go home?", True, WHITE)
         self.screen.blit(title, title.get_rect(center=(SCREEN_WIDTH // 2, by + 60)))
 
@@ -3338,7 +3337,7 @@ class Game:
         pygame.draw.rect(self.screen, cancel_color, cancel_rect, border_radius=10)
         pygame.draw.rect(self.screen, can_outline, cancel_rect, 3, border_radius=10)
 
-        font = pygame.font.SysFont("Arial", 20, bold=True)
+        font = pygame.font.Font(VT323_PATH, 20)
         acc_text = font.render("\u24B6 Accept" if controller_connected and sel == "accept" else "Accept", True, WHITE)
         can_text = font.render("\u24B7 Cancel" if controller_connected and sel == "cancel" else "Cancel", True, WHITE)
 
@@ -3359,15 +3358,15 @@ class Game:
         self.screen.fill((0, 0, 0))
 
         # "Day X" title
-        day_font = pygame.font.SysFont("Arial", 80, bold=True)
+        day_font = pygame.font.Font(VT323_PATH, 80)
         day_text = day_font.render(f"Day {self._day_transition_target_day}", True, WHITE)
         self.screen.blit(day_text, day_text.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 20)))
 
         # Subtitle
-        sub_font = pygame.font.SysFont("Arial", 28)
+        sub_font = pygame.font.Font(VT323_PATH, 28)
         sub_text = sub_font.render("A new day begins...", True, (160, 160, 180))
         self.screen.blit(sub_text, sub_text.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 50)))
         # Subtitle
-        sub_font = pygame.font.SysFont("Arial", 28)
+        sub_font = pygame.font.Font(VT323_PATH, 28)
         sub_text = sub_font.render("A new day begins...", True, (160, 160, 180))
         self.screen.blit(sub_text, sub_text.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 50)))

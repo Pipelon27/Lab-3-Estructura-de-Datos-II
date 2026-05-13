@@ -20,8 +20,7 @@ from settings import (
     NOTIF_SUCCESS,
     SCREEN_WIDTH, SCREEN_HEIGHT,
     DATA_DIR,
-    Character,
-)
+    Character, VT323_PATH)
 
 
 # ══════════════════════════════════════════════════════════════
@@ -388,9 +387,9 @@ class DialogueSystem:
         if not self.active_tree:
             return
 
-        font_name = pygame.font.SysFont("arial", 22, bold=True)
-        font_text = pygame.font.SysFont("arial", 20)
-        font_choice = pygame.font.SysFont("arial", 20)
+        font_name = pygame.font.Font(VT323_PATH, 22)
+        font_text = pygame.font.Font(VT323_PATH, 20)
+        font_choice = pygame.font.Font(VT323_PATH, 20)
 
         speaker, text = self.active_tree.get_current_text()
         choices = self.active_tree.get_choices()
@@ -479,7 +478,7 @@ class DialogueSystem:
                 pygame.draw.circle(screen, (40, 50, 70), (av_cx, av_cy), av_radius - 2)
                 display_name = display_speaker if display_speaker else speaker
                 initial = display_name[0].upper() if display_name else "?"
-                f_init = pygame.font.SysFont("arial", 48, bold=True)
+                f_init = pygame.font.Font(VT323_PATH, 48)
                 txt = f_init.render(initial, True, UI_ACCENT)
                 screen.blit(txt, txt.get_rect(center=(av_cx, av_cy)))
 
@@ -497,7 +496,7 @@ class DialogueSystem:
         # Subtitle bar (always visible — accessibility)
         sub_bar = pygame.Rect(0, SCREEN_HEIGHT - 18, SCREEN_WIDTH, 18)
         pygame.draw.rect(screen, BLACK, sub_bar)
-        sub_font = pygame.font.SysFont("arial", 14)
+        sub_font = pygame.font.Font(VT323_PATH, 14)
         screen.blit(sub_font.render(f"[{display_speaker}] {text}", True, WHITE),
                     (10, SCREEN_HEIGHT - 17))
 

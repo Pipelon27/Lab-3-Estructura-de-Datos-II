@@ -20,8 +20,7 @@ from settings import (
     XP_PER_LEVEL, SKILL_POINT_PER_LEVEL,
     Character, Direction,
     KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT, KEY_DASH, KEY_DASH_ALT, KEY_DASH_ALT2,
-    WHITE, BLACK,
-)
+    WHITE, BLACK, VT323_PATH)
 from src.skill_tree import SkillTree, build_aiden_tree, build_lena_tree
 from src.controller import get_controller, get_combined_movement
 
@@ -364,7 +363,7 @@ class Player:
             pygame.draw.polygon(screen, WHITE, pts)
 
         # Name tag
-        font = pygame.font.SysFont("arial", 14)
+        font = pygame.font.Font(VT323_PATH, 14)
         name_surf = font.render(self.character.value.title(), True, WHITE)
         screen.blit(name_surf,
                     name_surf.get_rect(center=(draw_rect.centerx, draw_rect.top - 10)))

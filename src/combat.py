@@ -23,8 +23,7 @@ from settings import (
     NOTIF_SUCCESS, NOTIF_ERROR,
     SCREEN_WIDTH, SCREEN_HEIGHT,
     Direction,
-    KEY_LIGHT_ATTACK, KEY_HEAVY_ATTACK, KEY_BLOCK, KEY_DASH, KEY_DASH_ALT, KEY_DASH_ALT2,
-)
+    KEY_LIGHT_ATTACK, KEY_HEAVY_ATTACK, KEY_BLOCK, KEY_DASH, KEY_DASH_ALT, KEY_DASH_ALT2, VT323_PATH)
 
 
 class CombatState(Enum):
@@ -222,9 +221,9 @@ class CombatSystem:
         overlay.fill((0, 0, 0, 80))
         screen.blit(overlay, (0, 0))
 
-        font      = pygame.font.SysFont("arial", 28, bold=True)
-        font_sm   = pygame.font.SysFont("arial", 20)
-        font_hint = pygame.font.SysFont("arial", 16)
+        font      = pygame.font.Font(VT323_PATH, 28)
+        font_sm   = pygame.font.Font(VT323_PATH, 20)
+        font_hint = pygame.font.Font(VT323_PATH, 16)
 
         # ── Header ──
         header = font.render("⚔  COMBAT  ⚔", True, HEALTH_RED)
