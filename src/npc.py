@@ -685,8 +685,12 @@ class NPCManager:
             if npc.id not in special_ids and school_map and (npc.current_zone != target_zone or npc.current_floor == -1):
                 floor = school_map.get_floor(npc.current_floor)
                 if floor and floor.rooms:
-                    # Filter out 'c_building' on campus as it is just an exterior facade
-                    valid_rooms = [r for r in floor.rooms.values() if r.id != "c_building" and r.id != "f1_cafeteria"]
+                    # Filter out campus building interiors/facades so NPCs don't spawn on roofs
+                    _campus_excluded = {
+                        "c_building", "f1_cafeteria",
+                        "c_tennis", "c_coliseum", "c_coliseum_court",
+                    }
+                    valid_rooms = [r for r in floor.rooms.values() if r.id not in _campus_excluded]
                     if valid_rooms:
                         room = random.choice(valid_rooms)
                         placed = False
