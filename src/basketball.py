@@ -1,3 +1,4 @@
+import os
 import pygame
 import math
 import random
@@ -34,8 +35,8 @@ class BasketballGame:
         self.ball_radius = 12
         self.ball_held_by = None  # 'player' or 'opp' or None
 
-        self.hoop_left = pygame.Rect(50, 350, 40, 10)
-        self.hoop_right = pygame.Rect(1190, 350, 40, 10)
+        self.hoop_left = pygame.Rect(150, 350, 40, 10)
+        self.hoop_right = pygame.Rect(1090, 350, 40, 10)
 
         self.shooting = False
         self.shoot_bar = 0.0
@@ -54,10 +55,53 @@ class BasketballGame:
         self.possession = None
 
         self._font = None
+        self._player_sprites = {}
+        self._opp_sprites = {}
+        self._sprites_loaded = False
+        self._player_anim_timer = 0.0
+        self._opp_anim_timer = 0.0
+        
+        self.player_facing_right = True
+        self.opp_facing_right = False
+        self.three_point_dist = 380
+        self.last_shot_x = None
+        self.last_shot_team = None
+
+    def _load_sprites(self, player_obj, opponent_obj):
+        try:
+            fw, fh = 32, 64
+            sw, sh = 60, 120
+
+            def get_frames(sheet, row, cols):
+                frames = []
+                for c in cols:
+                    rect = pygame.Rect(c * fw, row * fh, fw, fh)
+                    frame = sheet.subsurface(rect).copy()
+                    frames.append(pygame.transform.scale(frame, (sw, sh)))
+                return frames
+
+            char_name = player_obj.__class__.__name__ if player_obj else "Aiden"
+            if char_name == "Lena":
+                p_path = os.path.join("assets", "Characters BEHIND THE SMILE", "PROTAGONISTS", "Lena Parker.png")
+            else:
+                p_path = os.path.join("assets", "Characters BEHIND THE SMILE", "PROTAGONISTS", "Aiden Parker.png")
+
+            p_sheet = pygame.image.load(p_path).convert_alpha()
+            self._player_sprites["idle"] = get_frames(p_sheet, 1, range(0, 6))
+
+            o_path = os.path.join("assets", "Characters BEHIND THE SMILE", "ATHLETES", "Marcus Green.png")
+            o_sheet = pygame.image.load(o_path).convert_alpha()
+            self._opp_sprites["idle"] = get_frames(o_sheet, 1, range(12, 18))
+
+            self._sprites_loaded = True
+        except Exception as e:
+            print(f"[Basketball] Sprite load failed: {e}")
+            self._sprites_loaded = False
 
     def start(self, player, opponent):
         self.player = player
         self.opponent = opponent
+        self._load_sprites(player, opponent)
         self.reset()
         self.show_menu = True
         self.active = False
@@ -116,6 +160,13 @@ class BasketballGame:
                 if self.ball_held_by != 'player':
                     self.blocking = True
                     self.block_timer = 0.2
+                    
+                    if self.ball_held_by == 'opp' and self.opp_shooting:
+                        dist = math.hypot(self.player_x - self.opp_x, self.player_y - self.opp_y)
+                        if dist < 100:  # Reach distance to steal
+                            self.opp_shooting = False
+                            self.ball_held_by = 'player'
+                            self.possession = 'player'
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 if self.ball_held_by == 'player':
                     self.shooting = True
@@ -131,7 +182,18 @@ class BasketballGame:
 
     def _shoot_ball(self, shooter, power_bar):
         # power_bar is 0.0 to 1.0. Optimal is around 0.8.
-        quality = 1.0 - abs(power_bar - 0.8) * 2.0  # 1.0 is perfect, <0 is bad
+        self.last_shot_team = shooter
+        self.last_shot_x = self.player_x if shooter == 'player' else self.opp_x
+        
+        dist = abs(self.last_shot_x - (self.hoop_right.centerx if shooter == 'player' else self.hoop_left.centerx))
+        is_3pt = dist > self.three_point_dist
+        
+        target_quality = 0.8
+        if shooter == 'player':
+            spread = 4.0 if is_3pt else 2.0
+            quality = 1.0 - abs(power_bar - target_quality) * spread
+        else:
+            quality = 1.0 - abs(power_bar - target_quality) * 2.0
         
         self.ball_held_by = None
         
@@ -139,12 +201,12 @@ class BasketballGame:
             target_x = self.hoop_right.centerx
             target_y = self.hoop_right.centery
             start_x = self.player_x
-            start_y = self.player_y - 40
+            start_y = self.player_y - 80
         else:
             target_x = self.hoop_left.centerx
             target_y = self.hoop_left.centery
             start_x = self.opp_x
-            start_y = self.opp_y - 40
+            start_y = self.opp_y - 80
             
         self.ball_x = start_x
         self.ball_y = start_y
@@ -175,12 +237,20 @@ class BasketballGame:
         keys = pygame.key.get_pressed()
         
         # Player movement
+        p_dx = 0
         if keys[KEY_LEFT]:
             self.player_x -= self.move_speed * dt
+            p_dx = -1
+            self.player_facing_right = False
         if keys[KEY_RIGHT]:
             self.player_x += self.move_speed * dt
+            p_dx = 1
+            self.player_facing_right = True
         if keys[KEY_UP] and self.player_y >= self.ground_y:
             self.player_vy = self.jump_speed
+
+        p_speed = 1.0 if p_dx == 0 else 2.5
+        self._player_anim_timer += dt * p_speed
 
         self.player_vy += self.gravity * dt
         self.player_y += self.player_vy * dt
@@ -193,10 +263,18 @@ class BasketballGame:
         # Opponent AI
         target_x = self.ball_x if self.ball_held_by is None else (self.hoop_left.centerx if self.ball_held_by == 'opp' else self.player_x - 100)
         
+        o_dx = 0
         if self.opp_x < target_x - 10:
             self.opp_x += self.move_speed * 0.8 * dt
+            o_dx = 1
+            self.opp_facing_right = True
         elif self.opp_x > target_x + 10:
             self.opp_x -= self.move_speed * 0.8 * dt
+            o_dx = -1
+            self.opp_facing_right = False
+
+        o_speed = 1.0 if o_dx == 0 else 2.5
+        self._opp_anim_timer += dt * o_speed
 
         self.opp_vy += self.gravity * dt
         self.opp_y += self.opp_vy * dt
@@ -224,17 +302,29 @@ class BasketballGame:
                     self._shoot_ball('opp', self.opp_shoot_bar)
                     self.opp_shooting = False
             
-            # Opponent auto-block
-            if not self.opp_blocking and self.ball_held_by is None and self.ball_vy > 0:
-                # If ball is near opponent and player shot it
-                if self.possession == 'player' and math.hypot(self.ball_x - self.opp_x, self.ball_y - self.opp_y) < 80:
-                    if random.random() < 0.3:
-                        self.opp_blocking = True
-                        self.opp_block_timer = 0.2
+            # Opponent auto-block/steal
+            if not self.opp_blocking:
+                if self.ball_held_by == 'player' and self.shooting:
+                    if math.hypot(self.player_x - self.opp_x, self.player_y - self.opp_y) < 100:
+                        if random.random() < 0.02:
+                            self.opp_blocking = True
+                            self.opp_block_timer = 0.2
+                            self.shooting = False
+                            self.ball_held_by = 'opp'
+                            self.possession = 'opp'
+                elif self.ball_held_by is None and self.ball_vy > 0:
+                    # If ball is near opponent and player shot it
+                    if self.possession == 'player' and math.hypot(self.ball_x - self.opp_x, self.ball_y - self.opp_y) < 80:
+                        if random.random() < 0.3:
+                            self.opp_blocking = True
+                            self.opp_block_timer = 0.2
 
         # Shooting bar logic
         if self.shooting:
-            self.shoot_bar += self.shoot_dir * dt * 1.5
+            dist = abs(self.player_x - self.hoop_right.centerx)
+            is_3pt = dist > self.three_point_dist
+            speed = 2.5 if is_3pt else 1.5
+            self.shoot_bar += self.shoot_dir * dt * speed
             if self.shoot_bar >= 1.0:
                 self.shoot_bar = 1.0
                 self.shoot_dir = -1
@@ -255,12 +345,12 @@ class BasketballGame:
         # Ball physics
         if self.ball_held_by == 'player':
             self.ball_x = self.player_x + 20
-            self.ball_y = self.player_y - 20
+            self.ball_y = self.player_y - 80
             self.ball_vx = 0
             self.ball_vy = 0
         elif self.ball_held_by == 'opp':
             self.ball_x = self.opp_x - 20
-            self.ball_y = self.opp_y - 20
+            self.ball_y = self.opp_y - 80
             self.ball_vx = 0
             self.ball_vy = 0
         else:
@@ -304,16 +394,18 @@ class BasketballGame:
 
             # Scoring
             if self.hoop_right.collidepoint(self.ball_x, self.ball_y) and self.ball_vy > 0:
-                self.player_score += 1
+                pts = 3 if (self.last_shot_team == 'player' and abs(self.last_shot_x - self.hoop_right.centerx) > self.three_point_dist) else 2
+                self.player_score += pts
                 self.reset_positions()
             elif self.hoop_left.collidepoint(self.ball_x, self.ball_y) and self.ball_vy > 0:
-                self.opp_score += 1
+                pts = 3 if (self.last_shot_team == 'opp' and abs(self.last_shot_x - self.hoop_left.centerx) > self.three_point_dist) else 2
+                self.opp_score += pts
                 self.reset_positions()
 
-        if self.player_score >= 5:
+        if self.player_score >= 10:
             self.end_message = "You Win!"
             self.waiting_for_dismiss = True
-        elif self.opp_score >= 5:
+        elif self.opp_score >= 10:
             self.end_message = "Opponent Wins!"
             self.waiting_for_dismiss = True
 
@@ -339,20 +431,60 @@ class BasketballGame:
         # Ground
         pygame.draw.rect(screen, (100, 100, 100), (0, self.ground_y, SCREEN_WIDTH, SCREEN_HEIGHT - self.ground_y))
         
+        # 3-Point Lines
+        p_3pt_x = self.hoop_right.centerx - self.three_point_dist
+        o_3pt_x = self.hoop_left.centerx + self.three_point_dist
+        pygame.draw.line(screen, (200, 200, 200), (p_3pt_x, self.ground_y), (p_3pt_x, SCREEN_HEIGHT), 2)
+        pygame.draw.line(screen, (200, 200, 200), (o_3pt_x, self.ground_y), (o_3pt_x, SCREEN_HEIGHT), 2)
+
         # Hoops
         pygame.draw.rect(screen, (200, 50, 50), self.hoop_left)
         pygame.draw.rect(screen, (200, 50, 50), self.hoop_right)
 
         # Player & Opp
-        if self.blocking:
-            pygame.draw.rect(screen, (100, 200, 255), (self.player_x - 30, self.player_y - 90, 60, 100))
-        else:
-            pygame.draw.rect(screen, (50, 150, 250), (self.player_x - 20, self.player_y - 80, 40, 80))
+        if self._sprites_loaded:
+            p_frames = self._player_sprites.get("idle", [])
+            o_frames = self._opp_sprites.get("idle", [])
             
-        if self.opp_blocking:
-            pygame.draw.rect(screen, (255, 150, 100), (self.opp_x - 30, self.opp_y - 90, 60, 100))
+            if p_frames:
+                p_idx = int(self._player_anim_timer * 8.0) % len(p_frames)
+                p_frame = p_frames[p_idx]
+                if not self.player_facing_right:
+                    p_frame = pygame.transform.flip(p_frame, True, False)
+                if self.blocking:
+                    p_frame = p_frame.copy()
+                    p_frame.fill((100, 200, 255, 128), special_flags=pygame.BLEND_RGBA_ADD)
+                screen.blit(p_frame, (self.player_x - 30, self.player_y - 120))
+            else:
+                if self.blocking:
+                    pygame.draw.rect(screen, (100, 200, 255), (self.player_x - 30, self.player_y - 90, 60, 100))
+                else:
+                    pygame.draw.rect(screen, (50, 150, 250), (self.player_x - 20, self.player_y - 80, 40, 80))
+            
+            if o_frames:
+                o_idx = int(self._opp_anim_timer * 8.0) % len(o_frames)
+                o_frame = o_frames[o_idx]
+                if self.opp_facing_right:
+                    o_frame = pygame.transform.flip(o_frame, True, False)
+                if self.opp_blocking:
+                    o_frame = o_frame.copy()
+                    o_frame.fill((255, 150, 100, 128), special_flags=pygame.BLEND_RGBA_ADD)
+                screen.blit(o_frame, (self.opp_x - 30, self.opp_y - 120))
+            else:
+                if self.opp_blocking:
+                    pygame.draw.rect(screen, (255, 150, 100), (self.opp_x - 30, self.opp_y - 90, 60, 100))
+                else:
+                    pygame.draw.rect(screen, (250, 100, 50), (self.opp_x - 20, self.opp_y - 80, 40, 80))
         else:
-            pygame.draw.rect(screen, (250, 100, 50), (self.opp_x - 20, self.opp_y - 80, 40, 80))
+            if self.blocking:
+                pygame.draw.rect(screen, (100, 200, 255), (self.player_x - 30, self.player_y - 90, 60, 100))
+            else:
+                pygame.draw.rect(screen, (50, 150, 250), (self.player_x - 20, self.player_y - 80, 40, 80))
+                
+            if self.opp_blocking:
+                pygame.draw.rect(screen, (255, 150, 100), (self.opp_x - 30, self.opp_y - 90, 60, 100))
+            else:
+                pygame.draw.rect(screen, (250, 100, 50), (self.opp_x - 20, self.opp_y - 80, 40, 80))
 
         # Ball
         pygame.draw.circle(screen, (255, 140, 0), (int(self.ball_x), int(self.ball_y)), self.ball_radius)
@@ -361,23 +493,48 @@ class BasketballGame:
         score_text = self._font.render(f"Player: {self.player_score}  |  Opp: {self.opp_score}", True, WHITE)
         screen.blit(score_text, (SCREEN_WIDTH // 2 - score_text.get_width() // 2, 20))
 
+        # Opponent Shooting Bar
+        if self.opp_shooting:
+            bar_w = 100
+            bar_h = 10
+            bar_x = self.opp_x - bar_w // 2
+            bar_y = self.opp_y - 140
+            pygame.draw.rect(screen, BLACK, (bar_x, bar_y, bar_w, bar_h))
+            
+            fill_w = int(bar_w * self.opp_shoot_bar)
+            color = (255, 0, 0)
+            if 0.7 < self.opp_shoot_bar < 0.9:
+                color = (0, 255, 0)
+            elif 0.5 < self.opp_shoot_bar < 0.95:
+                color = (255, 255, 0)
+                
+            pygame.draw.rect(screen, color, (bar_x, bar_y, fill_w, bar_h))
+            pygame.draw.rect(screen, WHITE, (bar_x + int(bar_w * 0.8) - 2, bar_y - 2, 4, bar_h + 4))
+
         # Shooting Bar
         if self.shooting:
+            dist = abs(self.player_x - self.hoop_right.centerx)
+            is_3pt = dist > self.three_point_dist
+            
             bar_w = 100
             bar_h = 10
             bar_x = self.player_x - bar_w // 2
-            bar_y = self.player_y - 100
+            bar_y = self.player_y - 140
             pygame.draw.rect(screen, BLACK, (bar_x, bar_y, bar_w, bar_h))
             
             fill_w = int(bar_w * self.shoot_bar)
             color = (255, 0, 0)
-            if 0.7 < self.shoot_bar < 0.9:
+            
+            green_min, green_max = (0.75, 0.85) if is_3pt else (0.7, 0.9)
+            if green_min < self.shoot_bar < green_max:
                 color = (0, 255, 0)
             elif 0.5 < self.shoot_bar < 0.95:
                 color = (255, 255, 0)
                 
             pygame.draw.rect(screen, color, (bar_x, bar_y, fill_w, bar_h))
-            pygame.draw.rect(screen, WHITE, (bar_x + int(bar_w * 0.8) - 2, bar_y - 2, 4, bar_h + 4))
+            target_line_x = bar_x + int(bar_w * 0.8) if not is_3pt else bar_x + int(bar_w * 0.8)
+            # Actually, target_quality is always 0.8 in _shoot_ball
+            pygame.draw.rect(screen, WHITE, (target_line_x - 2, bar_y - 2, 4, bar_h + 4))
 
         if self.show_menu:
             menu_text = self._font.render("Press SPACE to start Basketball!", True, WHITE)

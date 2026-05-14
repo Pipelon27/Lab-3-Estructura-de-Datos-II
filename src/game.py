@@ -575,6 +575,8 @@ class Game:
                         continue
                 if self.state == GameState.TRADING:
                     self.trade_system.handle_click(event.pos)
+                elif self.state == GameState.BASKETBALL:
+                    self.basketball.handle_input(event)
                 elif self.state == GameState.PLAYING:
                     if getattr(self.ui, 'phone_icon_rect', None) and self.ui.phone_icon_rect.collidepoint(event.pos):
                         self.phone.toggle_phone()
@@ -598,6 +600,9 @@ class Game:
                         elif not self.ui.wallet_bg_rect.collidepoint(event.pos) and not self.ui.wallet_bill_rect.collidepoint(event.pos):
                             self.state = GameState.PLAYING
                             self.wallet_focus_item = None
+            elif event.type == pygame.MOUSEBUTTONUP:
+                if self.state == GameState.BASKETBALL:
+                    self.basketball.handle_input(event)
 
     def _handle_controller_input(self):
         """Handle Xbox controller button input (called every frame)."""
