@@ -793,7 +793,10 @@
         "departure": 0,
         "night": 2
       },
-      "dialogue_ids": {},
+      "dialogue_ids": {
+        "aiden": "dlg_marcus_aiden",
+        "lena": "dlg_marcus_lena"
+      },
       "gender": "unspecified"
     },
     {

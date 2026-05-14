@@ -59,6 +59,23 @@
                 "children": []
               }
             ]
+          },
+          {
+            "id": "m_c4",
+            "speaker": "Player",
+            "text": "Wanna play some 1v1 basketball?",
+            "consequences": {"start_basketball": true},
+            "is_player_choice": true,
+            "children": [
+              {
+                "id": "m_c4r",
+                "speaker": "Marcus Rivera",
+                "text": "You're on! First to 5 wins.",
+                "consequences": {},
+                "is_player_choice": false,
+                "children": []
+              }
+            ]
           }
         ]
       }
@@ -101,6 +118,23 @@
                 "speaker": "Marcus Rivera",
                 "text": "Keep your head down, make the right friends, and don't attract the wrong attention. Especially from Dylan's crew.",
                 "consequences": {"reputation_changes": {"athletes": 5}, "xp": 5},
+                "is_player_choice": false,
+                "children": []
+              }
+            ]
+          },
+          {
+            "id": "m2_c3",
+            "speaker": "Player",
+            "text": "Wanna play some 1v1 basketball?",
+            "consequences": {"start_basketball": true},
+            "is_player_choice": true,
+            "children": [
+              {
+                "id": "m2_c3r",
+                "speaker": "Marcus Rivera",
+                "text": "You're on! Let's see if you're as good as your brother.",
+                "consequences": {},
                 "is_player_choice": false,
                 "children": []
               }

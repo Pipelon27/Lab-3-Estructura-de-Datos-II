@@ -173,6 +173,7 @@ class GameState(Enum):
     COMBAT           = auto()
     HACKING          = auto()
     PINGPONG         = auto()
+    BASKETBALL       = auto()
     TRADING          = auto()
     INVENTORY_SCREEN = auto()
     SKILL_TREE_SCREEN = auto()

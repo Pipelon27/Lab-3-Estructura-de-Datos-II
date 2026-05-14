@@ -44,6 +44,7 @@ from src.dialogue   import DialogueSystem
 from src.ui         import UI
 from src.world_map  import WorldMap
 from src.pingpong   import PingPongGame
+from src.basketball import BasketballGame
 from src.social_reputation import ReputationManager
 from src.social_dialogue import SocialDialogueManager
 from src.social_ui import SocialInteractionUI
@@ -259,6 +260,16 @@ class Game:
         self.npc_manager.npcs[self.sibling_npc.id] = self.sibling_npc
         self.npc_manager.relationships.add_node(self.sibling_npc.id)
         
+        # Position Marcus Green at the basketball court (Coliseum interior)
+        marcus = self.npc_manager.get_npc_by_id("npc_marcus_green")
+        if marcus:
+            marcus.current_floor = FLOOR_COLISEUM_INTERIOR
+            marcus.ai_enabled = False
+            marcus.ignore_schedule = True
+            marcus.rect.centerx = 650
+            marcus.rect.centery = 500
+            marcus.show_name = True
+
         # Position Oscar and observers inside the Ping Pong interior floor
         oscar = self.npc_manager.get_npc_by_id("npc_oscar")
         if oscar:
@@ -358,6 +369,8 @@ class Game:
         self.camera.offset.y = max(0, min(target_y, self.camera.map_height - SCREEN_HEIGHT))
         # Ping-pong minigame
         self.pingpong = PingPongGame()
+        # Basketball minigame
+        self.basketball = BasketballGame()
         
         # ── NEW SOCIAL SYSTEMS ────────────────────────────────
         self.social_reputation_manager = ReputationManager()
@@ -686,7 +699,7 @@ class Game:
         """Toggle pause state."""
         if self.state == GameState.PAUSED:
             self.state = getattr(self, 'previous_state', GameState.PLAYING)
-        elif self.state in (GameState.PLAYING, GameState.INTRO_CINEMATIC):
+        elif self.state in (GameState.PLAYING, GameState.INTRO_CINEMATIC, GameState.BASKETBALL):
             self.previous_state = self.state
             self.state = GameState.PAUSED
         elif self.state in (GameState.INVENTORY_SCREEN,
@@ -938,8 +951,8 @@ class Game:
                 self.state = GameState.PLAYING
             elif self.state == GameState.PAUSED:
                 self.state = getattr(self, 'previous_state', GameState.PLAYING)
-            elif self.state == GameState.PLAYING:
-                if self._car_panel_active:
+            elif self.state in (GameState.PLAYING, GameState.BASKETBALL):
+                if self.state == GameState.PLAYING and self._car_panel_active:
                     self._car_panel_active = False
                     self._car_panel_cooldown = 1.0
                     return
@@ -970,7 +983,8 @@ class Game:
             GameState.INTRO_CINEMATIC:  self._keys_cinematic,
             GameState.DIALOGUE:         lambda e: self.dialogue_system.handle_input(e),
             GameState.SOCIAL_INTERACTION: lambda e: self.social_dialogue_manager.handle_input(e),
-            GameState.PINGPONG:        lambda e: self.pingpong.handle_input(e),
+            GameState.PINGPONG:         lambda e: self.pingpong.handle_input(e),
+            GameState.BASKETBALL:       lambda e: self.basketball.handle_input(e),
             GameState.COMBAT:           lambda e: self.combat_system.handle_input(e, self.player),
             GameState.HACKING:          lambda e: self.hacking_game.handle_input(e),
             GameState.TRADING:          lambda e: self.trade_system.handle_input(e),
@@ -1485,6 +1499,23 @@ class Game:
                     else:
                         self.pingpong.end_message = "Lose Match"
                 self.pingpong.waiting_for_dismiss = True
+
+        elif self.state == GameState.BASKETBALL:
+            result = self.basketball.update(dt)
+            if getattr(self.basketball, 'finished', False):
+                self.basketball.finished = False
+                self.basketball.reset()
+                self.state = GameState.PLAYING
+                if self.basketball.player_score > self.basketball.opp_score:
+                    self.reputation.reputation_score = min(100, self.reputation.reputation_score + 20)
+                    self.player.level += 1
+                    from settings import SKILL_POINT_PER_LEVEL
+                    self.player.skill_points += SKILL_POINT_PER_LEVEL
+                    if hasattr(self.ui, 'trigger_level_up'):
+                        self.ui.trigger_level_up()
+                    self._last_known_level = self.player.level
+                else:
+                    self.reputation.reputation_score = max(0, self.reputation.reputation_score - 10)
             # When player dismisses the end screen, finish the minigame and return to playing
 
         if self.state == GameState.HACKING:
@@ -1516,13 +1547,18 @@ class Game:
             if result is not None:
                 self.state = GameState.PLAYING
 
-        if self.state in (GameState.PLAYING, GameState.COMBAT, GameState.DIALOGUE, GameState.SOCIAL_INTERACTION, GameState.PINGPONG):
+        if self.state in (GameState.PLAYING, GameState.COMBAT, GameState.DIALOGUE, GameState.SOCIAL_INTERACTION, GameState.PINGPONG, GameState.BASKETBALL):
             self._tick_time(dt)
             self._update_class_schedule()
 
         if getattr(self.pingpong, 'finished', False):
             self.pingpong.finished = False
             self.pingpong.reset()
+            self.state = GameState.PLAYING
+
+        if getattr(self.basketball, 'finished', False):
+            self.basketball.finished = False
+            self.basketball.reset()
             self.state = GameState.PLAYING
 
         # Network sync
@@ -2394,6 +2430,10 @@ class Game:
             opponent = self.npc_manager.get_npc_by_id("npc_oscar")
             self.pingpong.start(self.player, opponent)
             self.state = GameState.PINGPONG
+        if "start_basketball" in result and result["start_basketball"]:
+            opponent = self.npc_manager.get_npc_by_id("npc_marcus")
+            self.basketball.start(self.player, opponent)
+            self.state = GameState.BASKETBALL
 
     # ── network ───────────────────────────────────────────────
 
@@ -2464,8 +2504,12 @@ class Game:
             GameState.DIALOGUE:          lambda: (self._draw_world(), self.dialogue_system.draw(self.screen)),
             GameState.SOCIAL_INTERACTION: lambda: (self._draw_world(), self.social_ui.draw(self.screen)),
             GameState.PINGPONG:          lambda: self.pingpong.draw(self.screen),
+            GameState.BASKETBALL:        lambda: self.basketball.draw(self.screen),
             GameState.TRADING:           lambda: (self._draw_world(), self.trade_system.draw(self.screen)),
-            GameState.PAUSED:            lambda: (self._draw_world(), self.ui.draw_pause_menu(self.screen, getattr(self, 'pause_sel', 0), self.pause_options)),
+            GameState.PAUSED:            lambda: (
+                self.basketball.draw(self.screen) if getattr(self, 'previous_state', None) == GameState.BASKETBALL else self._draw_world(),
+                self.ui.draw_pause_menu(self.screen, getattr(self, 'pause_sel', 0), self.pause_options)
+            ),
             GameState.INVENTORY_SCREEN:  lambda: self.ui.draw_inventory(self.screen, self.inventory),
             GameState.SKILL_TREE_SCREEN: lambda: self.ui.draw_skill_tree(self.screen, self.player.skill_tree, self.player),
             GameState.HELP:              lambda: self.ui.draw_help_screen(self.screen, self.character),
