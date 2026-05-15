@@ -1179,6 +1179,15 @@ class Game:
         target = self._entry_prompt_target
         if not target:
             return False
+            
+        if target["id"] == "ping_pong_court":
+            mission_text = getattr(self, "_current_main_mission_text", None)
+            if mission_text != "Mission 2: Go to the Ping Pong court to play against Oscar Jimenez.":
+                self.ui.show_notification("This mission has not been unlocked yet.", NOTIF_ERROR)
+                self._entry_prompt_cooldown = 0.6
+                self._entry_prompt_target = None
+                return False
+
         sx, sy = target["spawn"]
         self._go_to_floor(target["target_floor"], sx, sy)
         self._transition_cooldown = 0.5
@@ -1296,6 +1305,12 @@ class Game:
         return True, ""
 
     def _try_teleport_to(self, floor_id: int, tx: int, ty: int) -> bool:
+        if floor_id == FLOOR_PINGPONG_INTERIOR:
+            mission_text = getattr(self, "_current_main_mission_text", None)
+            if mission_text != "Mission 2: Go to the Ping Pong court to play against Oscar Jimenez.":
+                self.ui.show_notification("This mission has not been unlocked yet.", NOTIF_ERROR)
+                return False
+
         floor = self.school_map.get_floor(floor_id)
         if not floor:
             return False
@@ -1303,6 +1318,10 @@ class Game:
         room = floor.get_room_at(tx, ty)
         if floor_id == FLOOR_CAMPUS and room:
             if room.id == "c_tennis":
+                mission_text = getattr(self, "_current_main_mission_text", None)
+                if mission_text != "Mission 2: Go to the Ping Pong court to play against Oscar Jimenez.":
+                    self.ui.show_notification("This mission has not been unlocked yet.", NOTIF_ERROR)
+                    return False
                 self._go_to_floor(FLOOR_PINGPONG_INTERIOR, 650, 900)
                 return True
             if room.id == "c_coliseum":
@@ -2625,7 +2644,7 @@ class Game:
 
         floor = self.school_map.get_floor(self.current_floor)
         if floor:
-            floor.draw(target_surf, self.camera)
+            floor.draw(target_surf, self.camera, self.player)
 
         # Draw parked car on campus
         if self.current_floor == FLOOR_CAMPUS:
@@ -2656,6 +2675,10 @@ class Game:
         # ── Draw Top Layer (Trees, etc.) ──
         if floor and hasattr(floor, 'draw_top_layer'):
             floor.draw_top_layer(target_surf, self.camera)
+            
+        # Basement lighting overlay (covers walls, NPCs, everything)
+        if self.current_floor == FLOOR_BASEMENT and floor:
+             floor._draw_basement_lighting(target_surf, self.camera, self.player)
             
         if self.camera.zoom != 1.0:
             # Scale up to screen size and blit

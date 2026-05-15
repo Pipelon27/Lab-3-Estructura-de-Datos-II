@@ -278,7 +278,7 @@ class Floor:
                 return r
         return None
 
-    def draw(self, screen, camera):
+    def draw(self, screen, camera, player=None):
         sw, sh = screen.get_width(), screen.get_height()
         bg_rect = pygame.Rect(0, 0, self.width, self.height)
         bg = camera.apply_rect(bg_rect)
@@ -351,6 +351,7 @@ class Floor:
                 self._draw_staircase_3d(screen, r, font14)
             elif r.width > 50:
                 pass  # labels drawn after walls
+
 
         door_color = (180, 180, 205)
         for door in self.doors:
@@ -727,6 +728,59 @@ class Floor:
                 if tr.label and r.width > 20:
                     lbl = font_sm.render(tr.label, True, WHITE)
                     screen.blit(lbl, (r.x + 2, r.y - 16))
+
+    def _draw_basement_lighting(self, screen, camera, player):
+        import math, time, random
+        sw, sh = screen.get_width(), screen.get_height()
+        
+        # 1. Prepare dark surface
+        if not hasattr(self, '_basement_dark_surf') or self._basement_dark_surf.get_size() != (sw, sh):
+            self._basement_dark_surf = pygame.Surface((sw, sh), pygame.SRCALPHA)
+        
+        # Very dark purple-black tint
+        self._basement_dark_surf.fill((8, 4, 15, 245)) 
+        
+        # 2. Spotlight position
+        if player:
+            # We use center of player rect
+            px, py = camera.apply_pos(player.rect.centerx, player.rect.centery)
+        else:
+            px, py = sw // 2, sh // 2
+            
+        # 3. Stabilized Atmosphere (Subtle movement)
+        t = time.time()
+        # Very subtle jitter (reduced from 0.98-1.02 to 0.995-1.005)
+        flicker = random.uniform(0.995, 1.005)
+        
+        # Very slow and subtle pulse (reduced from 0.04 to 0.015 and slower frequency)
+        pulse = 1.0 + math.sin(t * 0.8) * 0.015
+        
+        radius = int(280 * flicker * pulse)
+        
+        # 4. Draw the light mask (Spotlight)
+        if not hasattr(self, '_light_mask_base'):
+            # Create a base radial gradient mask
+            msize = 600
+            self._light_mask_base = pygame.Surface((msize, msize), pygame.SRCALPHA)
+            center = msize // 2
+            for r in range(center, 0, -2):
+                # Quadratic falloff for a more natural flashlight look
+                ratio = r / center
+                alpha = int(255 * (1 - ratio * ratio))
+                pygame.draw.circle(self._light_mask_base, (0, 0, 0, alpha), (center, center), r)
+        
+        # Scale and blit mask with SUBtraction to "punch a hole" in the darkness
+        mask = pygame.transform.scale(self._light_mask_base, (radius * 2, radius * 2))
+        self._basement_dark_surf.blit(mask, (px - radius, py - radius), special_flags=pygame.BLEND_RGBA_SUB)
+        
+        # 5. Add a very faint yellow glow at the core
+        glow_r = int(radius * 0.3)
+        glow_surf = pygame.Surface((glow_r*2, glow_r*2), pygame.SRCALPHA)
+        pygame.draw.circle(glow_surf, (220, 200, 100, 15), (glow_r, glow_r), glow_r)
+        self._basement_dark_surf.blit(glow_surf, (px - glow_r, py - glow_r))
+
+        # 6. Apply final result to screen
+        screen.blit(self._basement_dark_surf, (0, 0))
 
     # ── Staircase 3D rendering ───────────────────────────────────
 
