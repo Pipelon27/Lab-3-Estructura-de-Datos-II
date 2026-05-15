@@ -1370,9 +1370,27 @@ class Game:
         # Always tick UI (notifications) and social UI
         self.ui.update(dt)
         self.social_ui.update(dt)
+        
+        # Check if the player viewed the mention in XSchool-Net
+        if getattr(self, "_current_main_mission_text", None) == "Mission 2: Open Social app and click Oscar's post.":
+            if getattr(self, "phone", None) and self.phone.is_visible and self.phone.current_app.value == "social":
+                if getattr(self.phone, "active_post", None):
+                    if self.phone.active_post.author_npc_id == "npc_oscar":
+                        self._current_main_mission_text = "Mission 2: Go to the Ping Pong court to play against Oscar Jimenez."
+
         if getattr(self, 'sibling_npc', None):
             col = (255, 180, 220) if self.character == Character.AIDEN else (100, 150, 255)
             self.world_map.set_marker(self.sibling_npc.name, self.sibling_npc.current_floor, self.sibling_npc.rect.centerx, self.sibling_npc.rect.centery, color=col)
+
+        # Oscar marker logic for Mission 2
+        mission_text = getattr(self, "_current_main_mission_text", None)
+        if mission_text == "Mission 2: Go to the Ping Pong court to play against Oscar Jimenez.":
+            # Floor 6 is Ping Pong Court Interior, Floor 0 is Campus
+            self.world_map.set_marker("Oscar Jimenez", 6, 650, 450, color=(255, 50, 50))
+            self.world_map.set_marker("Oscar Jimenez ", 0, 3490, 2475, color=(255, 50, 50)) # Space added for unique dict key
+        elif "Oscar Jimenez" in getattr(self.world_map, "_markers", {}):
+            self.world_map.clear_marker("Oscar Jimenez")
+            self.world_map.clear_marker("Oscar Jimenez ")
             
         if self._bathroom_block_timer > 0:
             self._bathroom_block_timer = max(0.0, self._bathroom_block_timer - dt)
@@ -2565,6 +2583,10 @@ class Game:
             # Building entry prompt
             if self.current_floor == FLOOR_CAMPUS and self._entry_prompt_target:
                 self._draw_entry_prompt(self._entry_prompt_target["label"])
+                
+            # Custom mission text overlay (matches cinematic mission box)
+            if getattr(self, "_current_main_mission_text", None):
+                self._draw_mission_box(self._current_main_mission_text)
         # Notifications always on top (suppress during cinematic)
         if self.state != GameState.INTRO_CINEMATIC:
             self.ui.draw_notifications(self.screen)
@@ -2814,7 +2836,14 @@ class Game:
             if self._noah_final_dlg_index >= len(self._noah_final_dlg_lines):
                 # End cinematic → PLAYING
                 self.state = GameState.PLAYING
+                
+                # Level Up 
+                self.player.level = 2
+                self.player.xp = 0
+                self.ui.trigger_level_up()
+                
                 self._add_noah_contact()
+                self._start_oscar_mission()
                 self._noah_guide_active = False
                 self._cinematic_stairs_unlocked = False
                 noah = self.npc_manager.get_npc_by_id("npc_noah_carter")
@@ -2831,7 +2860,14 @@ class Game:
     def _skip_cinematic(self):
         """Immediately end the intro cinematic and jump to PLAYING state."""
         self.state = GameState.PLAYING
+        
+        # Level Up
+        self.player.level = 2
+        self.player.xp = 0
+        self.ui.trigger_level_up()
+        
         self._add_noah_contact()
+        self._start_oscar_mission()
         self._noah_guide_active = False
         self._cinematic_stairs_unlocked = False
         self._cine_phase = "done"
@@ -2884,6 +2920,29 @@ class Game:
             reply_options=["Thanks Noah!", "Got it, thanks!", "Who are you exactly?"]
         )
         self.phone.add_text_message("npc_noah_carter", msg)
+
+    def _start_oscar_mission(self):
+        """Add Oscar's challenge mention and start the phone check mission."""
+        from src.phone import SocialPost
+        import uuid
+        
+        player_name = self.player.character.value.capitalize()
+        mention_str = f"@{player_name}Parker"
+        
+        post = SocialPost(
+            id=str(uuid.uuid4()),
+            author="Oscar Jimenez",
+            author_npc_id="npc_oscar",
+            content=f"I heard {mention_str} just arrived at Ravenside. I publicly challenge you to a game of Ping Pong. Let's see if you can prove yourself and raise your reputation!",
+            timestamp=self._get_time_string(),
+            is_anonymous=False,
+            handle="oscar_j",
+            likes=46,
+            mentions=["aiden", "lena", mention_str],
+            is_read=False
+        )
+        self.phone.add_social_post(post)
+        self._current_main_mission_text = "Mission 2: Open Social app and click Oscar's post."
 
     def _start_noah_guide(self):
         """Set up Noah Carter's walking route through the school."""
@@ -3022,11 +3081,11 @@ class Game:
 
         # ── Mission text ──
         if self._cine_phase == "mission" and self._cine_show_mission:
-            self._draw_mission_box("Follow Noah Carter through the school.")
+            self._draw_mission_box("Mission 1: Follow Noah Carter through the school.")
 
         # ── Guide phase: persistent mission box + waiting indicator ──
         if self._cine_phase == "guide":
-            self._draw_mission_box("Follow Noah Carter through the school.")
+            self._draw_mission_box("Mission 1: Follow Noah Carter through the school.")
             if self._noah_wait_for_player:
                 font = pygame.font.Font(VT323_PATH, 22)
                 txt = font.render("Noah is waiting for you...", True, (255, 220, 100))
@@ -3138,10 +3197,10 @@ class Game:
             self.screen.blit(font.render(line, True, colour), (x, y))
 
     def _draw_mission_box(self, mission_text: str):
-        """Draw a mission objective text box at the top of the screen."""
-        box_w, box_h = 500, 60
-        bx = (SCREEN_WIDTH - box_w) // 2
-        by = 80
+        """Draw a mission objective text box below the stats."""
+        box_w, box_h = 420, 60
+        bx = 16
+        by = 110
 
         surf = pygame.Surface((box_w, box_h), pygame.SRCALPHA)
         surf.fill((10, 30, 50, 220))
@@ -3152,7 +3211,7 @@ class Game:
         icon = icon_font.render("MISSION", True, (100, 180, 255))
         self.screen.blit(icon, (bx + 15, by + 8))
 
-        txt_font = pygame.font.Font(VT323_PATH, 20)
+        txt_font = pygame.font.Font(VT323_PATH, 16)
         txt = txt_font.render(mission_text, True, WHITE)
         self.screen.blit(txt, (bx + 15, by + 30))
 

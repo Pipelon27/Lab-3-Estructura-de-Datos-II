@@ -38,6 +38,12 @@ PHONE_H = _PH_H
 HUD_PHONE_X = SCREEN_WIDTH - PHONE_W - _MARGIN_X
 HUD_PHONE_Y = SCREEN_HEIGHT - PHONE_H - _MARGIN_Y
 
+# Display target (Large & Centered)
+DISPLAY_PHONE_H = int(SCREEN_HEIGHT * 0.85)
+DISPLAY_PHONE_W = int(DISPLAY_PHONE_H * 9 / 16)
+DISPLAY_PHONE_X = (SCREEN_WIDTH - DISPLAY_PHONE_W) // 2
+DISPLAY_PHONE_Y = (SCREEN_HEIGHT - DISPLAY_PHONE_H) // 2
+
 _BZ     = 8    # bezel
 _STAT_H = 28   # status-bar height
 _APP_HOME_H = 28  # in-app home chrome row
@@ -62,7 +68,7 @@ _SPLASH_MIN = 1.0
 _SPLASH_MAX = 3.0
 
 # overlay: light HUD; darker map / transition
-_OVERLAY_ALPHA_HUD = 72
+_OVERLAY_ALPHA_HUD = 180
 _OVERLAY_ALPHA_MAP_T = 200
 
 # icon colours (home grid)
@@ -714,18 +720,18 @@ class Phone:
             w = self._ease_in_out_quint(1.0 - t_lin)
             u_rot = 1.0 - t_lin
 
-        hx, hy, hw, hh = HUD_PHONE_X, HUD_PHONE_Y, PHONE_W, PHONE_H
+        hx, hy, hw, hh = DISPLAY_PHONE_X, DISPLAY_PHONE_Y, DISPLAY_PHONE_W, DISPLAY_PHONE_H
         cx0 = hx + hw // 2
         cy0 = hy + hh // 2
         cx = int(cx0 + (SCREEN_WIDTH // 2 - cx0) * w)
         cy = int(cy0 + (SCREEN_HEIGHT // 2 - cy0) * w)
         scale_end = max(
-            SCREEN_WIDTH / max(1, PHONE_W),
-            SCREEN_HEIGHT / max(1, PHONE_H),
+            SCREEN_WIDTH / max(1, DISPLAY_PHONE_W),
+            SCREEN_HEIGHT / max(1, DISPLAY_PHONE_H),
         ) * 1.015
         sc = 1.0 + (scale_end - 1.0) * w
-        nw = max(2, int(PHONE_W * sc))
-        nh = max(2, int(PHONE_H * sc))
+        nw = max(2, int(DISPLAY_PHONE_W * sc))
+        nh = max(2, int(DISPLAY_PHONE_H * sc))
 
         # CLOCKWISE ROTATION CORRECTED
         # Forward: 0° → 90° (clockwise)
@@ -777,8 +783,8 @@ class Phone:
         self.screen.blit(rot, rect.topleft)
 
     def _screen_phone_rect(self, p_anim: float):
-        """Del icono HUD → rectángulo final esquina inferior derecha."""
-        tx, ty, tw, th = HUD_PHONE_X, HUD_PHONE_Y, PHONE_W, PHONE_H
+        """Del icono HUD → rectángulo final grande y centrado."""
+        tx, ty, tw, th = DISPLAY_PHONE_X, DISPLAY_PHONE_Y, DISPLAY_PHONE_W, DISPLAY_PHONE_H
         if self._hud_anchor and self._hud_anchor.width > 2:
             hx, hy, hw, hh = (
                 self._hud_anchor.x,
@@ -786,10 +792,10 @@ class Phone:
                 self._hud_anchor.w,
                 self._hud_anchor.h,
             )
-            tx = int(hx + (HUD_PHONE_X - hx) * p_anim)
-            ty = int(hy + (HUD_PHONE_Y - hy) * p_anim)
-            tw = int(hw + (PHONE_W - hw) * p_anim)
-            th = int(hh + (PHONE_H - hh) * p_anim)
+            tx = int(hx + (DISPLAY_PHONE_X - hx) * p_anim)
+            ty = int(hy + (DISPLAY_PHONE_Y - hy) * p_anim)
+            tw = int(hw + (DISPLAY_PHONE_W - hw) * p_anim)
+            th = int(hh + (DISPLAY_PHONE_H - hh) * p_anim)
         tw = max(24, tw)
         th = max(42, th)
         return tx, ty, tw, th
@@ -1814,6 +1820,10 @@ class Phone:
                 self.avatars["npc_lena"] = pygame.image.load(path_lena2).convert_alpha()
             elif os.path.exists(path_lena):
                 self.avatars["npc_lena"] = pygame.image.load(path_lena).convert_alpha()
+                
+            path_oscar = "assets/Imagenes realistas personajes/Oscar Jimenez.png"
+            if os.path.exists(path_oscar):
+                self.avatars["npc_oscar"] = pygame.image.load(path_oscar).convert_alpha()
         except Exception:
             pass
 
