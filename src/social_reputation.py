@@ -199,7 +199,8 @@ class ReputationManager:
     # ── INTERACTION MATRIX APPLICATION ────────────────────────────────
 
     def apply_interaction(self, group: str, action: str,
-                         npc_id: str = "") -> list[ReputationDelta]:
+                         npc_id: str = "",
+                         dry_run: bool = False) -> list[ReputationDelta]:
         """Apply consequences of an interaction with a group.
 
         Parameters
@@ -218,7 +219,7 @@ class ReputationManager:
         """
         deltas = []
         key = (group, action)
-        
+
         if key not in SUBGROUP_MATRIX:
             print(f"[SocialSystem] Missing subgroup key: {key}")
             return deltas
@@ -237,7 +238,11 @@ class ReputationManager:
 
             delta = ReputationDelta(target_group, stat, value)
             deltas.append(delta)
-            
+
+            # Skip actual mutation when doing a preview (dry run)
+            if dry_run:
+                continue
+
             # Apply the change
             if target_group.startswith("global_"):
                 # Global stats
@@ -252,21 +257,21 @@ class ReputationManager:
                 if stat not in ("respect", "trust", "fear"):
                     print(f"[SocialSystem] Invalid stat in entry: {entry}")
                     continue
-                    
+
                 if target_group in self.subgroups:
                     rec = self.subgroups[target_group]
                     cur = getattr(rec, stat, 50)
                     new_val = max(0, min(100, cur + value))
                     setattr(rec, stat, new_val)
-                    
+
                     print(f"[SocialSystem] Reputation updated: {target_group.capitalize()} {stat} {value:+d}")
-                    
+
                     # Auto-update ally status
                     if stat == "respect":
                         rec.ally = new_val >= ALLY_THRESHOLD
 
-        # Also sync to base ReputationSystem if available
-        if self.reputation_system:
+        # Sync to base ReputationSystem (only when actually applying)
+        if not dry_run and self.reputation_system:
             try:
                 self.reputation_system.modify(group, max(-20, min(20, sum(
                     d.delta for d in deltas if d.subgroup == group and d.stat == "respect"
@@ -275,6 +280,37 @@ class ReputationManager:
                 print(f"[SocialSystem] Failed to sync with base reputation system: {e}")
 
         return deltas
+
+    def apply_individual_npc_stats(self, npc, action: str):
+        """Apply small stat changes directly to the individual NPC.
+
+        These are separate from the subgroup-level reputation matrix and
+        make the per-NPC relationship/trust/fear in the right panel respond
+        visibly to each interaction.
+
+        Parameters
+        ----------
+        npc : NPC
+            The NPC that was interacted with.
+        action : str
+            "respond", "ignore", or "intimidate"
+        """
+        # Per-action deltas applied to the individual NPC
+        _INDIVIDUAL_DELTAS = {
+            "respond":    {"relationship": +6,  "npc_trust": +5,  "npc_fear": -2},
+            "ignore":     {"relationship": -4,  "npc_trust": -3,  "npc_fear": +1},
+            "intimidate": {"relationship": -8,  "npc_trust": -7,  "npc_fear": +10},
+        }
+        deltas = _INDIVIDUAL_DELTAS.get(action, {})
+        for stat, delta in deltas.items():
+            cur = getattr(npc, stat, 50)
+            new_val = max(0, min(100, cur + delta))
+            setattr(npc, stat, new_val)
+
+        # Update allied status on individual NPC too
+        npc.is_allied = npc.relationship >= ALLY_THRESHOLD
+
+        print(f"[SocialSystem] {npc.name} personal stats updated via '{action}'")
 
     # ── QUERIES ───────────────────────────────────────────────────
 

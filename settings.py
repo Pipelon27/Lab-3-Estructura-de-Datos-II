@@ -71,7 +71,7 @@ NPC_INTERACTION_RANGE = 70
 NPC_SOCIAL_RANGE      = 90       # px — world-space trigger range for interaction prompts
 ALLY_THRESHOLD        = 70       # relationship ≥ 70 = allied
 FEAR_SPREAD_RADIUS    = 220      # px — nearby NPCs that feel high fear
-SOCIAL_COOLDOWN       = 30.0     # seconds before re-interacting with same NPC
+SOCIAL_COOLDOWN       = 5.0      # seconds before re-interacting with same NPC
 
 # ──────────────────────────────────────────────────────────────
 #  XP / LEVELING
