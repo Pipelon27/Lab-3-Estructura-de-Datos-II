@@ -112,6 +112,10 @@ class Player:
         self.animation_timer = 0.0
         self.image: pygame.Surface | None = None
 
+        # Footstep sound
+        self.step_sound = None
+        self._is_stepping = False
+
         # Skill tree (set by subclass)
         self.skill_tree: SkillTree | None = None
 
@@ -158,8 +162,21 @@ class Player:
         # Update animation state
         if dx == 0 and dy == 0:
             self.state = "idle"
+            if self.step_sound and self._is_stepping:
+                self.step_sound.stop()
+                self._is_stepping = False
         else:
             self.state = "walk"
+            if self.step_sound is None:
+                try:
+                    if pygame.mixer.get_init():
+                        self.step_sound = pygame.mixer.Sound("sound/pasos.mp3")
+                        self.step_sound.set_volume(0.85)
+                except Exception:
+                    pass
+            if self.step_sound and not self._is_stepping:
+                self.step_sound.play(-1)
+                self._is_stepping = True
 
         # Update animation frame
         anim_key = f"{self.state}_{self.direction.value}"
@@ -187,6 +204,12 @@ class Player:
             if t > 0:
                 new_trail.append((r, t - trail_decay))
         self._dash_trail = new_trail
+
+    def stop_audio(self):
+        """Immediately cut any active footstep audio."""
+        if self.step_sound and self._is_stepping:
+            self.step_sound.stop()
+            self._is_stepping = False
 
     def start_dash(self):
         """Initiate a quick dash in the current direction."""

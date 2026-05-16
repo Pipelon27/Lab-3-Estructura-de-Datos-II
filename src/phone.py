@@ -258,6 +258,11 @@ class Phone:
         self._notif_toast = None # {title, body, icon, t}
         self._toast_duration = 4.0
         
+        self.pending_photo_posts: list[SocialPost] = []
+        self.photo_posts_released_today = 0
+        self._photo_post_timer = 0.0
+        self._photo_post_interval = 15.0 # First photo post on Day 1 appears after 15s
+
         self._current_day_for_schedule = -1
         self._refresh_weekly_schedule(1)
 
@@ -289,6 +294,9 @@ class Phone:
         
         self.avatars = {}
         self._load_avatars()
+
+        self.social_images = {}
+        self._load_social_images()
 
         self._load_initial_social_posts()
         self._load_initial_messages()
@@ -487,6 +495,18 @@ class Phone:
             self._social_notif_timer = 0.0
             self._generate_random_social_post()
 
+        # Scheduled photo posts (2 per day over 4 days)
+        if self._current_day_for_schedule <= 4 and self.pending_photo_posts:
+            if self.photo_posts_released_today < 2:
+                self._photo_post_timer += dt
+                if self._photo_post_timer >= self._photo_post_interval:
+                    self._photo_post_timer = 0.0
+                    self._photo_post_interval = random.uniform(30.0, 60.0)
+                    post = self.pending_photo_posts.pop(0)
+                    post.timestamp = "1m"
+                    self.add_social_post(post)
+                    self.photo_posts_released_today += 1
+
         # Update likes over time
         self._social_likes_timer += dt
         if self._social_likes_timer >= self._social_likes_interval:
@@ -543,6 +563,9 @@ class Phone:
         """Update the internal schedule based on the game day (Monday-Friday cycle)."""
         if day_number == self._current_day_for_schedule:
             return
+        self.photo_posts_released_today = 0
+        self._photo_post_timer = 0.0
+        self._photo_post_interval = random.uniform(20.0, 45.0)
         self._refresh_weekly_schedule(day_number)
 
     def _refresh_weekly_schedule(self, day_number: int):
@@ -1188,10 +1211,16 @@ class Phone:
                   player in [m.lower() for m in p.mentions])]
 
         sc = self._scroll[PhoneApp.SOCIAL]
-        PH = 72
         yoff = y - sc
 
         for post in posts:
+            text_h = self._measure_wrap_text(post.content, self._f_body, cw - _PAD * 2 - 54, 14)
+            PH = 16 + text_h + 28
+            
+            has_img = post.image_tag and post.image_tag in self.social_images
+            if has_img:
+                PH += 210 + 12
+
             if yoff + PH < cy:
                 yoff += PH + _GAP
                 continue
@@ -1222,19 +1251,23 @@ class Phone:
             s.blit(ht_t, (tx + name_t.get_width(), ty + 2))
 
             # Content
-            self._clip_text(s, post.content, self._f_body, PH_TEXT,
-                            tx, ty + 16, cw - _PAD * 2 - 54)
+            curr_y = self._wrap_text(s, post.content, self._f_body, PH_TEXT, tx, ty + 18, cw - _PAD * 2 - 54, 14)
 
-            # Second line of content
-            if len(post.content) > 34:
-                cont2 = post.content[34:68] + ("..." if len(post.content) > 68 else "")
-                self._clip_text(s, cont2, self._f_body, PH_TEXT_S,
-                                tx, ty + 28, cw - _PAD * 2 - 54)
+            # Image attachment
+            if has_img:
+                curr_y += 6
+                img = self.social_images[post.image_tag]
+                img_w = cw - _PAD * 2 - 54
+                img_h = 210
+                scaled = pygame.transform.smoothscale(img, (img_w, img_h))
+                img_rect = pygame.Rect(tx, curr_y, img_w, img_h)
+                s.blit(scaled, img_rect.topleft)
+                pygame.draw.rect(s, PH_BD, img_rect, width=1, border_radius=8)
 
             # Action icons (Like only for now)
             lk_col = PH_PINK if post._liked else PH_TEXT_D
             lk = self._f_sub.render(f"♥ {post.likes}", True, lk_col)
-            lk_r = pygame.Rect(tx, card.bottom - 16, 48, 14)
+            lk_r = pygame.Rect(tx, card.bottom - 20, 48, 14)
             s.blit(lk, lk_r.topleft)
             self._like_rects.append((lk_r, post))
 
@@ -1242,7 +1275,7 @@ class Phone:
             is_m = player in [m.lower() for m in post.mentions]
             if is_m:
                 mb = self._f_sub.render("Mentioned you", True, PH_CYAN)
-                s.blit(mb, (card.right - mb.get_width() - 8, card.bottom - 16))
+                s.blit(mb, (card.right - mb.get_width() - 8, card.bottom - 20))
 
             self._post_rects.append((card, post))
             yoff += PH + _GAP
@@ -1270,6 +1303,16 @@ class Phone:
         
         y = self._wrap_text(s, post.content, self._f_body, PH_TEXT, cx + _PAD, y, cw - _PAD * 2, 14)
         y += _GAP
+
+        if post.image_tag and post.image_tag in self.social_images:
+            img = self.social_images[post.image_tag]
+            img_w = cw - _PAD * 2
+            img_h = 260
+            scaled = pygame.transform.smoothscale(img, (img_w, img_h))
+            img_rect = pygame.Rect(cx + _PAD, y, img_w, img_h)
+            s.blit(scaled, img_rect.topleft)
+            pygame.draw.rect(s, PH_BD, img_rect, width=1, border_radius=8)
+            y += img_h + _GAP
         
         ts_s = self._f_sub.render(f"Posted {post.timestamp} ago · SchoolNet for Mobile", True, PH_TEXT_D)
         s.blit(ts_s, (cx + _PAD, y))
@@ -1827,6 +1870,34 @@ class Phone:
         except Exception:
             pass
 
+    def _load_social_images(self):
+        """Pre-load images for social posts."""
+        import os
+        for i in range(1, 9):
+            path = f"assets/Social/{i}.png"
+            if os.path.exists(path):
+                try:
+                    img = pygame.image.load(path).convert_alpha()
+                    self.social_images[path] = img
+                except Exception:
+                    pass
+
+    def _measure_wrap_text(self, text, font, max_w, line_h) -> int:
+        words = str(text).split()
+        line = ""
+        lines = 0
+        for w in words:
+            test = (line + " " + w).strip()
+            if font.size(test)[0] <= max_w:
+                line = test
+            else:
+                if line:
+                    lines += 1
+                line = w
+        if line:
+            lines += 1
+        return lines * line_h
+
     def _draw_avatar(self, surf, npc_id, name, center, radius):
         """Draw a circular avatar image or fallback to initials."""
         if npc_id in self.avatars:
@@ -1965,16 +2036,18 @@ class Phone:
     def _load_initial_social_posts(self):
         """Populate the social feed with initial gossip and bullying posts."""
         gossip = [
-            SocialPost("g1", "Anonymous", None, "Did you see what happened in the cafeteria? Everyone was laughing at Alexander Hill.", "2m", True, 12, ["Alexander"], handle="anon_spy"),
-            SocialPost("g2", "Anonymous", None, "Look at this photo of Emma Watson crying in the art room. #losers", "5m", True, 45, ["Emma"], handle="shadow_hater"),
-            SocialPost("g3", "Brandon Cole", "npc_brandon_cole", "I heard Andrew Collins is getting kicked out of the team for being a fraud.", "15m", False, 8, handle="brandon_v"),
-            SocialPost("g4", "Anonymous", None, "Amelia Clark thinks she's so smart but everyone knows she cheated on the finals.", "1h", True, 22, handle="truth_seeker"),
-            SocialPost("g5", "Anonymous", None, "Hey James Baker, stop trying to fit in. Nobody wants you here.", "2h", True, 67, ["James"], handle="gatekeeper"),
-            SocialPost("g6", "Mia Thompson", "npc_mia", "Why is Hannah Scott even here? Her outfit is from like... three seasons ago. Eww.", "3h", False, 15, handle="mia_style"),
-            SocialPost("g7", "Anonymous", None, "Somebody should tell William King his 'hidden' talent is better off staying hidden. Forever.", "4h", True, 31, handle="savage_anon"),
-            SocialPost("g8", "Anonymous", None, "Oscar Jimenez is being watched. We see everything you do. 👁️", "5h", True, 99, handle="raven_eye"),
+            SocialPost("g1", "Anonymous", None, "Someone wake up Justin Cole 💀 Bro is catching flies in AP Chem. Snoring like a whole lawnmower in the back row, the drool is crazy standard. Who wants to drop a piece of chalk in there? 😭😂 #RavensideSleepers #CloseYourMouth #Outsiders", "2m", True, 12, ["Justin"], image_tag="assets/Social/1.png", handle="chem_spy"),
+            SocialPost("g2", "Anonymous", None, "The way the entire row cleared out when Eric Stone sat down... locker room smells better than this. Someone drop a body spray in his locker ASAP. 🤢 #HygieneCheck #Outsiders #Ravenside", "5m", True, 45, ["Eric"], image_tag="assets/Social/2.png", handle="hallway_patrol"),
+            SocialPost("g3", "Anonymous", None, "Spotted: Mason Carter and Leo Carter getting way too close and personal by the lockers today. Just admit it already boys, the closet door is wide open. 👬👀 #CaughtInTheAct #RavensideRumors #Athletes", "15m", True, 89, ["Mason", "Leo"], image_tag="assets/Social/3.png", handle="gossip_king"),
+            SocialPost("g4", "Mia Thompson", "npc_mia_thompson", "Ravenside is literally Cheater Central. Don't trust anyone. Case in point: Chloe Adams was seen holding hands with Tyler Grant behind the gym, but isn't she supposed to be with Jake Turner? ☕🐸 #Exposed #Drama #Populars", "1h", False, 134, ["Chloe", "Tyler", "Jake"], image_tag="assets/Social/4.png", handle="mia_spills"),
+            SocialPost("g5", "Brandon Cole", "npc_brandon_cole", "Who let Daniel Kim on the court? 😭 Bro missed a layup so bad it almost hit the cheerleaders. Please stick to video games, Daniel. #BenchWarmer #Airball #Athletes #Nerds", "2h", False, 67, ["Daniel"], image_tag="assets/Social/5.png", handle="brandon_v"),
+            SocialPost("g6", "Anonymous", None, "Imagine Caleb Ross losing a ping pong match to Oscar Jimenez... literally the easiest dub of the season and you choked, Caleb. Embarrassing. 🏓🤡 #PingPongFlop #Athletes #Outsiders", "3h", True, 156, ["Caleb", "Oscar"], image_tag="assets/Social/6.png", handle="pingpong_pro"),
+            SocialPost("g7", "Anonymous", None, "Look at Grace White trying to blend into the wall. It’s been three months and she still speaks to literally nobody. Sad. 😂💀 #NoFriends #Outsiders #Loner", "4h", True, 31, ["Grace"], image_tag="assets/Social/7.png", handle="shadow_watcher"),
+            SocialPost("g8", "Anonymous", None, "Table for one! The cafeteria is packed but nobody wants to sit anywhere near Liam Hayes. Total social rejection. 🕊️💔 #LoserTable #Outsiders #Sad", "5h", True, 99, ["Liam"], image_tag="assets/Social/8.png", handle="cafeteria_cam"),
         ]
-        self.social_posts.extend(gossip)
+        random.shuffle(gossip)
+        self.pending_photo_posts = gossip
+        self._generate_random_social_post()
 
     def _generate_random_social_post(self):
         """Generates a random gossip post from the NPC pool."""
@@ -1987,12 +2060,12 @@ class Phone:
             ("Sophie Turner", "npc_sophie_turner", "sophie_t"),
         ]
         random_gossip = [
-            "I can't believe what I just heard about the Director. Is it true?",
-            "Did anyone else see that weird shadow in the basement?",
-            "Someone left a very strange note on my locker today...",
-            "Ravenside High is definitely hiding something. I'm sure of it.",
-            "I saw Marcus Green acting super suspicious near the library.",
-            "If you value your reputation, stay away from the Ping Pong court tonight.",
+            "Just saw someone eating lunch completely alone in the corner of the cafeteria. How embarrassing for them! 💀",
+            "Did anyone else see that pathetic display in the gym earlier? Some people have absolutely zero coordination. Total joke.",
+            "Imagine thinking you're popular just because you hang out near the fountain. You guys look ridiculous and everyone is laughing at you.",
+            "Whoever wrote that essay in English today needs to go back to elementary school. Worst presentation I have ever heard.",
+            "Nice haircut today... if you were trying to look like a wet rat! 🐀 Seriously, do you not own a mirror?",
+            "If you value your reputation, don't even bother showing up to the Ping Pong court tonight. You'll just get humiliated in front of everyone.",
         ]
         
         name, nid, handle = random.choice(random_npc_names)

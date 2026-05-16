@@ -533,6 +533,15 @@ class Game:
         # Cleanup (if loop exited because running=False)
         if self.network:
             self.network.stop()
+        try:
+            if pygame.mixer.get_init():
+                pygame.mixer.music.stop()
+                if getattr(self, '_fountain_sound', None):
+                    self._fountain_sound.stop()
+                if hasattr(self.player, 'stop_audio'):
+                    self.player.stop_audio()
+        except Exception:
+            pass
 
     # ──────────────────────────────────────────────────────────
     #  EVENT HANDLING
@@ -1381,6 +1390,50 @@ class Game:
     # ──────────────────────────────────────────────────────────
 
     def _update(self, dt: float):
+        # Hallway ambient music logic for main building (FLOOR_1F, FLOOR_2F)
+        if self.current_floor in (FLOOR_1F, FLOOR_2F):
+            if not getattr(self, '_pasillo_playing', False):
+                try:
+                    if pygame.mixer.get_init():
+                        pygame.mixer.music.load("sound/pasillo.mp3")
+                        pygame.mixer.music.set_volume(0.25)
+                        pygame.mixer.music.play(-1)
+                        self._pasillo_playing = True
+                except Exception:
+                    pass
+        else:
+            if getattr(self, '_pasillo_playing', False):
+                try:
+                    if pygame.mixer.get_init():
+                        pygame.mixer.music.stop()
+                        self._pasillo_playing = False
+                except Exception:
+                    pass
+
+        # Fountain ambient audio logic for Campus (FLOOR_CAMPUS) near (2000, 2225)
+        px, py = self.player.rect.center
+        dist = math.hypot(px - 2000, py - 2225)
+        if self.current_floor == FLOOR_CAMPUS and dist <= 1400:
+            if not getattr(self, '_fountain_sound', None):
+                try:
+                    if pygame.mixer.get_init():
+                        self._fountain_sound = pygame.mixer.Sound("sound/fuente.mp3")
+                except Exception:
+                    pass
+            if getattr(self, '_fountain_sound', None):
+                if not getattr(self, '_fountain_playing', False):
+                    self._fountain_sound.play(-1)
+                    self._fountain_playing = True
+                vol = max(0.05, min(0.6, 0.6 * (1.0 - (dist / 1400.0))))
+                self._fountain_sound.set_volume(vol)
+        else:
+            if getattr(self, '_fountain_playing', False) and getattr(self, '_fountain_sound', None):
+                try:
+                    self._fountain_sound.stop()
+                    self._fountain_playing = False
+                except Exception:
+                    pass
+
         if self.state != GameState.INTRO_CINEMATIC:
             self.phone.update(dt)
             pt = self.phone.consume_pending_teleport()
@@ -1435,6 +1488,9 @@ class Game:
             self._last_known_level = self.player.level
             if hasattr(self.ui, 'trigger_level_up'):
                 self.ui.trigger_level_up()
+        if self.state not in (GameState.PLAYING, GameState.INTRO_CINEMATIC):
+            if hasattr(self.player, 'stop_audio'):
+                self.player.stop_audio()
 
         if self.state == GameState.INTRO_CINEMATIC:
             self._update_cinematic(dt)
