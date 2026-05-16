@@ -62,7 +62,6 @@ ROOM_ASSET_FOLDER = {
     "b_terminal":         "basement/final_terminal",
     # rooftop
     "rt_terrace":         "common",
-    "rt_antenna":         "common",
     "rt_benches":         "common",
 }
 
@@ -96,7 +95,6 @@ ROOM_FLOOR_TILE = {
     "b_stairs_up":      "stone_gray",
     "rt_stairs_down":   "stone_gray",
     "rt_terrace":       "stone_gray",
-    "rt_antenna":       "tile_gray",
     "rt_benches":       "stone_gray",
 }
 

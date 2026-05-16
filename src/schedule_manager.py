@@ -62,7 +62,7 @@ class ScheduleManager:
         "f1_infirmary": 6, "f1_men_bath": 8, "f1_women_bath": 8,
         "f2_art_room": 10, "f2_music_room": 8, "f2_conference": 8,
         "f2_director": 3, "b_detention": 6, "b_terminal": 4,
-        "b_surveillance": 4, "rt_antenna": 5, "b_server_room": 8,
+        "b_surveillance": 4, "b_server_room": 8,
         "f1_cafeteria": 15, "c_fountain": 15,
         "c_gardens": 20, "rt_terrace": 15,
         "f1_counselor": 8, "pi_hall": 10,

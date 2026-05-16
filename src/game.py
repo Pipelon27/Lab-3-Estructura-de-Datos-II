@@ -2644,7 +2644,8 @@ class Game:
 
         floor = self.school_map.get_floor(self.current_floor)
         if floor:
-            floor.draw(target_surf, self.camera, self.player)
+            npcs = self.npc_manager.get_npcs_on_floor(self.current_floor)
+            floor.draw(target_surf, self.camera, self.player, npcs)
 
         # Draw parked car on campus
         if self.current_floor == FLOOR_CAMPUS:
@@ -2664,13 +2665,15 @@ class Game:
             if nearest_npc:
                 nearest_npc.draw_interaction_prompt(target_surf, self.camera)
 
-        # Hide player sprite during drive_away phase (player is "inside" the car)
         if not (self._car_departure_active and self._car_depart_phase == "drive_away"):
             self.player.draw(target_surf, self.camera)
             if getattr(self, "remote_player", None):
                 # Ghosting bug fix: only draw if on same floor
                 if self.remote_player.current_floor == self.current_floor:
                     self.remote_player.draw(target_surf, self.camera)
+
+        if floor and hasattr(floor, 'draw_roofs'):
+            floor.draw_roofs(target_surf, self.camera, self.player)
 
         # ── Draw Top Layer (Trees, etc.) ──
         if floor and hasattr(floor, 'draw_top_layer'):

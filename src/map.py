@@ -201,6 +201,9 @@ class Door:
         self.is_vertical = is_vertical
         self.locked = locked
         self.color = color or (180, 180, 205)
+        self.open_ratio = 0.0
+        self.swing_dir = 1
+        self.close_timer = 0.0
 
 
 # ══════════════════════════════════════════════════════════════
@@ -257,6 +260,7 @@ class Floor:
         self.bg_color = bg_color
         self.rooms:       dict[str, Room]       = {}
         self.walls:       list[pygame.Rect]     = []
+        self.invisible_walls: list[pygame.Rect] = []
         self.transitions: list[FloorTransition] = []
         self.hackable_objects: list[dict]        = []
         self.doors:       list[Door]             = []
@@ -278,7 +282,7 @@ class Floor:
                 return r
         return None
 
-    def draw(self, screen, camera, player=None):
+    def draw(self, screen, camera, player=None, npcs=None):
         sw, sh = screen.get_width(), screen.get_height()
         bg_rect = pygame.Rect(0, 0, self.width, self.height)
         bg = camera.apply_rect(bg_rect)
@@ -353,17 +357,128 @@ class Floor:
                 pass  # labels drawn after walls
 
 
+        if npcs is None:
+            npcs = []
+
         door_color = (180, 180, 205)
         for door in self.doors:
             dr = camera.apply_rect(door.rect)
             if dr.right < 0 or dr.left > sw or dr.bottom < 0 or dr.top > sh:
                 continue
-            pygame.draw.rect(screen, door.color or door_color, dr)
-            pygame.draw.rect(screen, (40, 40, 50), dr, 1)
-            # Visual indicator for locked doors
-            if door.locked:
-                pygame.draw.line(screen, (200, 50, 50), (dr.x, dr.y), (dr.right, dr.bottom), 2)
-                pygame.draw.line(screen, (200, 50, 50), (dr.right, dr.y), (dr.left, dr.bottom), 2)
+
+            # Check if player or any NPC is colliding with the door
+            is_pushed = False
+            pusher = None
+            is_double_sliding = door.id in ("door_library", "door_cafeteria", "door_computer_lab", "door_science_lab", "door_admin", "door_director", "door_conference")
+            is_double_swinging = door.id == "door_classrooms"
+            if is_double_sliding:
+                touch_rect = door.rect.inflate(60, 12)
+            elif is_double_swinging:
+                touch_rect = door.rect.inflate(12, 60)
+            else:
+                touch_rect = door.rect.inflate(16, 16)
+
+            if not door.locked:
+                if player and player.rect.colliderect(touch_rect):
+                    is_pushed = True
+                    pusher = player
+                else:
+                    for npc in npcs:
+                        if npc.rect.colliderect(touch_rect):
+                            is_pushed = True
+                            pusher = npc
+                            break
+
+            if is_pushed and pusher:
+                if door.open_ratio == 0.0:
+                    px, py = pusher.rect.center
+                    dx, dy = door.rect.center
+                    if door.is_vertical:
+                        door.swing_dir = 1 if px < dx else -1
+                    else:
+                        door.swing_dir = 1 if py > dy else -1
+                door.open_ratio = min(1.0, door.open_ratio + 0.2)
+                door.close_timer = 45.0 if (is_double_sliding or is_double_swinging) else 15.0
+            else:
+                if door.close_timer > 0:
+                    door.close_timer -= 1
+                else:
+                    close_speed = 0.08 if (is_double_sliding or is_double_swinging) else 0.15
+                    door.open_ratio = max(0.0, door.open_ratio - close_speed)
+
+            if is_double_sliding:
+                half_h = door.rect.height / 2.0
+                slide = door.open_ratio * half_h
+                top_rect = pygame.Rect(door.rect.x, door.rect.y - slide, door.rect.width, half_h)
+                bot_rect = pygame.Rect(door.rect.x, door.rect.y + half_h + slide, door.rect.width, half_h)
+                panels = [top_rect, bot_rect]
+                for p_rect in panels:
+                    pdr = camera.apply_rect(p_rect)
+                    if pdr.right < 0 or pdr.left > sw or pdr.bottom < 0 or pdr.top > sh:
+                        continue
+                    pygame.draw.rect(screen, door.color or door_color, pdr)
+                    pygame.draw.rect(screen, (40, 40, 50), pdr, 1)
+                    if door.locked:
+                        pygame.draw.line(screen, (200, 50, 50), (pdr.x, pdr.y), (pdr.right, pdr.bottom), 2)
+                        pygame.draw.line(screen, (200, 50, 50), (pdr.right, pdr.y), (pdr.left, pdr.bottom), 2)
+            elif is_double_swinging:
+                half_w = door.rect.width / 2.0
+                panel_surf = pygame.Surface((half_w, door.rect.height), pygame.SRCALPHA)
+                pygame.draw.rect(panel_surf, door.color or door_color, panel_surf.get_rect())
+                pygame.draw.rect(panel_surf, (40, 40, 50), panel_surf.get_rect(), 1)
+                if door.locked:
+                    pr = panel_surf.get_rect()
+                    pygame.draw.line(panel_surf, (200, 50, 50), (pr.x, pr.y), (pr.right, pr.bottom), 2)
+                    pygame.draw.line(panel_surf, (200, 50, 50), (pr.right, pr.y), (pr.left, pr.bottom), 2)
+
+                import math
+                angle = door.open_ratio * 90.0
+
+                rot_left = angle if door.swing_dir == 1 else -angle
+                surf_left = pygame.transform.rotate(panel_surf, rot_left)
+                if door.swing_dir == 1:
+                    lx = door.rect.x
+                    ly = door.rect.y - half_w * math.sin(math.radians(angle))
+                else:
+                    lx = door.rect.x
+                    ly = door.rect.bottom - door.rect.height * math.cos(math.radians(angle))
+
+                rot_right = -angle if door.swing_dir == 1 else angle
+                surf_right = pygame.transform.rotate(panel_surf, rot_right)
+                if door.swing_dir == 1:
+                    rx = door.rect.right - (door.rect.height * math.sin(math.radians(angle)) + half_w * math.cos(math.radians(angle)))
+                    ry = door.rect.y - half_w * math.sin(math.radians(angle))
+                else:
+                    rx = door.rect.right - (half_w * math.cos(math.radians(angle)) + door.rect.height * math.sin(math.radians(angle)))
+                    ry = door.rect.bottom - door.rect.height * math.cos(math.radians(angle))
+
+                screen.blit(surf_left, camera.apply_pos(lx, ly))
+                screen.blit(surf_right, camera.apply_pos(rx, ry))
+            else:
+                panel_surf = pygame.Surface((door.rect.width, door.rect.height), pygame.SRCALPHA)
+                pygame.draw.rect(panel_surf, door.color or door_color, panel_surf.get_rect())
+                pygame.draw.rect(panel_surf, (40, 40, 50), panel_surf.get_rect(), 1)
+                if door.locked:
+                    pr = panel_surf.get_rect()
+                    pygame.draw.line(panel_surf, (200, 50, 50), (pr.x, pr.y), (pr.right, pr.bottom), 2)
+                    pygame.draw.line(panel_surf, (200, 50, 50), (pr.right, pr.y), (pr.left, pr.bottom), 2)
+
+                import math
+                angle = door.open_ratio * 90.0
+                rot_angle = angle if door.swing_dir == 1 else -angle
+                rotated_surf = pygame.transform.rotate(panel_surf, rot_angle)
+
+                if door.swing_dir == 1:
+                    shift_x = 0
+                    shift_y = door.rect.width * math.sin(math.radians(angle))
+                else:
+                    shift_x = door.rect.height * math.sin(math.radians(angle))
+                    shift_y = 0
+
+                blit_x = door.rect.x - shift_x
+                blit_y = door.rect.y - shift_y
+                screen_pos = camera.apply_pos(blit_x, blit_y)
+                screen.blit(rotated_surf, screen_pos)
 
         for furn in self.furniture:
             fr = camera.apply_rect(furn["rect"])
@@ -386,12 +501,9 @@ class Floor:
                 pygame.draw.circle(glow_surf, (255, 255, 200, 40), (fr.width, fr.height), fr.width)
                 screen.blit(glow_surf, (fr.centerx - fr.width, fr.centery - fr.height))
             elif ftype == "plant":
-                # Pot
-                pygame.draw.circle(screen, (139, 69, 19), fr.center, fr.width // 3)
-                # Leaves
-                pygame.draw.circle(screen, furn["color"], (fr.centerx - 4, fr.centery - 4), fr.width // 2)
-                pygame.draw.circle(screen, (34, 139, 34), (fr.centerx + 4, fr.centery + 4), fr.width // 2)
-                pygame.draw.circle(screen, furn["color"], (fr.centerx, fr.centery), fr.width // 2)
+                self._draw_plant(screen, fr, furn["color"])
+            elif ftype == "bench":
+                self._draw_bench(screen, fr)
             elif ftype == "buffet_tray":
                 # Silver outer tray
                 pygame.draw.rect(screen, (190, 190, 200), fr, border_radius=4)
@@ -456,6 +568,8 @@ class Floor:
 
         visible_walls = []  # (wall, screen_rect)
         for wall in self.walls:
+            if wall in self.invisible_walls:
+                continue
             wr = camera.apply_rect(wall)
             d = self.WALL_DEPTH
             if wr.right + d < 0 or wr.left > sw or wr.bottom + d < 0 or wr.top > sh:
@@ -470,7 +584,7 @@ class Floor:
                 continue
             if id(wall) in furniture_rects:
                 continue
-            self._draw_wall_extrusion(screen, wr)
+            self._draw_wall_extrusion(screen, wr, wall=wall)
 
         # Pass 2 — top caps + special items (front layer)
         for wall, wr in visible_walls:
@@ -481,7 +595,7 @@ class Floor:
             elif id(wall) in furniture_rects:
                 continue
             else:
-                self._draw_wall_cap(screen, wr)
+                self._draw_wall_cap(screen, wr, wall=wall)
 
         # ── Room name labels (drawn AFTER walls so they stay visible) ──
         for room in self.rooms.values():
@@ -880,12 +994,14 @@ class Floor:
 
     # ── Two-pass wall helpers ────────────────────────────────────
 
-    def _draw_wall_extrusion(self, screen: pygame.Surface, rect: pygame.Rect):
+    def _draw_wall_extrusion(self, screen: pygame.Surface, rect: pygame.Rect, wall=None):
         """Pass 1: draw shadow + right face + bottom face (the 3-D sides)."""
         if rect.width <= 0 or rect.height <= 0:
             return
 
         d = self.WALL_DEPTH
+        orig_wall = wall if wall is not None else rect
+        is_windowed = hasattr(self, 'windowed_walls') and orig_wall in self.windowed_walls
 
         # Drop shadow
         sh_off = d + 2
@@ -901,8 +1017,8 @@ class Floor:
             (rect.right + d, rect.bottom + d),
             (rect.right, rect.bottom),
         ]
-        pygame.draw.polygon(screen, self.WALL_RIGHT_COLOR, right_face)
-        pygame.draw.polygon(screen, self.WALL_EDGE_COLOR, right_face, 2)
+        pygame.draw.polygon(screen, (80, 90, 100) if is_windowed else self.WALL_RIGHT_COLOR, right_face)
+        pygame.draw.polygon(screen, (40, 45, 50) if is_windowed else self.WALL_EDGE_COLOR, right_face, 2)
 
         # Bottom face (south side, medium shade)
         bottom_face = [
@@ -911,12 +1027,55 @@ class Floor:
             (rect.right + d, rect.bottom + d),
             (rect.left + d, rect.bottom + d),
         ]
-        pygame.draw.polygon(screen, self.WALL_SHADE_COLOR, bottom_face)
-        pygame.draw.polygon(screen, self.WALL_EDGE_COLOR, bottom_face, 2)
+        if is_windowed:
+            pygame.draw.polygon(screen, (50, 55, 60), bottom_face)
+            pane_w = 40
+            post_w = 6
+            cur_x = rect.left
+            while cur_x < rect.right:
+                pw = min(pane_w, rect.right - cur_x)
+                box_w = pw + d
+                box_h = d
+                if box_w > 0 and box_h > 0:
+                    glass_surf = pygame.Surface((box_w, box_h), pygame.SRCALPHA)
+                    glass_surf.fill((0, 0, 0, 0))
+                    local_poly = [
+                        (0, 0),
+                        (pw, 0),
+                        (pw + d, d),
+                        (d, d),
+                    ]
+                    pygame.draw.polygon(glass_surf, (140, 210, 250, 140), local_poly)
+                    pygame.draw.line(glass_surf, (255, 255, 255, 180), (pw // 2, 0), (pw // 2 + d - 2, d - 2), 2)
+                    screen.blit(glass_surf, (cur_x, rect.bottom))
+                
+                cur_x += pw
+                if cur_x < rect.right:
+                    post_poly = [
+                        (cur_x, rect.bottom),
+                        (cur_x + post_w, rect.bottom),
+                        (cur_x + post_w + d, rect.bottom + d),
+                        (cur_x + d, rect.bottom + d),
+                    ]
+                    pygame.draw.polygon(screen, (70, 75, 80), post_poly)
+                    pygame.draw.polygon(screen, (30, 35, 40), post_poly, 1)
+                    cur_x += post_w
+            pygame.draw.polygon(screen, (30, 35, 40), bottom_face, 2)
+        else:
+            pygame.draw.polygon(screen, self.WALL_SHADE_COLOR, bottom_face)
+            pygame.draw.polygon(screen, self.WALL_EDGE_COLOR, bottom_face, 2)
 
-    def _draw_wall_cap(self, screen: pygame.Surface, rect: pygame.Rect):
+    def _draw_wall_cap(self, screen: pygame.Surface, rect: pygame.Rect, wall=None):
         """Pass 2: draw the top surface (cap) of the wall."""
         if rect.width <= 0 or rect.height <= 0:
+            return
+
+        orig_wall = wall if wall is not None else rect
+        is_windowed = hasattr(self, 'windowed_walls') and orig_wall in self.windowed_walls
+        if is_windowed:
+            pygame.draw.rect(screen, (160, 170, 180), rect)
+            pygame.draw.rect(screen, (60, 65, 70), rect, 2)
+            pygame.draw.line(screen, (120, 200, 240), (rect.left + 2, rect.centery), (rect.right - 2, rect.centery), 2)
             return
 
         # Top surface
@@ -941,10 +1100,10 @@ class Floor:
         # Outline
         pygame.draw.rect(screen, self.WALL_EDGE_COLOR, rect, 2)
 
-    def _draw_topdown_wall(self, screen: pygame.Surface, rect: pygame.Rect):
+    def _draw_topdown_wall(self, screen: pygame.Surface, rect: pygame.Rect, wall=None):
         """Legacy single-call: draw both extrusion and cap in one go."""
-        self._draw_wall_extrusion(screen, rect)
-        self._draw_wall_cap(screen, rect)
+        self._draw_wall_extrusion(screen, rect, wall=wall)
+        self._draw_wall_cap(screen, rect, wall=wall)
 
 
     def _draw_ping_pong_table(self, screen: pygame.Surface, rect: pygame.Rect):
@@ -1541,6 +1700,43 @@ class Floor:
         # Centre pole
         pygame.draw.circle(screen, (40, 30, 22), (cx, cy), max(2, radius // 7))
 
+    def _draw_bench(self, screen: pygame.Surface, rect: pygame.Rect):
+        """Top-down wooden park bench with slat details and metal armrests."""
+        if rect.width <= 4 or rect.height <= 4:
+            return
+        wood_col = (160, 105, 60)
+        wood_dark = (110, 70, 35)
+        metal = (60, 65, 70)
+        pygame.draw.rect(screen, wood_col, rect, border_radius=3)
+        pygame.draw.rect(screen, wood_dark, rect, 2, border_radius=3)
+        # Wooden slats
+        if rect.width >= rect.height:
+            slat_h = max(2, rect.height // 4)
+            pygame.draw.line(screen, wood_dark, (rect.left + 4, rect.y + slat_h), (rect.right - 4, rect.y + slat_h), 1)
+            pygame.draw.line(screen, wood_dark, (rect.left + 4, rect.centery), (rect.right - 4, rect.centery), 1)
+            pygame.draw.line(screen, wood_dark, (rect.left + 4, rect.bottom - slat_h), (rect.right - 4, rect.bottom - slat_h), 1)
+            # Metal armrests at ends
+            pygame.draw.rect(screen, metal, (rect.left + 2, rect.y + 1, 4, rect.height - 2), border_radius=1)
+            pygame.draw.rect(screen, metal, (rect.right - 6, rect.y + 1, 4, rect.height - 2), border_radius=1)
+        else:
+            slat_w = max(2, rect.width // 4)
+            pygame.draw.line(screen, wood_dark, (rect.x + slat_w, rect.top + 4), (rect.x + slat_w, rect.bottom - 4), 1)
+            pygame.draw.line(screen, wood_dark, (rect.centerx, rect.top + 4), (rect.centerx, rect.bottom - 4), 1)
+            pygame.draw.line(screen, wood_dark, (rect.right - slat_w, rect.top + 4), (rect.right - slat_w, rect.bottom - 4), 1)
+            pygame.draw.rect(screen, metal, (rect.x + 1, rect.top + 2, rect.width - 2, 4), border_radius=1)
+            pygame.draw.rect(screen, metal, (rect.x + 1, rect.bottom - 6, rect.width - 2, 4), border_radius=1)
+
+    def _draw_plant(self, screen: pygame.Surface, rect: pygame.Rect, color: tuple):
+        """Top-down potted plant with ceramic pot and lush leaves."""
+        if rect.width <= 4 or rect.height <= 4:
+            return
+        # Pot
+        pygame.draw.circle(screen, (139, 69, 19), rect.center, rect.width // 3)
+        # Leaves
+        pygame.draw.circle(screen, color, (rect.centerx - 4, rect.centery - 4), rect.width // 2)
+        pygame.draw.circle(screen, (34, 139, 34), (rect.centerx + 4, rect.centery + 4), rect.width // 2)
+        pygame.draw.circle(screen, color, (rect.centerx, rect.centery), rect.width // 2)
+
     def _draw_chalkboard(self, screen: pygame.Surface, rect: pygame.Rect, facing: str = "up"):
         """Portable green chalkboard with wooden frame and two wheels.
 
@@ -1803,19 +1999,50 @@ class Floor:
                             pygame.draw.rect(screen, (82, 88, 98), ac2)
                             pygame.draw.rect(screen, (48, 54, 64), ac1, 2)
                             pygame.draw.rect(screen, (48, 54, 64), ac2, 2)
+                            # Rooftop walls (stairwell housing and terrace parapets)
+                            wt = 12
+                            rt_walls = [
+                                # Top parapet wall
+                                pygame.Rect(rooftop.x + 160, rooftop.y + 90, 760, wt),
+                                # Left parapet wall (upper piece)
+                                pygame.Rect(rooftop.x + 160, rooftop.y + 90, wt, 85),
+                                # Left parapet wall (lower piece, leaving a doorway gap)
+                                pygame.Rect(rooftop.x + 160, rooftop.y + 225, wt, 127),
+                                # Right parapet wall (upper piece)
+                                pygame.Rect(rooftop.x + 908, rooftop.y + 90, wt, 85),
+                                # Right parapet wall (lower piece, leaving a doorway gap)
+                                pygame.Rect(rooftop.x + 908, rooftop.y + 225, wt, 127),
+                                # Bottom parapet wall (right half only, leaving left half open)
+                                pygame.Rect(rooftop.x + 540, rooftop.y + 340, 380, wt),
+                            ]
+                            self.windowed_walls = [rt_walls[-1]]
+                            for rw in rt_walls:
+                                self._draw_topdown_wall(screen, rw, wall=rw)
+                            # 3D Staircase (top-left, fitting exactly in the corner, horizontal climb)
+                            stair_rect = pygame.Rect(rooftop.x + 75, rooftop.y + 20, 85, 70)
+                            font14 = pygame.font.Font(VT323_PATH, 14)
+                            self._draw_staircase_3d(screen, stair_rect, font14)
                             # Parasol umbrellas matching the Rooftop Terrace layout
                             umbrella_layout = [
-                                (0.25, 0.40),
-                                (0.62, 0.40),
-                                (0.25, 0.78),
-                                (0.62, 0.78),
-                                (0.44, 0.60),
+                                (0.28, 0.32),
+                                (0.58, 0.32),
+                                (0.28, 0.58),
+                                (0.58, 0.58),
+                                (0.43, 0.45),
                             ]
-                            umbrella_r = max(7, min(rooftop.width, rooftop.height) // 11)
+                            umbrella_r = max(7, min(rooftop.width, rooftop.height) // 15)
                             import math as _math
                             for fx, fy in umbrella_layout:
                                 cx = int(rooftop.x + fx * rooftop.width)
                                 cy = int(rooftop.y + fy * rooftop.height)
+                                # Four chairs around the umbrella table
+                                cw = max(6, int(umbrella_r * 0.55))
+                                ch = max(6, int(umbrella_r * 0.5))
+                                tr = umbrella_r
+                                self._draw_sofa_chair(screen, pygame.Rect(cx - cw // 2, cy - tr - ch - 3, cw, ch))
+                                self._draw_sofa_chair(screen, pygame.Rect(cx - cw // 2, cy + tr + 3, cw, ch))
+                                self._draw_sofa_chair(screen, pygame.Rect(cx - tr - cw - 3, cy - ch // 2, cw, ch))
+                                self._draw_sofa_chair(screen, pygame.Rect(cx + tr + 3, cy - ch // 2, cw, ch))
                                 # Soft drop shadow
                                 shadow_surf = pygame.Surface((umbrella_r * 2 + 4, umbrella_r * 2 + 4), pygame.SRCALPHA)
                                 pygame.draw.circle(shadow_surf, (0, 0, 0, 80),
@@ -1838,14 +2065,17 @@ class Floor:
                                 pygame.draw.circle(screen, (70, 45, 32), (cx, cy), umbrella_r, 1)
                                 # Centre pole tip
                                 pygame.draw.circle(screen, (40, 30, 22), (cx, cy), max(2, umbrella_r // 5))
-                        else:
-                            pygame.draw.rect(screen, spec["trim_color"], roof_rect)
-                            pygame.draw.line(screen, (45, 45, 50), (roof_rect.x, roof_rect.bottom - 2),
-                                             (roof_rect.right, roof_rect.bottom - 2), 2)
-
+                            # Resting Area furniture (benches and planters) outside bottom parapet
+                            for bx in (rooftop.x + 260, rooftop.x + 480, rooftop.x + 700):
+                                self._draw_bench(screen, pygame.Rect(bx, rooftop.y + 390, 90, 32))
+                            for px in (rooftop.x + 200, rooftop.x + 395, rooftop.x + 615, rooftop.x + 835):
+                                self._draw_plant(screen, pygame.Rect(px, rooftop.y + 388, 36, 36), (40, 160, 60))
                         pygame.draw.rect(screen, spec["wall_color"], facade_rect)
                         pygame.draw.rect(screen, spec["trim_color"], facade_rect, 3)
-                        sign_rect = pygame.Rect(facade_rect.x + 14, facade_rect.y + 8, facade_rect.width - 28, 26)
+                        if spec["rooftop"]:
+                            sign_rect = pygame.Rect(facade_rect.x + 14, facade_rect.y + 8, facade_rect.width - 28, 26)
+                        else:
+                            sign_rect = pygame.Rect(facade_rect.x + 14, facade_rect.y + 38, facade_rect.width - 28, 26)
                         pygame.draw.rect(screen, (72, 72, 82), sign_rect)
                         pygame.draw.rect(screen, (205, 205, 215), sign_rect, 2)
                         sign_font = pygame.font.Font(VT323_PATH, max(11, min(17, sign_rect.height - 7)))
@@ -1894,10 +2124,8 @@ class Floor:
                             font_title = pygame.font.Font(VT323_PATH, 24)
                             text = font_title.render("RAVENSIDE HIGH SCHOOL", True, (220, 230, 240))
                             tw, th = text.get_size()
-                            # Positioned above the door
                             tx = door_rect.centerx - tw // 2
                             ty = door_rect.y - th - 15
-                            # Subtle shadow/plate behind text
                             plate = pygame.Rect(tx - 10, ty - 5, tw + 20, th + 10)
                             pygame.draw.rect(screen, (40, 45, 55), plate, border_radius=3)
                             pygame.draw.rect(screen, (80, 95, 110), plate, 1, border_radius=3)
@@ -1958,6 +2186,40 @@ class Floor:
                                          (sidewalk_rect.x, sidewalk_rect.bottom - 2),
                                          (sidewalk_rect.right, sidewalk_rect.bottom - 2), 2)
                             
+    def draw_roofs(self, screen, camera, player):
+        """Draw overhanging tiled roofs after players and NPCs so characters pass underneath."""
+        sw, sh = screen.get_width(), screen.get_height()
+        if self.id == 0:
+            building_specs = [
+                ("c_tennis", {"rooftop": False}),
+                ("c_coliseum", {"rooftop": False}),
+            ]
+            for rid, spec in building_specs:
+                room = self.rooms.get(rid)
+                if room:
+                    rr = camera.apply_rect(room.rect)
+                    if rr.right > -100 and rr.left < sw + 100 and rr.bottom > -100 and rr.top < sh + 100:
+                        facade_h = max(90, int(rr.height * 0.45))
+                        # Tiled roof sticks out much more: 36px on sides, 36px overhang in front
+                        full_roof = pygame.Rect(rr.x - 36, rr.y - 20, rr.width + 72, rr.height - facade_h + 36)
+                        pygame.draw.rect(screen, (120, 85, 60), full_roof)
+                        tile_w = 16
+                        tile_h = 12
+                        old_clip = screen.get_clip()
+                        screen.set_clip(full_roof)
+                        for ty in range(full_roof.y, full_roof.bottom, tile_h):
+                            shadow_y = ty + tile_h - 2
+                            pygame.draw.line(screen, (80, 55, 35), (full_roof.x, shadow_y), (full_roof.right, shadow_y), 2)
+                            pygame.draw.line(screen, (55, 35, 20), (full_roof.x, shadow_y + 1), (full_roof.right, shadow_y + 1), 1)
+                            pygame.draw.line(screen, (155, 115, 85), (full_roof.x, ty), (full_roof.right, ty), 1)
+                            for tx in range(full_roof.x, full_roof.right, tile_w):
+                                pygame.draw.line(screen, (90, 60, 40), (tx, ty), (tx, ty + tile_h), 2)
+                                pygame.draw.line(screen, (145, 105, 75), (tx + 2, ty), (tx + 2, ty + tile_h), 1)
+                        screen.set_clip(old_clip)
+                        pygame.draw.rect(screen, (70, 45, 30), full_roof, 3)
+                        pygame.draw.line(screen, (45, 30, 20), (full_roof.x, full_roof.bottom - 1), (full_roof.right, full_roof.bottom - 1), 2)
+                        pygame.draw.line(screen, (30, 30, 35), (rr.x - 20, full_roof.bottom), (rr.right + 20, full_roof.bottom), 6)
+
     def draw_top_layer(self, screen, camera):
         """Draw elements that should be above everything else (like tree canopies)."""
         sw, sh = screen.get_width(), screen.get_height()
@@ -2127,10 +2389,12 @@ class SchoolMap:
                         2800 + WT + 100, 150 + WT + 100, 1080 - 2 * WT - 200, 950 - 2 * WT - 200, (176, 110, 66)))
 
         # Outer boundary
-        f.walls.extend([
+        outer_bounds = [
             _hw(0, 0, 4000), _hw(0, 3000 - WT, 4000),
             _vw(0, 0, 3000), _vw(4000 - WT, 0, 3000),
-        ])
+        ]
+        f.walls.extend(outer_bounds)
+        f.invisible_walls = outer_bounds
         # Building walls (new double-width entrance at bottom)
         bx, by, bw, bh = 1400, 1100, 1200, 900
         bdoor_w = 4 * DW
@@ -2493,6 +2757,10 @@ class SchoolMap:
         # Cafeteria door object (Triple size, shifted down to make wall longer)
         f.add_door(Door("door_library", 2150, 200, 16, 3 * DW, is_vertical=True))
         f.add_door(Door("door_cafeteria", 2150, 880 - DW, 16, 3 * DW, is_vertical=True))
+        f.add_door(Door("door_computer_lab", 1050, 200, 16, DW, is_vertical=True))
+        f.add_door(Door("door_infirmary", 1050, 640, 16, DW, is_vertical=True))
+        f.add_door(Door("door_auditorium", 1050, 1080, 16, DW, is_vertical=True))
+        f.add_door(Door("door_counselor", 2150, 1250, 16, DW, is_vertical=True))
 
         # ── Cafeteria furniture ──────────────────────────────
         TABLE_COL  = (255, 255, 255)
@@ -2644,8 +2912,8 @@ class SchoolMap:
         right_locker_x = 2150 - locker_thickness  # flush against right divider
         for (y0, y1) in [(40, 184), (300, 624), (724, 1064), (1164, 1500)]:
             _add_furn(f, pygame.Rect(left_locker_x, y0, locker_thickness, y1 - y0), "locker")
-        # Right wall doors: y=200 (triple), y=800 (triple to 880), y=1250 (single)
-        for (y0, y1) in [(40, 184), (504, 784), (904, 1234), (1340, 1500)]:
+        # Right wall doors: y=200 (triple), y=800 (triple to 1040), y=1250 (single)
+        for (y0, y1) in [(40, 184), (504, 784), (1064, 1234), (1340, 1500)]:
             _add_furn(f, pygame.Rect(right_locker_x, y0, locker_thickness, y1 - y0), "locker")
 
         # Library Bench/Counselor's Office: personal desks with chairs
@@ -2814,6 +3082,16 @@ class SchoolMap:
         _add_stair_walls(f, sx, sy, sw, sh, 'right')
         _add_stair_walls(f, rx, ry, rw, rh, 'left')
 
+        f.add_door(Door("door_art_room", 1050, art_y + 200 - DW//2, 16, 2 * DW, is_vertical=True))
+        f.add_door(Door("door_music_room", 1050, mus_y + 200 - DW//2, 16, 2 * DW, is_vertical=True))
+        f.add_door(Door("door_science_lab", 1050, sci_y + 200 - DW//2, 16, 2 * DW, is_vertical=True))
+
+        f.add_door(Door("door_director", 2150, 200 - DW//2, 16, 2 * DW, is_vertical=True))
+        f.add_door(Door("door_conference", 2150, 640 - DW//2, 16, 2 * DW, is_vertical=True))
+        f.add_door(Door("door_admin", 2150, 1100 - DW//2, 16, 2 * DW, is_vertical=True))
+
+        f.add_door(Door("door_classrooms", cdx, 1950, 3 * DW, 16, is_vertical=False))
+
         # ── Detailed furniture per room ───────────────────────────
         # Art Room: easels with canvases in three rows
         easel_w, easel_h = 70, 90
@@ -2957,6 +3235,26 @@ class SchoolMap:
 
         _add_stair_walls(f, bx, by, bw, bh, 'left')
 
+        # Top outer wall doors (y=200)
+        f.add_door(Door("door_b_smile_top", 600, 200, DW, 16, is_vertical=False))
+        f.add_door(Door("door_b_server_top", 1450, 200, DW, 16, is_vertical=False))
+        f.add_door(Door("door_b_surv_top", 2300, 200, DW, 16, is_vertical=False))
+
+        # Bottom outer wall doors (y=1300 - WT)
+        f.add_door(Door("door_b_detention_bot", 600, 1300 - 16, DW, 16, is_vertical=False))
+        f.add_door(Door("door_b_terminal_bot", 1450, 1300 - 16, DW, 16, is_vertical=False))
+        f.add_door(Door("door_b_surv_bot", 2300, 1300 - 16, DW, 16, is_vertical=False))
+
+        # Vertical internal doors (x=1150 and x=2000)
+        f.add_door(Door("door_b_smile_server", 1150, 400, 16, DW, is_vertical=True))
+        f.add_door(Door("door_b_detention_terminal", 1150, 950, 16, DW, is_vertical=True))
+        f.add_door(Door("door_b_server_surv", 2000, 400, 16, DW, is_vertical=True))
+        f.add_door(Door("door_b_terminal_surv", 2000, 950, 16, DW, is_vertical=True))
+
+        # Horizontal internal doors (y=750)
+        f.add_door(Door("door_b_smile_detention", 600, 750, DW, 16, is_vertical=False))
+        f.add_door(Door("door_b_server_terminal", 1450, 750, DW, 16, is_vertical=False))
+
         f.hackable_objects = [
             {"type": "server", "x": 1550, "y": 450, "difficulty": 5, "id": "smile_server"},
             {"type": "camera", "x": 2350, "y": 450, "difficulty": 4, "id": "surv_cam"},
@@ -2984,10 +3282,6 @@ class SchoolMap:
                         1200, 500, 1200, 1200, (35, 50, 65),
                         mission_tag="Night meetings",
                         tile_path=_tile_rt))
-        f.add_room(Room("rt_antenna", "Antenna Platform",
-                        "Radio antenna and satellite equipment",
-                        1500, 100, 400, 350, (40, 45, 55),
-                        tile_path=_tile_rt))
         f.add_room(Room("rt_benches", "Resting Area",
                         "Benches with a view of the campus below",
                         1300, 1750, 800, 350, (38, 48, 50),
@@ -3006,20 +3300,14 @@ class SchoolMap:
 
         _add_stair_walls(f, rx, ry, rw, rh, 'left')
 
-        # Parapet
+        # Parapet (bottom wall keeps right half only: x=1800..2400)
+        bot_wall = _hw(1800, 1700 - WT, 600)
         f.walls.extend([
-            _hw(1200, 500, 1200), _hw(1200, 1700 - WT, 1200),
+            _hw(1200, 500, 1200), bot_wall,
         ])
+        f.windowed_walls = [bot_wall]
         f.walls.extend(_vwall_gaps(1200, 500, 1700, [(900, DW)]))
-        f.walls.append(_vw(2400 - WT, 500, 1200))
-        # Antenna enclosure
-        # Antenna enclosure
-        f.walls.extend([
-            _hw(1500, 100, 400), _hw(1500, 450 - WT, 400),
-        ])
-        f.walls.extend(_vwall_gaps(1500, 100, 450, [(235, DW)]))
-        f.walls.append(_vw(1900 - WT, 100, 350))
-        f.add_door(Door("rt_antenna_door", 1500, 235, WT, DW, is_vertical=True, color=(100, 100, 120)))
+        f.walls.extend(_vwall_gaps(2400 - WT, 500, 1700, [(900, DW)]))
 
         # ── Rooftop Terrace furniture: patio tables with parasol umbrellas ──
         # Terrace bounds: x=1200..2400, y=500..1700 (parapet)
@@ -3041,6 +3329,13 @@ class SchoolMap:
             _add_furn(f, pygame.Rect(cx_t - chair_w // 2, ty + table_d + 6, chair_w, chair_h), "sofa_chair")
             _add_furn(f, pygame.Rect(tx - chair_w - 6, cy_t - chair_h // 2, chair_w, chair_h), "sofa_chair")
             _add_furn(f, pygame.Rect(tx + table_d + 6, cy_t - chair_h // 2, chair_w, chair_h), "sofa_chair")
+
+        # ── Resting Area furniture: benches and planters ──
+        # Resting Area bounds: x=1300..2100, y=1750..2100
+        for bx in (1400, 1640, 1880):
+            _add_furn(f, pygame.Rect(bx, 1820, 120, 40), "bench")
+        for px in (1340, 1570, 1810, 2040):
+            _add_furn(f, pygame.Rect(px, 1822, 36, 36), "plant", color=(40, 160, 60))
 
         return f
 

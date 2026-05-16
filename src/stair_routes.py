@@ -94,7 +94,7 @@ ROOM_FLOOR_MAP = {
     "b_stairs_up": 3, "b_smile_club": 3, "b_server_room": 3,
     "b_surveillance": 3, "b_detention": 3, "b_terminal": 3,
     # Rooftop (Floor 4)
-    "rt_stairs_down": 4, "rt_terrace": 4, "rt_antenna": 4, "rt_benches": 4,
+    "rt_stairs_down": 4, "rt_terrace": 4, "rt_benches": 4,
     # Special interiors
     "ci_hall": 5, "ci_court": 5,
     "pi_hall": 6,

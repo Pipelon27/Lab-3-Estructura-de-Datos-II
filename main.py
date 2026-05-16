@@ -6,6 +6,7 @@ selected game mode (solo / co-op host / co-op join).
 Run from the project root:  ``python main.py``
 """
 
+import os
 import pygame
 import sys
 import random
@@ -109,6 +110,17 @@ class MainMenu:
     # ── loop ──────────────────────────────────────────────────
     def run(self) -> int | None:
         """Run the menu loop.  Returns the option index or *None*."""
+        try:
+            if not pygame.mixer.music.get_busy():
+                if os.path.exists("music/musica menu.mp3"):
+                    pygame.mixer.music.load("music/musica menu.mp3")
+                    pygame.mixer.music.play(-1)
+                elif os.path.exists("sound/musica menu.mp3"):
+                    pygame.mixer.music.load("sound/musica menu.mp3")
+                    pygame.mixer.music.play(-1)
+        except Exception as e:
+            print(f"[MainMenu] Could not play menu music: {e}")
+
         while self.running:
             dt = self.clock.tick(FPS) / 1000.0
             self._pulse_timer += dt
@@ -183,7 +195,7 @@ class MainMenu:
 
         # Subtitle retained for flavour
         subtitle = self.font_subtitle.render(
-            "Uncover the truth behind Ravenside High", True, self.subtitle_colour
+            "Uncover the truth behind Ravenside High School", True, self.subtitle_colour
         )
         subtitle_rect = subtitle.get_rect(midleft=(base_x, 170))
         self.screen.blit(subtitle, subtitle_rect)
@@ -384,6 +396,7 @@ def main():
 
         # Quit requested
         if choice is None or choice == 4:
+            pygame.mixer.music.stop()
             break
 
         params = mode_map[choice]
@@ -401,6 +414,7 @@ def main():
                 continue # User cancelled or failed
 
         while True:
+            pygame.mixer.music.stop()
             game = Game(screen, network_instance=network_instance, **params)
             game.run()
 
