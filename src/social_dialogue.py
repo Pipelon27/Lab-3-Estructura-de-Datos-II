@@ -434,7 +434,7 @@ class SocialDialogueManager:
         self.state = InteractionState.SHOWING_REACTION
         self._resolving_timer = 2.5
 
-        print(f"[SOCIAL] {self._active_npc.name} ←{action}→ \"{self._reaction_line}\"")
+        print(f"[SOCIAL] {self._active_npc.name} <- {action} -> \"{self._reaction_line}\"")
 
     def handle_input(self, event: pygame.event.Event) -> bool:
         """Process input during interaction."""
