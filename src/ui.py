@@ -101,8 +101,11 @@ class UI:
         # Bill inside Right Slot 2 (visible area)
         self.wallet_bill_rect = pygame.Rect(cx + 30, cy - 140, 280, 50)
 
+        # Yearbook inside Left Slot 3 (visible area)
+        self.wallet_yearbook_rect = pygame.Rect(cx - 310, cy - 50, 280, 50)
+
         # Hover animation offsets for wallet items
-        self._wallet_hover_offsets = {"id": 0.0, "bill": 0.0}
+        self._wallet_hover_offsets = {"id": 0.0, "bill": 0.0, "yearbook": 0.0}
 
         # Announcement state
         self._announcement_timer = 0.0
@@ -275,11 +278,15 @@ class UI:
             init = self.font_hud_lg.render(init_char, True, WHITE)
             screen.blit(init, init.get_rect(center=(av_x + av_radius, av_y + av_radius)))
 
-        # ── health bar ──
+        # ── reputation bar (replaces health bar) ──
         bars_x = av_x + av_radius * 2 + 12
+        try:
+            rep_avg = int(reputation.average()) if reputation else 50
+        except Exception:
+            rep_avg = 50
         self._bar(screen, bars_x, 16, 180, 14,
-                  player.health, player.max_health,
-                  HEALTH_RED, HEALTH_BG, "HP")
+                  rep_avg, 100,
+                  UI_ACCENT, UI_PANEL, "REP")
 
         # ── stamina bar ──
         self._bar(screen, bars_x, 36, 180, 14,
@@ -318,18 +325,11 @@ class UI:
 
         # ── circular minimap (bottom-right) ──
 
-        # ── reputation bar (bottom-left) ──
-        try:
-            rep_val = reputation.reputation_score if reputation is not None else 0
-        except Exception:
-            rep_val = 0
-        # draw above the bottom edge
-        rep_x = 16
-        rep_y = SCREEN_HEIGHT - 36
-        self._bar(screen, rep_x, rep_y, 220, 14, rep_val, 100, UI_ACCENT, UI_PANEL, "Rep")
-
         if time_text:
             time_surf = self.font_hud_time.render(time_text, True, WHITE)
+            # Position time display in bottom-left
+            rep_x = 16
+            rep_y = SCREEN_HEIGHT - 36
             time_rect = time_surf.get_rect(midleft=(rep_x + 220 + 24, rep_y + 7))
             screen.blit(time_surf, time_rect)
             
@@ -386,6 +386,113 @@ class UI:
         phone_hover = pr.collidepoint(pygame.mouse.get_pos())
         if phone_hover or hud_focus == "phone":
             pygame.draw.rect(screen, (255, 220, 80), pr.inflate(6, 6), 2, border_radius=8)
+
+    def draw_yearbook_view(self, screen: pygame.Surface, controller_connected: bool = False,
+                          reputation_data: dict | None = None, npc_groups: dict | None = None):
+        """Draw the yearbook view with social group stats and NPC relationships."""
+        cx, cy = SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2
+        
+        # Main panel
+        main_panel = pygame.Rect(cx - 600, cy - 300, 1200, 600)
+        pygame.draw.rect(screen, (30, 20, 15), main_panel, border_radius=15)
+        pygame.draw.rect(screen, (150, 110, 60), main_panel, 4, border_radius=15)
+        
+        # Title
+        title = self.font_title.render("YEARBOOK - Social Statistics", True, UI_ACCENT)
+        screen.blit(title, title.get_rect(center=(cx, main_panel.y + 30)))
+        pygame.draw.line(screen, UI_ACCENT, (main_panel.x + 40, main_panel.y + 60), (main_panel.right - 40, main_panel.y + 60), 2)
+        
+        # Default data if not provided
+        if reputation_data is None:
+            reputation_data = {}
+        if npc_groups is None:
+            npc_groups = {}
+        
+        # Left panel: Social Group Stats
+        left_panel = pygame.Rect(main_panel.x + 20, main_panel.y + 80, 280, main_panel.height - 100)
+        pygame.draw.rect(screen, (50, 35, 25), left_panel, border_radius=10)
+        pygame.draw.rect(screen, (100, 70, 40), left_panel, 2, border_radius=10)
+        
+        group_title = self.font_hud_lg.render("Group Rep", True, UI_ACCENT)
+        screen.blit(group_title, (left_panel.x + 15, left_panel.y + 10))
+        
+        # Draw social groups and their reputation
+        y_offset = left_panel.y + 45
+        groups = ["Athletes", "Tech Club", "Populars", "Academics", "Rebels", "Outsiders"]
+        for group_name in groups:
+            # Group name
+            group_surf = self.font_hud_sm.render(group_name, True, UI_TEXT)
+            screen.blit(group_surf, (left_panel.x + 15, y_offset))
+            
+            # Reputation bar (simplified)
+            rep_value = reputation_data.get(group_name.lower().replace(" ", "_"), 50)
+            bar_width = 240
+            bar_height = 12
+            bar_rect = pygame.Rect(left_panel.x + 15, y_offset + 22, bar_width, bar_height)
+            
+            # Background
+            pygame.draw.rect(screen, (40, 40, 50), bar_rect, border_radius=3)
+            # Fill
+            fill_w = int(bar_width * max(0, rep_value) / 100)
+            pygame.draw.rect(screen, UI_ACCENT, (bar_rect.x, bar_rect.y, fill_w, bar_height), border_radius=3)
+            pygame.draw.rect(screen, WHITE, bar_rect, 1, border_radius=3)
+            
+            # Value text
+            val_surf = self.font_hud_sm.render(f"{rep_value}", True, WHITE)
+            screen.blit(val_surf, (bar_rect.right + 5, y_offset + 22))
+            
+            y_offset += 40
+        
+        # Right panel: NPCs by Group
+        right_panel = pygame.Rect(left_panel.right + 20, main_panel.y + 80, main_panel.right - left_panel.right - 40, main_panel.height - 100)
+        pygame.draw.rect(screen, (50, 35, 25), right_panel, border_radius=10)
+        pygame.draw.rect(screen, (100, 70, 40), right_panel, 2, border_radius=10)
+        
+        npc_title = self.font_hud_lg.render("NPCs", True, UI_ACCENT)
+        screen.blit(npc_title, (right_panel.x + 15, right_panel.y + 10))
+        
+        # Draw NPC groups if available
+        if npc_groups:
+            y_offset = right_panel.y + 45
+            max_y = right_panel.bottom - 20
+            for group_name, npcs in npc_groups.items():
+                if y_offset > max_y:
+                    break
+                    
+                # Group header
+                group_surf = self.font_hud_md.render(group_name, True, (200, 150, 100))
+                screen.blit(group_surf, (right_panel.x + 15, y_offset))
+                y_offset += 25
+                
+                # NPCs in this group
+                for npc_info in npcs:
+                    if y_offset > max_y:
+                        break
+                    npc_name = npc_info.get("name", "Unknown")
+                    npc_rep = npc_info.get("reputation", 50)
+                    
+                    # NPC name and rep
+                    npc_surf = self.font_hud_sm.render(f"• {npc_name}", True, UI_TEXT_DIM)
+                    screen.blit(npc_surf, (right_panel.x + 30, y_offset))
+                    
+                    # Mini rep indicator
+                    rep_color = (100, 200, 100) if npc_rep >= 60 else ((200, 150, 50) if npc_rep >= 40 else (200, 80, 80))
+                    pygame.draw.circle(screen, rep_color, (right_panel.right - 40, y_offset + 8), 6)
+                    pygame.draw.circle(screen, WHITE, (right_panel.right - 40, y_offset + 8), 6, 1)
+                    
+                    rep_text = self.font_hint.render(f"{npc_rep}", True, WHITE)
+                    screen.blit(rep_text, rep_text.get_rect(center=(right_panel.right - 40, y_offset + 8)))
+                    
+                    y_offset += 20
+        else:
+            # Placeholder text
+            placeholder = self.font_hud_sm.render("Interact with NPCs to fill yearbook", True, UI_TEXT_DIM)
+            screen.blit(placeholder, (right_panel.x + 15, right_panel.y + 50))
+        
+        # Return hint
+        return_text = "[B] Return to wallet" if controller_connected else "Press ESC or click to return to wallet"
+        hint_surface = self.font_hint.render(return_text, True, UI_ACCENT)
+        screen.blit(hint_surface, hint_surface.get_rect(center=(cx, main_panel.bottom + 20)))
 
     def _bar(self, screen, x, y, w, h, cur, mx, fg, bg, label=""):
         """Utility: draw a filled bar with a label."""
@@ -659,7 +766,9 @@ class UI:
 
     # ── wallet ui ─────────────────────────────────────────────
 
-    def draw_wallet(self, screen: pygame.Surface, active_item: str | None, character, controller_connected: bool = False, focus_item: str | None = None):
+    def draw_wallet(self, screen: pygame.Surface, active_item: str | None, character, 
+                    controller_connected: bool = False, focus_item: str | None = None,
+                    yearbook_data: dict | None = None):
         """Draw the wallet interface. Semi-transparent background."""
         overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
         overlay.fill((0, 0, 0, 200))
@@ -688,16 +797,19 @@ class UI:
                 mouse_item = "id"
             elif self.wallet_bill_rect.collidepoint((mx, my)):
                 mouse_item = "bill"
+            elif self.wallet_yearbook_rect.collidepoint((mx, my)):
+                mouse_item = "yearbook"
             if mouse_item:
                 highlight_item = mouse_item
 
-            for key in ("id", "bill"):
+            for key in ("id", "bill", "yearbook"):
                 target = -24 if highlight_item == key else 0
                 current = self._wallet_hover_offsets[key]
                 self._wallet_hover_offsets[key] = current + (target - current) * 0.25
 
             id_offset = int(round(self._wallet_hover_offsets["id"]))
             bill_offset = int(round(self._wallet_hover_offsets["bill"]))
+            yearbook_offset = int(round(self._wallet_hover_offsets["yearbook"]))
             
             for i, sy in enumerate(slot_ys):
                 # --- Left Side ---
@@ -736,6 +848,20 @@ class UI:
                 pygame.draw.rect(screen, (60, 30, 18), pocket_rect_right, border_radius=4)
                 pygame.draw.rect(screen, (35, 18, 10), pocket_rect_right, 2, border_radius=4)
                 pygame.draw.line(screen, (100, 50, 30), (pocket_rect_right.x + 5, pocket_rect_right.y + 4), (pocket_rect_right.right - 5, pocket_rect_right.y + 4), 1)
+
+                # --- Left Side Slot 3 ---
+                # Draw Yearbook before drawing its pocket cover (Slot 3 = index 2)
+                if i == 2:
+                    full_yearbook_base = pygame.Rect(self.wallet_yearbook_rect.x, self.wallet_yearbook_rect.y, self.wallet_yearbook_rect.width, 160)
+                    full_yearbook = full_yearbook_base.move(0, yearbook_offset)
+                    pygame.draw.rect(screen, (180, 140, 100), full_yearbook, border_radius=8)
+                    pygame.draw.rect(screen, (120, 80, 40), full_yearbook, 2, border_radius=8)
+                    yearbook_title = self.font_hud_md.render("Yearbook", True, (255, 250, 230))
+                    screen.blit(yearbook_title, (full_yearbook.x + 10, full_yearbook.y + 12))
+                    # Draw a small book icon decoration
+                    pygame.draw.line(screen, (255, 250, 230), (full_yearbook.x + 20, full_yearbook.y + 40), (full_yearbook.x + 20, full_yearbook.bottom - 10), 2)
+                    if highlight_item == "yearbook":
+                        pygame.draw.rect(screen, UI_ACCENT, full_yearbook.inflate(6, 6), 2, border_radius=10)
 
             # Hint - Adaptive: Xbox or Keyboard
             if controller_connected:
@@ -836,5 +962,11 @@ class UI:
                 body_text = "For lunch at the cafeteria"
                 desc_body = self.font_hud_sm.render(body_text, True, UI_TEXT)
                 screen.blit(desc_body, desc_body.get_rect(center=(desc_panel.centerx, title_bar.bottom + 32)))
+
+            elif active_item == "yearbook":
+                # Call dedicated yearbook drawing method
+                reputation_data = yearbook_data.get("reputation_data", {}) if yearbook_data else {}
+                npc_groups = yearbook_data.get("npc_groups", {}) if yearbook_data else {}
+                self.draw_yearbook_view(screen, controller_connected, reputation_data, npc_groups)
 
             # Return hint rendered above the item (see blocks above)

@@ -606,6 +606,9 @@ class Game:
                         elif self.ui.wallet_bill_rect.collidepoint(event.pos):
                             self.active_wallet_item = "bill"
                             self.wallet_focus_item = "bill"
+                        elif self.ui.wallet_yearbook_rect.collidepoint(event.pos):
+                            self.active_wallet_item = "yearbook"
+                            self.wallet_focus_item = "yearbook"
                         elif not self.ui.wallet_bg_rect.collidepoint(event.pos) and not self.ui.wallet_bill_rect.collidepoint(event.pos):
                             self.state = GameState.PLAYING
                             self.wallet_focus_item = None
@@ -870,7 +873,7 @@ class Game:
 
     def _handle_controller_wallet(self, controller):
         """Handle controller input during WALLET state."""
-        focus_cycle = ["id", "bill"]
+        focus_cycle = ["id", "bill", "yearbook"]
 
         if controller.is_cancel_pressed():
             if self.active_wallet_item:
@@ -2472,6 +2475,52 @@ class Game:
 
     # ── rewards / consequences ────────────────────────────────
 
+    def _get_yearbook_data(self) -> dict:
+        """Prepare yearbook data: reputation by group and NPCs by group."""
+        reputation_data = {}
+        npc_groups = {}
+        
+        # Get reputation standings
+        if self.reputation:
+            for group_str, rep_value in self.reputation.standings.items():
+                # Convert group string to display name
+                group_display = group_str.replace("_", " ").title()
+                reputation_data[group_str] = rep_value
+        
+        # Group NPCs by their social group
+        from settings import SocialGroup
+        for group in SocialGroup:
+            group_name = group.value.replace("_", " ").title()
+            npc_list = []
+            
+            for npc_id, npc in self.npc_manager.npcs.items():
+                # Skip the player and sibling
+                if npc_id in ("npc_aiden", "npc_lena"):
+                    continue
+                if npc.group == group:
+                    # Get player→NPC relationship
+                    player_key = f"player_{self.character.value}"
+                    rel_edge = self.npc_manager.relationships.get_relationship(player_key, npc_id)
+                    npc_rep = 50  # default neutral
+                    if rel_edge:
+                        # Use average of friendship and trust as a simple relationship score
+                        npc_rep = (rel_edge.friendship + rel_edge.trust) // 2
+                    
+                    npc_list.append({
+                        "name": npc.name,
+                        "id": npc_id,
+                        "reputation": npc_rep,
+                        "gender": getattr(npc, "gender", "unspecified"),
+                    })
+            
+            if npc_list:
+                npc_groups[group_name] = npc_list
+        
+        return {
+            "reputation_data": reputation_data,
+            "npc_groups": npc_groups,
+        }
+
     def _apply_rewards(self, rewards: dict):
         if "xp" in rewards:
             self.player.gain_xp(rewards["xp"])
@@ -2619,6 +2668,7 @@ class Game:
                     self.character,
                     self.controller.connected if self.controller else False,
                     self.wallet_focus_item if (self.controller and self.controller.connected) else None,
+                    self._get_yearbook_data() if self.active_wallet_item == "yearbook" else None,
                 ),
             ),
             GameState.GAME_OVER:         lambda: self.ui.draw_game_over(self.screen, self.reputation.calculate_ending()),
