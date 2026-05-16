@@ -825,10 +825,7 @@ class Game:
         # RB = Light Attack (Aiden) or Hack (Lena)
         if controller.is_attack_pressed():
             if self.character == Character.AIDEN:
-                target = self._nearest_npc(ATTACK_RANGE)
-                if target:
-                    self.combat_system.start_combat(self.player, target)
-                    self.state = GameState.COMBAT
+                self.player.start_attack()
             elif self.character == Character.LENA:
                 hackable = self._get_hackable()
                 if hackable:
@@ -1042,10 +1039,7 @@ class Game:
         elif event.key == KEY_PHONE:
             self.phone.toggle_phone()
         elif event.key == KEY_LIGHT_ATTACK and self.character == Character.AIDEN:
-            target = self._nearest_npc(ATTACK_RANGE)
-            if target:
-                self.combat_system.start_combat(self.player, target)
-                self.state = GameState.COMBAT
+            self.player.start_attack()
         elif event.key == KEY_HACK and self.character == Character.LENA:
             hackable = self._get_hackable()
             if hackable:
@@ -1803,6 +1797,68 @@ class Game:
                 restricted_rooms=restricted,
                 is_visible=self._is_npc_on_camera
             )
+
+        # Real-time Combat Logic
+        hitbox = self.player.get_attack_hitbox()
+        if hitbox and self.player.is_attacking:
+            for _npc in npcs_on_floor:
+                if _npc.id == "npc_gordon" or _npc.id.startswith("npc_oscar_obs") or not getattr(_npc, 'ai_enabled', True):
+                    continue
+                if getattr(_npc, 'health', 0) <= 0:
+                    continue
+                if _npc.rect.colliderect(hitbox) and not getattr(_npc, '_hit_this_attack', False):
+                    _npc._hit_this_attack = True
+                    _npc.health -= self.player.attack_damage
+                    _npc.is_hostile = True
+                    _npc.target_pos = self.player.rect.center
+                    
+                    # Reputation changes: decrease with attacked group, increase with random other
+                    self.reputation.modify(_npc.group.value, -5)
+                    from settings import SocialGroup
+                    other_groups = [g for g in SocialGroup if g != _npc.group]
+                    if other_groups:
+                        import random
+                        boost = random.choice(other_groups)
+                        self.reputation.modify(boost.value, 2)
+                    
+                    self.ui.show_notification(f"Hit {_npc.name}! (-5 Rep with {_npc.group.value})", NOTIF_WARNING)
+                    
+                    # Group aggro
+                    for n in npcs_on_floor:
+                        if n.group == _npc.group and not n.is_hostile and getattr(n, 'health', 0) > 0:
+                            dist = ((n.rect.x - _npc.rect.x)**2 + (n.rect.y - _npc.rect.y)**2)**0.5
+                            if dist < 200:
+                                n.is_hostile = True
+                                n.target_pos = self.player.rect.center
+                                
+                    if _npc.health <= 0:
+                        _npc.ai_enabled = False
+                        _npc.is_hostile = False
+                        _npc.color = (100, 100, 100)
+                        self.ui.show_notification(f"Knocked out {_npc.name}! (+10 XP)", NOTIF_SUCCESS)
+                        self.player.gain_xp(10)
+        elif not self.player.is_attacking:
+            for _npc in npcs_on_floor:
+                _npc._hit_this_attack = False
+                
+        # Hostile NPCs track and attack player
+        for _npc in npcs_on_floor:
+            if getattr(_npc, 'is_hostile', False) and getattr(_npc, 'health', 0) > 0:
+                _npc.target_pos = self.player.rect.center
+                if getattr(_npc, 'attack_cooldown', 0) > 0:
+                    _npc.attack_cooldown -= current_dt
+                if _npc.rect.colliderect(self.player.rect) and getattr(_npc, 'attack_cooldown', 0) <= 0:
+                    damage = getattr(_npc, 'attack_damage', 5)
+                    self.player.take_damage(damage)
+                    _npc.attack_cooldown = 1.0
+                    self.ui.show_notification(f"{_npc.name} attacked you!", NOTIF_ERROR)
+                    if self.player.health <= 0:
+                        self.player.health = self.player.max_health // 2
+                        self.ui.show_notification("You were knocked out...", NOTIF_ERROR)
+                        # Reset hostility
+                        for n in npcs_on_floor:
+                            n.is_hostile = False
+                            n.target_pos = None
 
         # NPC-NPC collision separation inside the cafeteria
         floor1_ref = self.school_map.get_floor(FLOOR_1F)

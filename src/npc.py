@@ -208,6 +208,12 @@ class NPC:
         self.ai_enabled    = True
         self.show_name     = True
 
+        # Combat state
+        self.max_health = 50
+        self.health = 50
+        self.is_hostile = False
+        self.attack_cooldown = 0.0
+
         # Animation state
         self.animations = {}
         self.state = "idle"
