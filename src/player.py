@@ -78,6 +78,7 @@ class Player:
         self.is_attacking = False
         self.attack_timer = 0.0
         self.attack_cooldown = 0.0
+        self._hit_npcs = set()
 
         # XP / levelling
         self.xp            = 0
@@ -258,15 +259,16 @@ class Player:
 
     def start_attack(self):
         """Initiate an attack if enough stamina and off cooldown."""
-        if self.attack_cooldown <= 0 and self.stamina >= 10:
+        if self.attack_cooldown <= 0 and self.stamina >= 5:
             # Controller rumble feedback
             controller = get_controller()
             if controller.connected:
                 controller.rumble(0.2, 0.4, 100)
-            self.stamina -= 10
+            self.stamina -= 5
             self.is_attacking = True
             self.attack_timer = 0.2  # 0.2s active hitbox
-            self.attack_cooldown = 0.5
+            self.attack_cooldown = 1.0
+            self._hit_npcs.clear()
 
     def get_attack_hitbox(self) -> pygame.Rect | None:
         if not self.is_attacking:

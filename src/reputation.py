@@ -86,16 +86,13 @@ class ReputationSystem:
 
         Rules
         -----
-        * Good Ending   :  avg ≥ 65  AND  karma ≥ 20
-        * Dark Ending   :  avg ≤ 35  OR   karma ≤ -20
-        * Neutral Ending:  everything else
+        * Good Ending   :  avg > 35  AND  karma > -20
+        * Dark Ending   :  avg <= 35  OR   karma <= -20
         """
         avg = self.average()
-        if avg >= 65 and self.karma >= 20:
-            return Ending.GOOD
-        elif avg <= 35 or self.karma <= -20:
+        if avg <= 35 or self.karma <= -20:
             return Ending.DARK
-        return Ending.NEUTRAL
+        return Ending.GOOD
 
     def get_ending_color(self) -> tuple:
         """Return a UI colour matching the projected ending."""

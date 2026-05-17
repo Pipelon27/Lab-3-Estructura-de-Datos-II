@@ -1121,10 +1121,7 @@ class Game:
         # RB = Light Attack (Aiden) or Hack (Lena)
         if controller.is_attack_pressed():
             if self.character == Character.AIDEN:
-                target = self._nearest_npc(ATTACK_RANGE)
-                if target:
-                    self.combat_system.start_combat(self.player, target)
-                    self.state = GameState.COMBAT
+                self.player.start_attack()
             elif self.character == Character.LENA:
                 hackable = self._get_hackable()
                 if hackable:
@@ -1337,7 +1334,7 @@ class Game:
             
             # Priority 3: NPC Interaction
             npc = self._nearest_npc(NPC_INTERACTION_RANGE)
-            if npc:
+            if npc and npc.health > 0:
                 self._try_interact()
                 return
         # SPACE (KEY_INTERACT) and dash aliases trigger dash
@@ -1359,6 +1356,8 @@ class Game:
             if hackable:
                 self.hacking_game.start(hackable, self.player)
                 self.state = GameState.HACKING
+        elif event.key == KEY_LIGHT_ATTACK and self.character == Character.AIDEN:
+            self.player.start_attack()
         
 
     def _keys_cinematic(self, event: pygame.event.Event):
@@ -1542,12 +1541,14 @@ class Game:
     #  INTERACTION HELPERS
     # ──────────────────────────────────────────────────────────
 
-    def _nearest_npc(self, radius: float):
+    def _nearest_npc(self, radius: float, skip_siblings: bool = False):
         """Return the closest NPC within *radius*, or None."""
         npcs = self.npc_manager.get_npcs_on_floor(self.current_floor)
         px, py = self.player.rect.center
         best, best_d = None, radius
         for npc in npcs:
+            if skip_siblings and npc.id in ("npc_aiden", "npc_lena"):
+                continue
             d = ((npc.rect.centerx - px)**2 + (npc.rect.centery - py)**2) ** 0.5
             if d < best_d:
                 best_d = d
@@ -1570,7 +1571,7 @@ class Game:
     def _try_interact(self):
         """Interact with nearest NPC."""
         npc = self._nearest_npc(NPC_INTERACTION_RANGE)
-        if npc:
+        if npc and npc.health > 0:
             # Check if this NPC has a dialogue_id (story NPC using old system)
             dlg_id = npc.get_dialogue_id(self.character)
             if dlg_id:
@@ -2340,6 +2341,48 @@ class Game:
             self._basement_block_timer -= dt
         if getattr(self, '_rooftop_block_timer', 0) > 0:
             self._rooftop_block_timer -= dt
+
+        # ── Player Attacks NPCs ──
+        if getattr(self.player, 'is_attacking', False):
+            hitbox = self.player.get_attack_hitbox()
+            if hitbox:
+                for _npc in npcs_on_floor:
+                    if _npc.health <= 0 or _npc.id in ("npc_aiden", "npc_lena"):
+                        continue
+                    if _npc.id not in getattr(self.player, '_hit_npcs', set()):
+                        if hitbox.colliderect(_npc.rect):
+                            self.player._hit_npcs.add(_npc.id)
+                            _npc.health -= self.player.attack_damage
+                            self.ui.show_notification(f"Hit {_npc.name} for {self.player.attack_damage} dmg!", NOTIF_SUCCESS)
+                            if _npc.health <= 0:
+                                _npc.health = 0
+                                _npc.knockout_timer = 120.0
+                                _npc.is_hostile = False
+                                self.reputation.modify(_npc.group.value, -5)
+                                self.ui.show_notification(f"Knocked out {_npc.name}! -5 reputation with {_npc.group.value.title()}", NOTIF_ERROR)
+                            else:
+                                _npc.is_hostile = True
+
+        # ── Hostile NPCs chase & attack ──
+        import math
+        for _npc in npcs_on_floor:
+            if getattr(_npc, 'is_hostile', False) and _npc.health > 0:
+                dist = math.hypot(_npc.rect.centerx - self.player.rect.centerx, _npc.rect.centery - self.player.rect.centery)
+                if dist > 400:
+                    _npc.is_hostile = False
+                    _npc.target_pos = None
+                else:
+                    _npc.target_pos = self.player.rect.center
+                    _npc.ai_enabled = True
+                    if dist < 60:
+                        if getattr(_npc, 'attack_cooldown', 0) <= 0:
+                            dmg = getattr(_npc, 'target_damage', 8)
+                            self.player.take_damage(dmg)
+                            _npc.attack_cooldown = 1.0
+                            self.ui.show_notification(f"{_npc.name} attacked you!", NOTIF_ERROR)
+                            controller = get_controller()
+                            if controller.connected:
+                                controller.rumble(0.5, 0.5, 200)
 
         # ── Player pushes NPCs on contact ──────────────────────────────────
         # Stationary NPCs = heavy resistance (1px nudge), moving NPCs = light push
