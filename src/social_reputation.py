@@ -273,9 +273,11 @@ class ReputationManager:
         # Sync to base ReputationSystem (only when actually applying)
         if not dry_run and self.reputation_system:
             try:
-                self.reputation_system.modify(group, max(-20, min(20, sum(
-                    d.delta for d in deltas if d.subgroup == group and d.stat == "respect"
-                ))))
+                changed_subgroups = set(d.subgroup for d in deltas if not d.subgroup.startswith("global_"))
+                for grp in changed_subgroups:
+                    subgroup_respect_sum = sum(d.delta for d in deltas if d.subgroup == grp and d.stat == "respect")
+                    if subgroup_respect_sum != 0:
+                        self.reputation_system.modify(grp, subgroup_respect_sum)
             except Exception as e:
                 print(f"[SocialSystem] Failed to sync with base reputation system: {e}")
 
@@ -310,6 +312,21 @@ class ReputationManager:
 
         # Update allied status on individual NPC too
         npc.is_allied = npc.relationship >= ALLY_THRESHOLD
+
+        # Synchronize individual stats to the game's RelationshipGraph
+        if hasattr(self, "game") and self.game:
+            try:
+                player_key = f"player_{self.game.character.value}"
+                rel_edge = self.game.npc_manager.relationships.get_relationship(player_key, npc.id)
+                if rel_edge:
+                    rel_edge.friendship = npc.relationship
+                    rel_edge.trust = npc.npc_trust
+                    rel_edge.fear = npc.npc_fear
+                    if npc.group and npc.group.value in self.subgroups:
+                        rel_edge.respect = self.subgroups[npc.group.value].respect
+                    print(f"[SocialSystem] Synced RelationshipGraph edge for {npc.name}: {rel_edge}")
+            except Exception as e:
+                print(f"[SocialSystem] Failed to sync with RelationshipGraph: {e}")
 
         print(f"[SocialSystem] {npc.name} personal stats updated via '{action}'")
 
