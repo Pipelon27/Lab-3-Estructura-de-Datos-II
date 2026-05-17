@@ -97,6 +97,7 @@ class Game:
         self.previous_state = GameState.INTRO_CINEMATIC
         self.active_wallet_item = None
         self.wallet_focus_item = None
+        self.selected_yearbook_group = "Athletes"
         self.pause_sel      = 0
 
         # Transition cooldown (prevents rapid re-triggering)
@@ -389,6 +390,7 @@ class Game:
         # ── NEW SOCIAL SYSTEMS ────────────────────────────────
         self.social_reputation_manager = ReputationManager()
         self.social_reputation_manager.set_reputation_system(self.reputation)
+        self.social_reputation_manager.game = self
         
         self.social_dialogue_manager = SocialDialogueManager()
         self.social_dialogue_manager.reputation_manager = self.social_reputation_manager
@@ -861,7 +863,22 @@ class Game:
                         self.wallet_focus_item = None
                 elif self.state == GameState.WALLET:
                     if self.active_wallet_item:
-                        # Click anywhere to go back to wallet view
+                        if self.active_wallet_item == "yearbook":
+                            cx, cy = SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2
+                            main_panel = pygame.Rect(cx - 600, cy - 300, 1200, 600)
+                            left_panel = pygame.Rect(main_panel.x + 20, main_panel.y + 80, 280, main_panel.height - 100)
+                            if left_panel.collidepoint(event.pos):
+                                y_click = event.pos[1]
+                                start_y = left_panel.y + 45
+                                clicked_idx = (y_click - start_y) // 40
+                                if 0 <= clicked_idx < 6:
+                                    groups = ["Athletes", "Tech Club", "Populars", "Academics", "Rebels", "Outsiders"]
+                                    self.selected_yearbook_group = groups[clicked_idx]
+                                    print(f"[Yearbook] Selected group: {self.selected_yearbook_group}")
+                                return
+                            elif main_panel.collidepoint(event.pos):
+                                return
+                        # Click anywhere else to go back to wallet view
                         self.active_wallet_item = None
                         self.wallet_focus_item = None
                     else:
@@ -1197,6 +1214,13 @@ class Game:
                     idx = focus_cycle.index(self.wallet_focus_item)
                     idx = (idx + move) % len(focus_cycle)
                     self.wallet_focus_item = focus_cycle[idx]
+        elif self.active_wallet_item == "yearbook":
+            move_v = controller.get_menu_direction()
+            if move_v != 0:
+                groups = ["Athletes", "Tech Club", "Populars", "Academics", "Rebels", "Outsiders"]
+                cur_idx = groups.index(self.selected_yearbook_group) if self.selected_yearbook_group in groups else 0
+                self.selected_yearbook_group = groups[(cur_idx + move_v) % len(groups)]
+                print(f"[Yearbook] Controller cycled group to: {self.selected_yearbook_group}")
 
     def _handle_controller_map(self, controller):
         """Handle controller input during MAP state."""
@@ -1303,12 +1327,26 @@ class Game:
             GameState.TRADING:          lambda e: self.trade_system.handle_input(e),
             GameState.INVENTORY_SCREEN: lambda e: self.inventory.handle_input(e),
             GameState.SKILL_TREE_SCREEN:lambda e: self.player.skill_tree.handle_input(e, self.player),
+            GameState.WALLET:           self._keys_wallet,
             GameState.PAUSED:           self._keys_paused,
             GameState.MISSION_SELECT:   self._keys_mission_select,
             GameState.GAME_OVER:        self._keys_game_over,
         }.get(self.state)
         if handler:
             handler(event)
+    def _keys_wallet(self, event: pygame.event.Event):
+        """Handle keyboard input while in the wallet view."""
+        if self.active_wallet_item == "yearbook":
+            groups = ["Athletes", "Tech Club", "Populars", "Academics", "Rebels", "Outsiders"]
+            cur_idx = groups.index(self.selected_yearbook_group) if self.selected_yearbook_group in groups else 0
+            if event.key in (pygame.K_UP, pygame.K_w):
+                self.selected_yearbook_group = groups[(cur_idx - 1) % len(groups)]
+                print(f"[Yearbook] Cycled group UP to: {self.selected_yearbook_group}")
+            elif event.key in (pygame.K_DOWN, pygame.K_s):
+                self.selected_yearbook_group = groups[(cur_idx + 1) % len(groups)]
+                print(f"[Yearbook] Cycled group DOWN to: {self.selected_yearbook_group}")
+            elif event.key in (pygame.K_ESCAPE, pygame.K_i):
+                self.active_wallet_item = None
 
     # ── key handlers per state ────────────────────────────────
 
@@ -3130,11 +3168,25 @@ class Game:
                         # Use average of friendship and trust as a simple relationship score
                         npc_rep = (rel_edge.friendship + rel_edge.trust) // 2
                     
+                    friendship = rel_edge.friendship if rel_edge else 50
+                    respect = rel_edge.respect if rel_edge else 50
+                    fear = rel_edge.fear if rel_edge else 0
+                    trust = rel_edge.trust if rel_edge else 50
+                    suspicion = rel_edge.suspicion if rel_edge else 0
+                    
                     npc_list.append({
                         "name": npc.name,
                         "id": npc_id,
                         "reputation": npc_rep,
                         "gender": getattr(npc, "gender", "unspecified"),
+                        "mask_revealed": getattr(npc, "mask_revealed", False),
+                        "public_personality": getattr(npc, "public_personality", "Unknown"),
+                        "private_personality": getattr(npc, "private_personality", "Unknown"),
+                        "friendship": friendship,
+                        "respect": respect,
+                        "fear": fear,
+                        "trust": trust,
+                        "suspicion": suspicion,
                     })
             
             if npc_list:
@@ -3143,6 +3195,7 @@ class Game:
         return {
             "reputation_data": reputation_data,
             "npc_groups": npc_groups,
+            "selected_group": self.selected_yearbook_group,
         }
 
     def _apply_rewards(self, rewards: dict):

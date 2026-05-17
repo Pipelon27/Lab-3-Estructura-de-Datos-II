@@ -402,10 +402,22 @@ class UI:
             pygame.draw.rect(screen, (255, 220, 80), pr.inflate(6, 6), 2, border_radius=8)
 
     def draw_yearbook_view(self, screen: pygame.Surface, controller_connected: bool = False,
-                          reputation_data: dict | None = None, npc_groups: dict | None = None):
+                          reputation_data: dict | None = None, npc_groups: dict | None = None,
+                          selected_group: str = "Athletes"):
         """Draw the yearbook view with social group stats and NPC relationships."""
         cx, cy = SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2
         
+        # Local helper for drawing premium progress bars
+        def draw_stat_bar(s_surface, x, y, width, height, val, label, color):
+            lbl_surf = self.font_hint.render(f"{label}: {val}", True, UI_TEXT_DIM)
+            s_surface.blit(lbl_surf, (x, y))
+            bar_rect = pygame.Rect(x, y + 14, width, height)
+            pygame.draw.rect(s_surface, (25, 18, 12), bar_rect, border_radius=3)
+            fill_w = int(width * max(0, min(100, val)) / 100)
+            if fill_w > 0:
+                pygame.draw.rect(s_surface, color, (bar_rect.x, bar_rect.y, fill_w, height), border_radius=3)
+            pygame.draw.rect(s_surface, (80, 60, 40), bar_rect, 1, border_radius=3)
+
         # Main panel
         main_panel = pygame.Rect(cx - 600, cy - 300, 1200, 600)
         pygame.draw.rect(screen, (30, 20, 15), main_panel, border_radius=15)
@@ -434,26 +446,44 @@ class UI:
         y_offset = left_panel.y + 45
         groups = ["Athletes", "Tech Club", "Populars", "Academics", "Rebels", "Outsiders"]
         for group_name in groups:
-            # Group name
-            group_surf = self.font_hud_sm.render(group_name, True, UI_TEXT)
-            screen.blit(group_surf, (left_panel.x + 15, y_offset))
+            btn_rect = pygame.Rect(left_panel.x + 10, y_offset - 6, left_panel.width - 20, 42)
+            mouse_pos = pygame.mouse.get_pos()
             
-            # Reputation bar (simplified)
+            # Draw selection/hover state background
+            if group_name == selected_group:
+                pygame.draw.rect(screen, (80, 50, 25), btn_rect, border_radius=6)
+                pygame.draw.rect(screen, UI_ACCENT, btn_rect, 2, border_radius=6)
+                pygame.draw.circle(screen, UI_ACCENT, (btn_rect.x + 10, btn_rect.centery), 4)
+                name_color = WHITE
+            elif btn_rect.collidepoint(mouse_pos):
+                pygame.draw.rect(screen, (60, 40, 22), btn_rect, border_radius=6)
+                pygame.draw.rect(screen, (100, 75, 45), btn_rect, 1, border_radius=6)
+                name_color = UI_TEXT
+            else:
+                name_color = UI_TEXT_DIM
+            
+            # Group name
+            group_surf = self.font_hud_sm.render(group_name, True, name_color)
+            x_text = left_panel.x + 22 if group_name == selected_group else left_panel.x + 15
+            screen.blit(group_surf, (x_text, y_offset - 2))
+            
+            # Reputation bar
             rep_value = reputation_data.get(group_name.lower().replace(" ", "_"), 50)
-            bar_width = 240
-            bar_height = 12
-            bar_rect = pygame.Rect(left_panel.x + 15, y_offset + 22, bar_width, bar_height)
+            bar_width = 190
+            bar_height = 8
+            bar_rect = pygame.Rect(left_panel.x + 22 if group_name == selected_group else left_panel.x + 15, y_offset + 18, bar_width, bar_height)
             
             # Background
-            pygame.draw.rect(screen, (40, 40, 50), bar_rect, border_radius=3)
+            pygame.draw.rect(screen, (30, 20, 15), bar_rect, border_radius=2)
             # Fill
-            fill_w = int(bar_width * max(0, rep_value) / 100)
-            pygame.draw.rect(screen, UI_ACCENT, (bar_rect.x, bar_rect.y, fill_w, bar_height), border_radius=3)
-            pygame.draw.rect(screen, WHITE, bar_rect, 1, border_radius=3)
+            fill_w = int(bar_width * max(0, min(100, rep_value)) / 100)
+            if fill_w > 0:
+                pygame.draw.rect(screen, UI_ACCENT, (bar_rect.x, bar_rect.y, fill_w, bar_height), border_radius=2)
+            pygame.draw.rect(screen, (80, 60, 40), bar_rect, 1, border_radius=2)
             
             # Value text
-            val_surf = self.font_hud_sm.render(f"{rep_value}", True, WHITE)
-            screen.blit(val_surf, (bar_rect.right + 5, y_offset + 22))
+            val_surf = self.font_hint.render(f"{rep_value}", True, WHITE)
+            screen.blit(val_surf, (bar_rect.right + 8, y_offset + 14))
             
             y_offset += 40
         
@@ -462,46 +492,76 @@ class UI:
         pygame.draw.rect(screen, (50, 35, 25), right_panel, border_radius=10)
         pygame.draw.rect(screen, (100, 70, 40), right_panel, 2, border_radius=10)
         
-        npc_title = self.font_hud_lg.render("NPCs", True, UI_ACCENT)
+        npc_title = self.font_hud_lg.render(f"NPCs: {selected_group}", True, UI_ACCENT)
         screen.blit(npc_title, (right_panel.x + 15, right_panel.y + 10))
         
-        # Draw NPC groups if available
-        if npc_groups:
-            y_offset = right_panel.y + 45
-            max_y = right_panel.bottom - 20
-            for group_name, npcs in npc_groups.items():
-                if y_offset > max_y:
+        # Draw NPCs in selected group
+        npcs = npc_groups.get(selected_group, [])
+        y_offset = right_panel.y + 50
+        
+        if npcs:
+            for npc_info in npcs:
+                if y_offset + 105 > right_panel.bottom - 10:
                     break
-                    
-                # Group header
-                group_surf = self.font_hud_md.render(group_name, True, (200, 150, 100))
-                screen.blit(group_surf, (right_panel.x + 15, y_offset))
-                y_offset += 25
                 
-                # NPCs in this group
-                for npc_info in npcs:
-                    if y_offset > max_y:
-                        break
-                    npc_name = npc_info.get("name", "Unknown")
-                    npc_rep = npc_info.get("reputation", 50)
+                # Card Background Rect
+                card_rect = pygame.Rect(right_panel.x + 15, y_offset, right_panel.width - 30, 100)
+                pygame.draw.rect(screen, (40, 28, 20), card_rect, border_radius=8)
+                pygame.draw.rect(screen, (100, 75, 45), card_rect, 2, border_radius=8)
+                
+                # 1. Left Section: Name, Gender, Personality Mask
+                name_text = self.font_hud_md.render(npc_info["name"], True, WHITE)
+                screen.blit(name_text, (card_rect.x + 15, card_rect.y + 8))
+                
+                gender_str = npc_info.get("gender", "unspecified").title()
+                gender_text = self.font_hint.render(f"Gender: {gender_str}", True, UI_TEXT_DIM)
+                screen.blit(gender_text, (card_rect.x + 15, card_rect.y + 32))
+                
+                mask_revealed = npc_info.get("mask_revealed", False)
+                if mask_revealed:
+                    mask_label = self.font_hint.render("Personality: REVEALED", True, (100, 230, 100))
+                    screen.blit(mask_label, (card_rect.x + 15, card_rect.y + 52))
                     
-                    # NPC name and rep
-                    npc_surf = self.font_hud_sm.render(f"• {npc_name}", True, UI_TEXT_DIM)
-                    screen.blit(npc_surf, (right_panel.x + 30, y_offset))
+                    private_face = npc_info.get("private_personality", "Unknown")
+                    face_desc = self.font_hint.render(f"Private Face: {private_face}", True, (180, 255, 180))
+                    screen.blit(face_desc, (card_rect.x + 15, card_rect.y + 72))
+                else:
+                    mask_label = self.font_hint.render("Personality: MASKED", True, (220, 120, 120))
+                    screen.blit(mask_label, (card_rect.x + 15, card_rect.y + 52))
                     
-                    # Mini rep indicator
-                    rep_color = (100, 200, 100) if npc_rep >= 60 else ((200, 150, 50) if npc_rep >= 40 else (200, 80, 80))
-                    pygame.draw.circle(screen, rep_color, (right_panel.right - 40, y_offset + 8), 6)
-                    pygame.draw.circle(screen, WHITE, (right_panel.right - 40, y_offset + 8), 6, 1)
-                    
-                    rep_text = self.font_hint.render(f"{npc_rep}", True, WHITE)
-                    screen.blit(rep_text, rep_text.get_rect(center=(right_panel.right - 40, y_offset + 8)))
-                    
-                    y_offset += 20
+                    public_face = npc_info.get("public_personality", "Unknown")
+                    face_desc = self.font_hint.render(f"Public Face: {public_face}", True, UI_TEXT_DIM)
+                    screen.blit(face_desc, (card_rect.x + 15, card_rect.y + 72))
+                
+                # 2. Right Section: Progress Bars
+                col_a_x = card_rect.x + 320
+                col_b_x = card_rect.x + 570
+                bar_w = 200
+                bar_h = 6
+                
+                # Column A: Friendship, Trust, Respect
+                friend_val = npc_info.get("friendship", 50)
+                draw_stat_bar(screen, col_a_x, card_rect.y + 8, bar_w, bar_h, friend_val, "Friendship", (100, 200, 100))
+                
+                trust_val = npc_info.get("trust", 50)
+                draw_stat_bar(screen, col_a_x, card_rect.y + 38, bar_w, bar_h, trust_val, "Trust", (100, 160, 220))
+                
+                respect_val = npc_info.get("respect", 50)
+                draw_stat_bar(screen, col_a_x, card_rect.y + 68, bar_w, bar_h, respect_val, "Respect", (220, 180, 100))
+                
+                # Column B: Fear, Suspicion
+                fear_val = npc_info.get("fear", 0)
+                draw_stat_bar(screen, col_b_x, card_rect.y + 8, bar_w, bar_h, fear_val, "Fear", (220, 100, 100))
+                
+                suspicion_val = npc_info.get("suspicion", 0)
+                draw_stat_bar(screen, col_b_x, card_rect.y + 38, bar_w, bar_h, suspicion_val, "Suspicion", (200, 130, 220))
+                
+                y_offset += 108
         else:
-            # Placeholder text
-            placeholder = self.font_hud_sm.render("Interact with NPCs to fill yearbook", True, UI_TEXT_DIM)
-            screen.blit(placeholder, (right_panel.x + 15, right_panel.y + 50))
+            placeholder = self.font_hud_md.render("No NPCs discovered in this group yet.", True, UI_TEXT_DIM)
+            screen.blit(placeholder, (right_panel.x + 30, right_panel.y + 100))
+            placeholder2 = self.font_hint.render("Talk to students around the school to expand your yearbook.", True, UI_TEXT_DIM)
+            screen.blit(placeholder2, (right_panel.x + 30, right_panel.y + 130))
         
         # Return hint
         return_text = "[B] Return to wallet" if controller_connected else "Press ESC or click to return to wallet"
@@ -1080,7 +1140,8 @@ class UI:
                 # Call dedicated yearbook drawing method
                 reputation_data = yearbook_data.get("reputation_data", {}) if yearbook_data else {}
                 npc_groups = yearbook_data.get("npc_groups", {}) if yearbook_data else {}
-                self.draw_yearbook_view(screen, controller_connected, reputation_data, npc_groups)
+                selected_group = yearbook_data.get("selected_group", "Athletes") if yearbook_data else "Athletes"
+                self.draw_yearbook_view(screen, controller_connected, reputation_data, npc_groups, selected_group)
 
             elif active_item == "cred":
                 big_cred = pygame.Rect(cx - 250, cy - 150, 500, 300)
