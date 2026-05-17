@@ -66,50 +66,50 @@ SUBGROUP_MATRIX = {
     # ── RESPOND — engaging honestly: strong gains with that group, small ripples elsewhere
     ("athletes", "respond"):       [
         ("athletes",  "respect", +10),
-        ("outsiders", "trust",   +4),
-        ("academics", "trust",   -2),
+        ("outsiders", "respect", +4),
+        ("academics", "respect", -2),
     ],
     ("tech_club", "respond"):      [
         ("tech_club", "respect", +10),
         ("academics", "respect", +5),
-        ("athletes",  "trust",   -2),
+        ("athletes",  "respect", -2),
     ],
     ("populars", "respond"):       [
         ("populars",  "respect", +9),
-        ("outsiders", "trust",   +3),
-        ("rebels",    "trust",   -2),
+        ("outsiders", "respect", +3),
+        ("rebels",    "respect", -2),
     ],
     ("academics", "respond"):      [
         ("academics", "respect", +10),
         ("tech_club", "respect", +4),
-        ("rebels",    "trust",   -3),
+        ("rebels",    "respect", -3),
     ],
     ("rebels", "respond"):         [
         ("rebels",    "respect", +10),
-        ("outsiders", "trust",   +4),
-        ("populars",  "trust",   -3),
+        ("outsiders", "respect", +4),
+        ("populars",  "respect", -3),
     ],
     ("outsiders", "respond"):      [
         ("outsiders", "respect", +9),
-        ("tech_club", "trust",   +3),
-        ("populars",  "trust",   -2),
+        ("tech_club", "respect", +3),
+        ("populars",  "respect", -2),
     ],
 
     # ── IGNORE — dismissive: hurts that group, slight boost from rivals
     ("athletes", "ignore"):        [
         ("athletes",  "respect", -6),
         ("populars",  "respect", -4),
-        ("outsiders", "trust",   +3),
+        ("outsiders", "respect", +3),
     ],
     ("tech_club", "ignore"):       [
         ("tech_club", "respect", -5),
         ("academics", "respect", -4),
-        ("rebels",    "trust",   +3),
+        ("rebels",    "respect", +3),
     ],
     ("populars", "ignore"):        [
         ("populars",  "respect", -7),
         ("outsiders", "respect", +3),
-        ("rebels",    "trust",   +2),
+        ("rebels",    "respect", +2),
     ],
     ("academics", "ignore"):       [
         ("academics", "respect", -5),
@@ -123,45 +123,39 @@ SUBGROUP_MATRIX = {
     ],
     ("outsiders", "ignore"):       [
         ("outsiders", "respect", -5),
-        ("populars",  "trust",   +3),
-        ("academics", "trust",   +2),
+        ("populars",  "respect", +3),
+        ("academics", "respect", +2),
     ],
 
-    # ── INTIMIDATE — aggressive: spreads fear, tanks global trust
+    # ── INTIMIDATE — aggressive
     ("athletes", "intimidate"):    [
-        ("rebels",    "respect",      +5),
-        ("athletes",  "fear",         +4),
-        ("outsiders", "fear",         +7),
-        ("global_trust", "value",    -10),
+        ("rebels",    "respect", +5),
+        ("athletes",  "respect", -4),
+        ("outsiders", "respect", -7),
     ],
     ("tech_club", "intimidate"):   [
-        ("outsiders", "fear",         +6),
-        ("populars",  "fear",         +5),
-        ("global_trust", "value",    -11),
+        ("outsiders", "respect", -6),
+        ("populars",  "respect", -5),
     ],
     ("populars", "intimidate"):    [
-        ("rebels",    "fear",         +5),
-        ("outsiders", "fear",         +8),
-        ("academics", "fear",         +4),
-        ("global_trust", "value",    -13),
+        ("rebels",    "respect", +5),
+        ("outsiders", "respect", -8),
+        ("academics", "respect", -4),
     ],
     ("academics", "intimidate"):   [
-        ("populars",  "fear",         +5),
-        ("rebels",    "respect",      +6),
-        ("outsiders", "fear",         +5),
-        ("global_trust", "value",    -10),
+        ("populars",  "respect", -5),
+        ("rebels",    "respect", +6),
+        ("outsiders", "respect", -5),
     ],
     ("rebels", "intimidate"):      [
-        ("athletes",  "fear",         +7),
-        ("populars",  "fear",         +5),
-        ("outsiders", "fear",         +4),
-        ("global_trust", "value",     -8),
+        ("athletes",  "respect", -7),
+        ("populars",  "respect", -5),
+        ("outsiders", "respect", -4),
     ],
     ("outsiders", "intimidate"):   [
-        ("populars",  "fear",         +6),
-        ("athletes",  "fear",         +4),
-        ("academics", "fear",         +4),
-        ("global_trust", "value",    -11),
+        ("populars",  "respect", -6),
+        ("athletes",  "respect", -4),
+        ("academics", "respect", -4),
     ],
 }
 

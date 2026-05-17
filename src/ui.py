@@ -554,26 +554,11 @@ class UI:
                 
                 # 2. Right Section: Progress Bars
                 col_a_x = card_rect.x + (290 if has_scroll else 320)
-                col_b_x = card_rect.x + (530 if has_scroll else 570)
-                bar_w = 190 if has_scroll else 200
-                bar_h = 6
-                
-                # Column A: Friendship, Trust, Respect
-                friend_val = npc_info.get("friendship", 50)
-                draw_stat_bar(screen, col_a_x, card_rect.y + 8, bar_w, bar_h, friend_val, "Friendship", (100, 200, 100))
-                
-                trust_val = npc_info.get("trust", 50)
-                draw_stat_bar(screen, col_a_x, card_rect.y + 38, bar_w, bar_h, trust_val, "Trust", (100, 160, 220))
+                bar_w = 400 if has_scroll else 430
+                bar_h = 12
                 
                 respect_val = npc_info.get("respect", 50)
-                draw_stat_bar(screen, col_a_x, card_rect.y + 68, bar_w, bar_h, respect_val, "Respect", (220, 180, 100))
-                
-                # Column B: Fear, Suspicion
-                fear_val = npc_info.get("fear", 0)
-                draw_stat_bar(screen, col_b_x, card_rect.y + 8, bar_w, bar_h, fear_val, "Fear", (220, 100, 100))
-                
-                suspicion_val = npc_info.get("suspicion", 0)
-                draw_stat_bar(screen, col_b_x, card_rect.y + 38, bar_w, bar_h, suspicion_val, "Suspicion", (200, 130, 220))
+                draw_stat_bar(screen, col_a_x, card_rect.y + 35, bar_w, bar_h, respect_val, "Reputation", (220, 180, 100))
                 
                 y_offset += 108
         else:
