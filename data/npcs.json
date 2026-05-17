@@ -986,7 +986,10 @@
         "departure": 0,
         "night": 2
       },
-      "dialogue_ids": {},
+      "dialogue_ids": {
+        "aiden": "dlg_ava_thompson",
+        "lena": "dlg_ava_thompson"
+      },
       "gender": "unspecified"
     },
     {
@@ -1448,7 +1451,10 @@
         "departure": 0,
         "night": 2
       },
-      "dialogue_ids": {},
+      "dialogue_ids": {
+        "aiden": "dlg_axel_knight",
+        "lena": "dlg_axel_knight"
+      },
       "gender": "unspecified"
     },
     {

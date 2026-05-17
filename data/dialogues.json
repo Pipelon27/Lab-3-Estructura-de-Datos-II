@@ -475,6 +475,63 @@
           }
         ]
       }
+    },
+    {
+      "id": "dlg_ava_thompson",
+      "tree": {
+        "id": "ava_root",
+        "speaker": "Ava Thompson",
+        "text": "Oscar sent you? Then you heard enough to get curious, and maybe enough to get in trouble.",
+        "consequences": {},
+        "is_player_choice": false,
+        "children": [
+          {
+            "id": "ava_q1",
+            "speaker": "Player",
+            "text": "What do you know about students meeting underneath the school?",
+            "consequences": {"xp": 15},
+            "is_player_choice": true,
+            "children": [
+              {
+                "id": "ava_r1",
+                "speaker": "Ava Thompson",
+                "text": "Tomorrow, meet me in the Tech Lab. On Tuesday there are no people in that classroom, but be very careful: do not tell anyone.",
+                "consequences": {"reputation_changes": {"academics": 5}, "day1_complete": true},
+                "is_player_choice": false,
+                "children": []
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "dlg_axel_knight",
+      "tree": {
+        "id": "ax_root",
+        "speaker": "Axel Knight",
+        "text": "Hold it right there. The rooftop is an exclusive VIP lounge for the POPULARS group. You need at least 60 Popular reputation to enter.",
+        "consequences": {},
+        "is_player_choice": false,
+        "children": [
+          {
+            "id": "ax_c1",
+            "speaker": "Player",
+            "text": "[Check Reputation] I have enough reputation. Let me pass.",
+            "consequences": {"rooftop_check": true},
+            "is_player_choice": true,
+            "children": []
+          },
+          {
+            "id": "ax_c2",
+            "speaker": "Player",
+            "text": "I'll come back later.",
+            "consequences": {},
+            "is_player_choice": true,
+            "children": []
+          }
+        ]
+      }
     }
   ]
 }

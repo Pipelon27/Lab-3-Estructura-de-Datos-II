@@ -26,11 +26,11 @@
     },
     {
       "id": "mission_library_secrets",
-      "title": "Library Secrets",
-      "description": "Rumour has it that old records in the Library contain the original anti-bullying system's history. Talk to Noah.",
+      "title": "Talk to Ava",
+      "description": "Oscar says Ava Thompson is always in the Library and knows more about the strange meetings under the school.",
       "objectives": [
         {"type": "go_to_zone", "target": "4", "description": "Go to the Library", "required": 1},
-        {"type": "talk_to", "target": "npc_noah", "description": "Talk to Noah Harris", "required": 1}
+        {"type": "talk_to", "target": "npc_ava_thompson", "description": "Talk to Ava Thompson", "required": 1}
       ],
       "prerequisites": ["mission_strange_rumours"],
       "rewards": {"xp": 60, "reputation": {"academics": 8}},

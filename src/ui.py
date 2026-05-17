@@ -143,8 +143,9 @@ class UI:
         if len(self._notifs) > self.MAX_NOTIFS:
             self._notifs.pop(0)
 
-    def trigger_level_up(self):
+    def trigger_level_up(self, money_amount: int = 10):
         self._level_up_timer = 4.0
+        self._level_up_money = money_amount
 
     def trigger_announcement(self, title: str, sub: str):
         self._announcement_title = title
@@ -196,6 +197,20 @@ class UI:
             new_size = (int(surf.get_width() * scale), int(surf.get_height() * scale))
             scaled_surf = pygame.transform.smoothscale(surf, new_size)
             screen.blit(scaled_surf, scaled_surf.get_rect(center=(cx, cy)))
+
+            money = getattr(self, '_level_up_money', 10)
+            font_sub = pygame.font.Font(VT323_PATH, 50)
+            sub_str = f"+${money}"
+            sub_text = font_sub.render(sub_str, True, (100, 255, 100))
+            sub_outline = font_sub.render(sub_str, True, (0, 0, 0))
+            sub_w, sub_h = sub_text.get_size()
+            sub_surf = pygame.Surface((sub_w + 4, sub_h + 4), pygame.SRCALPHA)
+            for dx, dy in [(-2,-2), (2,-2), (-2,2), (2,2), (0,-2), (0,2), (-2,0), (2,0)]:
+                sub_surf.blit(sub_outline, (2 + dx, 2 + dy))
+            sub_surf.blit(sub_text, (2, 2))
+            sub_surf.set_alpha(alpha)
+            sub_y = cy + scaled_surf.get_height() // 2 + 25
+            screen.blit(sub_surf, sub_surf.get_rect(center=(cx, sub_y)))
 
         self.draw_announcement(screen)
 
@@ -328,9 +343,8 @@ class UI:
         if time_text:
             time_surf = self.font_hud_time.render(time_text, True, WHITE)
             # Position time display in bottom-left
-            rep_x = 16
             rep_y = SCREEN_HEIGHT - 36
-            time_rect = time_surf.get_rect(midleft=(rep_x + 220 + 24, rep_y + 7))
+            time_rect = time_surf.get_rect(midleft=(16, rep_y + 7))
             screen.blit(time_surf, time_rect)
             
             # ── Fast Forward Button ──
@@ -620,6 +634,85 @@ class UI:
             text_surf = self.font_menu.render(prefix + opt, True, col)
             screen.blit(text_surf, text_surf.get_rect(center=(cx, 330 + i * 50)))
 
+    def draw_mission_select_menu(self, screen: pygame.Surface, sel: int, confirm: bool, confirm_sel: int, mission_list: list, mission_manager):
+        """Semi-transparent mission select overlay."""
+        overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 180))
+        screen.blit(overlay, (0, 0))
+
+        # Main Panel
+        pw, ph = 960, 580
+        px = (SCREEN_WIDTH - pw) // 2
+        py = (SCREEN_HEIGHT - ph) // 2
+        panel = pygame.Surface((pw, ph), pygame.SRCALPHA)
+        panel.fill((30, 30, 45, 230))
+        pygame.draw.rect(panel, UI_ACCENT, panel.get_rect(), 3, border_radius=12)
+        screen.blit(panel, (px, py))
+
+        # Title
+        title_surf = self.font_title.render("MISSION SELECT", True, UI_ACCENT)
+        screen.blit(title_surf, title_surf.get_rect(center=(SCREEN_WIDTH // 2, py + 40)))
+
+        # Subtitle
+        sub_surf = self.font_hint.render("Select a mission to jump directly to it. Completed missions show [✓]", True, UI_TEXT_DIM)
+        screen.blit(sub_surf, sub_surf.get_rect(center=(SCREEN_WIDTH // 2, py + 80)))
+
+        # List missions
+        start_y = py + 120
+        line_h = 50
+        for i, m_info in enumerate(mission_list):
+            m_id = m_info[0]
+            m_title = m_info[2]
+            
+            # Check completion status
+            m_obj = mission_manager.missions.get(m_id)
+            status_str = ""
+            if m_obj:
+                if m_obj.status.value == "completed":
+                    status_str = "  [✓] Completed"
+                elif m_obj.status.value == "active":
+                    status_str = "  (Active)"
+
+            col = UI_ACCENT if i == sel else UI_TEXT
+            if i == sel:
+                hl_rect = pygame.Rect(px + 30, start_y + i * line_h - 5, pw - 60, line_h)
+                hl_surf = pygame.Surface(hl_rect.size, pygame.SRCALPHA)
+                hl_surf.fill((100, 180, 255, 40))
+                screen.blit(hl_surf, hl_rect)
+                pygame.draw.rect(screen, UI_ACCENT, hl_rect, 1, border_radius=6)
+
+            prefix = "► " if i == sel else "  "
+            text_surf = self.font_menu.render(f"{prefix}{m_title}{status_str}", True, col)
+            screen.blit(text_surf, (px + 50, start_y + i * line_h + 5))
+
+        # Confirmation Box
+        if confirm:
+            cw, ch = 640, 260
+            cx = (SCREEN_WIDTH - cw) // 2
+            cy = (SCREEN_HEIGHT - ch) // 2
+            conf_panel = pygame.Surface((cw, ch), pygame.SRCALPHA)
+            conf_panel.fill((20, 20, 30, 250))
+            pygame.draw.rect(conf_panel, (255, 100, 100), conf_panel.get_rect(), 3, border_radius=12)
+            screen.blit(conf_panel, (cx, cy))
+
+            q1 = self.font_menu.render("Are you sure you want to jump to this mission?", True, WHITE)
+            q2 = self.font_hint.render("Previous progression and day will be adjusted.", True, (255, 150, 150))
+            screen.blit(q1, q1.get_rect(center=(SCREEN_WIDTH // 2, cy + 50)))
+            screen.blit(q2, q2.get_rect(center=(SCREEN_WIDTH // 2, cy + 100)))
+
+            # Buttons
+            btn_y = cy + 180
+            yes_col = UI_ACCENT if confirm_sel == 0 else UI_TEXT_DIM
+            no_col = UI_ACCENT if confirm_sel == 1 else UI_TEXT_DIM
+            yes_prefix = "► " if confirm_sel == 0 else "  "
+            no_prefix = "► " if confirm_sel == 1 else "  "
+
+            yes_surf = self.font_menu.render(f"{yes_prefix}Yes, Jump", True, yes_col)
+            no_surf = self.font_menu.render(f"{no_prefix}No, Cancel", True, no_col)
+
+            screen.blit(yes_surf, yes_surf.get_rect(center=(SCREEN_WIDTH // 2 - 120, btn_y)))
+            screen.blit(no_surf, no_surf.get_rect(center=(SCREEN_WIDTH // 2 + 120, btn_y)))
+
     # ── help screen ───────────────────────────────────────────
 
     def draw_help_screen(self, screen: pygame.Surface, character: Character):
@@ -648,7 +741,6 @@ class UI:
             lines += [
                 ("", ""),
                 ("── COMBAT (Aiden) ──", ""),
-                ("Light Attack", "J"),
                 ("Heavy Attack", "U"),
                 ("Block",        "L"),
                 ("Dash",         "SHIFT"),
@@ -768,8 +860,9 @@ class UI:
 
     def draw_wallet(self, screen: pygame.Surface, active_item: str | None, character, 
                     controller_connected: bool = False, focus_item: str | None = None,
-                    yearbook_data: dict | None = None):
+                    yearbook_data: dict | None = None, player=None):
         """Draw the wallet interface. Semi-transparent background."""
+        money_val = player.money if player else 5
         overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
         overlay.fill((0, 0, 0, 200))
         screen.blit(overlay, (0, 0))
@@ -838,7 +931,7 @@ class UI:
                     full_bill = full_bill_base.move(0, bill_offset)
                     pygame.draw.rect(screen, (100, 150, 100), full_bill, border_radius=4)
                     pygame.draw.rect(screen, (50, 100, 50), full_bill, 2, border_radius=4)
-                    bill_title = self.font_hud_lg.render("$5", True, (20, 60, 20))
+                    bill_title = self.font_hud_lg.render(f"${money_val}", True, (20, 60, 20))
                     screen.blit(bill_title, (full_bill.x + 10, full_bill.y + 6))
                     if highlight_item == "bill":
                         pygame.draw.rect(screen, UI_ACCENT, full_bill.inflate(6, 6), 2, border_radius=8)
@@ -935,13 +1028,13 @@ class UI:
                 pygame.draw.rect(screen, UI_ACCENT, big_bill, 4, border_radius=8)
                 
                 # Bill details
-                tl = self.font_title.render("5", True, (20, 60, 20))
+                tl = self.font_title.render(str(money_val), True, (20, 60, 20))
                 screen.blit(tl, (big_bill.x + 20, big_bill.y + 10))
                 screen.blit(tl, (big_bill.right - 40, big_bill.y + 10))
                 screen.blit(tl, (big_bill.x + 20, big_bill.bottom - 50))
                 screen.blit(tl, (big_bill.right - 40, big_bill.bottom - 50))
                 
-                center_text = self.font_title.render("FIVE DOLLARS", True, (40, 90, 40))
+                center_text = self.font_title.render(f"{money_val} DOLLARS", True, (40, 90, 40))
                 screen.blit(center_text, center_text.get_rect(center=(cx, cy)))
 
                 return_text = "[B] Return to wallet" if controller_connected else "Press ESC or click to return to wallet"

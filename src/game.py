@@ -21,7 +21,7 @@ from settings import (
     BLACK, WHITE,
     FLOOR_1F, FLOOR_2F, FLOOR_CAMPUS, FLOOR_BASEMENT, FLOOR_ROOFTOP, FLOOR_SIZES, ZONE_TO_FLOOR,
     PLAYER_SIZE, NPC_INTERACTION_RANGE, ATTACK_RANGE, NPC_SPEED,
-    GameState, Character, DayPhase, ItemCategory, Ending, SocialGroup, Direction,
+    GameState, Character, DayPhase, ItemCategory, Ending, SocialGroup, Direction, MissionStatus,
     NOTIF_SUCCESS, NOTIF_WARNING, NOTIF_ERROR, NOTIF_INFO,
     KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT,
     KEY_INTERACT, KEY_USE, KEY_INVENTORY, KEY_SKILL_TREE,
@@ -104,6 +104,13 @@ class Game:
         self._bathroom_block_timer: float = 0.0
         self._bathroom_blocked_room: str | None = None
         self._cafeteria_block_timer: float = 0.0
+        self._library_block_timer: float = 0.0
+        self._pending_pingpong_result: str | None = None
+        self._day1_story_complete: bool = False
+        self._oscar_win_dialogue_active: bool = False
+        self._oscar_win_dialogue_index: int = 0
+        self._oscar_win_dialogue_completed: bool = False
+        self._oscar_win_dialogue_lines: list[tuple[str, str]] = []
 
         # Day-cycle
         self.day_number     = 1
@@ -156,13 +163,18 @@ class Game:
         self._hud_focus: str | None = None  # "ff" | "wallet" | None
         self._ff_controller_active: bool = False
         self._cine_skip_focused: bool = False  # controller focus on skip button
-        self.pause_options: list[str] = ["Resume", "Change Character", "Main Menu", "Quit"]
+        self.pause_options: list[str] = ["Resume", "Select Mission", "Change Character", "Main Menu", "Quit"]
+        self.mission_select_sel: int = 0
+        self.mission_select_confirm: bool = False
+        self.mission_confirm_sel: int = 0
         self.return_to_menu: bool = False
 
         # ── Day transition screen ──
         self._day_transition_active: bool = False
         self._day_transition_timer: float = 0.0
         self._day_transition_target_day: int = 2
+        self._pingpong_unlocked: bool = False
+        self._library_unlocked: bool = False
 
         # ── Parked car (parking lot) ──
         self._parked_car_rect = pygame.Rect(900, 2400, 300, 105)
@@ -301,6 +313,7 @@ class Game:
                 obs.rect.centery = oscar.rect.centery + int(math.sin(angle) * radius)
 
         # ── Gordon Ramsay (The Chef) ──
+        self._place_ava_for_story()
         f1 = self.school_map.get_floor(FLOOR_1F)
         caf = f1.rooms.get("f1_cafeteria")
         if caf:
@@ -323,6 +336,7 @@ class Game:
 
         # Ensure fixed story NPC placement
         self._initialize_director_office()
+        self._place_axel_knight()
 
         # ── Position Noah Carter in the Entrance for the intro cinematic ──
         noah_carter = self.npc_manager.get_npc_by_id("npc_noah_carter")
@@ -403,6 +417,19 @@ class Game:
         director.bound_rect = office.rect.inflate(-120, -120)
         director.rect.center = office.rect.center
 
+    def _place_axel_knight(self):
+        axel = self.npc_manager.get_npc_by_id("npc_axel_knight")
+        if not axel:
+            return
+        axel.current_floor = FLOOR_2F
+        axel.ai_enabled = False
+        axel.ignore_schedule = True
+        axel.show_name = True
+        if not getattr(self, '_rooftop_unlocked', False):
+            axel.rect.center = (1010, 202)
+        else:
+            axel.rect.center = (1010, 90)
+
     def _is_npc_on_camera(self, npc) -> bool:
         """Return True if the NPC is on the same floor as the player AND within the camera viewport.
         This is used to prevent teleporting visible NPCs."""
@@ -419,6 +446,35 @@ class Game:
     def _register_npc(self, npc: NPC):
         self.npc_manager.npcs[npc.id] = npc
         self.npc_manager.relationships.add_node(npc.id)
+
+    def _place_ava_for_story(self):
+        ava = self.npc_manager.get_npc_by_id("npc_ava_thompson")
+        floor1 = self.school_map.get_floor(FLOOR_1F)
+        if not ava or not floor1:
+            return
+        target_room_id = "f1_computer_lab" if self.day_number >= 2 else "f1_library"
+        room = floor1.rooms.get(target_room_id) or floor1.rooms.get("f1_library")
+        if not room:
+            return
+        ava.current_floor = FLOOR_1F
+        ava.current_zone = 2 if target_room_id == "f1_computer_lab" else 4
+        ava.ai_enabled = False
+        ava.ignore_schedule = True
+        ava.show_name = True
+        ava.bound_rect = room.rect.inflate(-120, -120)
+        ava.rect.center = (room.rect.centerx + 120, room.rect.centery + 40)
+        if self.day_number >= 2 and target_room_id == "f1_computer_lab":
+            self._clear_tech_lab_for_ava(room)
+
+    def _clear_tech_lab_for_ava(self, room):
+        for npc in self.npc_manager.npcs.values():
+            if npc.id in ("npc_ava_thompson", "npc_aiden", "npc_lena"):
+                continue
+            if npc.current_floor == FLOOR_1F and room.rect.collidepoint(npc.rect.centerx, npc.rect.centery):
+                npc.rect.center = (1600, 1000)
+                npc.current_zone = 1
+                npc.target_pos = npc.rect.center
+                npc.target_queue = []
 
     def _init_ui(self):
         self.ui = UI(self.screen)
@@ -552,6 +608,12 @@ class Game:
             if event.type == pygame.QUIT:
                 self.running = False
                 return
+            if getattr(self, "_oscar_win_dialogue_active", False):
+                if event.type == pygame.KEYDOWN and event.key in (pygame.K_SPACE, pygame.K_RETURN):
+                    self._advance_oscar_win_dialogue()
+                elif event.type == pygame.MOUSEBUTTONDOWN:
+                    self._advance_oscar_win_dialogue()
+                continue
             if getattr(self, 'phone', None) and self.phone.is_visible:
                 if self.phone.handle_input(event):
                     continue
@@ -622,6 +684,11 @@ class Game:
             return
 
         controller = self.controller
+
+        if getattr(self, "_oscar_win_dialogue_active", False):
+            if controller.is_confirm_pressed() or controller.is_interact_pressed():
+                self._advance_oscar_win_dialogue()
+            return
 
         # During the ping pong minigame, delegate all controller input (including
         # Start/pause) directly to the minigame so the pause menu works there.
@@ -699,6 +766,8 @@ class Game:
             self._handle_controller_playing(controller)
         elif self.state == GameState.PAUSED:
             self._handle_controller_paused(controller)
+        elif self.state == GameState.MISSION_SELECT:
+            self._handle_controller_mission_select(controller)
         elif self.state == GameState.DIALOGUE:
             # Dialogue is handled via the dialogue system's handle_controller method
             self.dialogue_system.handle_controller(controller)
@@ -730,6 +799,11 @@ class Game:
             else:
                 self.state = GameState.PLAYING
                 self.wallet_focus_item = None
+        elif self.state == GameState.MISSION_SELECT:
+            if getattr(self, 'mission_select_confirm', False):
+                self.mission_select_confirm = False
+            else:
+                self.state = GameState.PAUSED
 
     def _toggle_map(self):
         """Toggle map state."""
@@ -767,7 +841,11 @@ class Game:
                 sel = getattr(self, "_car_panel_selection", "accept")
                 self._car_panel_active = False
                 if sel == "accept":
-                    self._start_car_departure()
+                    if self._day1_story_complete or self.time_of_day_minutes >= 16 * 60:
+                        self._start_car_departure()
+                    else:
+                        self._car_panel_cooldown = 1.0
+                        self.ui.show_notification("You cannot leave school early.", NOTIF_ERROR)
                 else:
                     self._car_panel_cooldown = 1.0
             elif controller.is_cancel_pressed():
@@ -861,8 +939,12 @@ class Game:
             if sel == 0:
                 self.state = getattr(self, 'previous_state', GameState.PLAYING)
             elif sel == 1:
+                self.state = GameState.MISSION_SELECT
+                self.mission_select_sel = 0
+                self.mission_select_confirm = False
+            elif sel == 2:
                 self._swap_character()
-            elif sel == 2:  # Main Menu
+            elif sel == 3:  # Main Menu
                 self.return_to_menu = True
                 self.running = False
             else:  # Quit
@@ -983,6 +1065,12 @@ class Game:
                     self.active_wallet_item = None
                 else:
                     self.state = GameState.PLAYING
+            elif self.state == GameState.MISSION_SELECT:
+                if getattr(self, 'mission_select_confirm', False):
+                    self.mission_select_confirm = False
+                else:
+                    self.state = GameState.PAUSED
+                return
             else:
                 return
             if self.state != GameState.PINGPONG:
@@ -1008,6 +1096,7 @@ class Game:
             GameState.INVENTORY_SCREEN: lambda e: self.inventory.handle_input(e),
             GameState.SKILL_TREE_SCREEN:lambda e: self.player.skill_tree.handle_input(e, self.player),
             GameState.PAUSED:           self._keys_paused,
+            GameState.MISSION_SELECT:   self._keys_mission_select,
             GameState.GAME_OVER:        self._keys_game_over,
         }.get(self.state)
         if handler:
@@ -1022,7 +1111,11 @@ class Game:
                 return  # ignore input during delay
             if event.key == pygame.K_e:
                 self._car_panel_active = False
-                self._start_car_departure()
+                if self._day1_story_complete or self.time_of_day_minutes >= 16 * 60:
+                    self._start_car_departure()
+                else:
+                    self._car_panel_cooldown = 1.0
+                    self.ui.show_notification("You cannot leave school early.", NOTIF_ERROR)
             elif event.key == KEY_PAUSE:
                 self._car_panel_active = False
                 self._car_panel_cooldown = 1.0  # prevent re-trigger
@@ -1053,11 +1146,6 @@ class Game:
             self.state = GameState.SKILL_TREE_SCREEN
         elif event.key == KEY_PHONE:
             self.phone.toggle_phone()
-        elif event.key == KEY_LIGHT_ATTACK and self.character == Character.AIDEN:
-            target = self._nearest_npc(ATTACK_RANGE)
-            if target:
-                self.combat_system.start_combat(self.player, target)
-                self.state = GameState.COMBAT
         elif event.key == KEY_HACK and self.character == Character.LENA:
             hackable = self._get_hackable()
             if hackable:
@@ -1080,9 +1168,13 @@ class Game:
             sel = getattr(self, 'pause_sel', 0)
             if sel == 0:  # Resume
                 self.state = getattr(self, 'previous_state', GameState.PLAYING)
-            elif sel == 1:  # Change Character
+            elif sel == 1:  # Select Mission
+                self.state = GameState.MISSION_SELECT
+                self.mission_select_sel = 0
+                self.mission_select_confirm = False
+            elif sel == 2:  # Change Character
                 self._swap_character()
-            elif sel == 2:  # Main Menu — return to menu without closing the app
+            elif sel == 3:  # Main Menu — return to menu without closing the app
                 self.return_to_menu = True
                 self.running = False
             else:  # Quit — actually close the application
@@ -1093,6 +1185,125 @@ class Game:
     def _keys_game_over(self, event: pygame.event.Event):
         if event.key == KEY_PAUSE:
             self.running = False
+
+    def _get_mission_select_list(self):
+        return [
+            ("mission_first_day", 1, "Day 1: Follow Noah Carter around the school", "Mission 1: Follow Noah Carter through the school."),
+            ("mission_strange_rumours", 1, "Day 1: Ping Pong match against Oscar Jimenez", "Mission 2: Go to the Ping Pong court to play against Oscar Jimenez."),
+            ("mission_library_secrets", 1, "Day 1: Talk to Ava Thompson in the Library", "Mission 3: Go to the Library and talk to Ava Thompson."),
+            ("mission_rebel_evidence", 2, "Day 2: Rebel Evidence", "Day 2 - Mission 1: Go to the Rooftop and talk to Jake Morrison."),
+            ("mission_unmasked", 2, "Day 2: Unmasked", "Day 2 - Mission 2: Hack the Computer Lab server and confront Jake."),
+            ("mission_helping_mia", 3, "Day 3: Helping Mia", "Day 3 - Mission 1: Talk to Mia Nakamura and confront Ava Patel."),
+            ("mission_server_room", 4, "Day 4: Server Room Access", "Day 4 - Mission 1: Ask Lucas Kim about basement servers and get the key."),
+            ("mission_final_showdown", 5, "Day 5: Final Showdown", "Day 5 - Mission 1: Enter Basement, disable Smile Club server, confront Director Walsh.")
+        ]
+
+    def _keys_mission_select(self, event: pygame.event.Event):
+        mission_list = self._get_mission_select_list()
+        if getattr(self, 'mission_select_confirm', False):
+            if event.key in (pygame.K_LEFT, pygame.K_a, pygame.K_RIGHT, pygame.K_d):
+                self.mission_confirm_sel = 1 - getattr(self, 'mission_confirm_sel', 0)
+            elif event.key in (pygame.K_RETURN, pygame.K_SPACE):
+                if getattr(self, 'mission_confirm_sel', 0) == 0:
+                    self._execute_mission_jump()
+                else:
+                    self.mission_select_confirm = False
+            elif event.key == pygame.K_ESCAPE:
+                self.mission_select_confirm = False
+        else:
+            if event.key in (pygame.K_UP, pygame.K_w):
+                self.mission_select_sel = (getattr(self, 'mission_select_sel', 0) - 1) % len(mission_list)
+            elif event.key in (pygame.K_DOWN, pygame.K_s):
+                self.mission_select_sel = (getattr(self, 'mission_select_sel', 0) + 1) % len(mission_list)
+            elif event.key in (pygame.K_RETURN, pygame.K_SPACE):
+                self.mission_select_confirm = True
+                self.mission_confirm_sel = 0
+            elif event.key == pygame.K_ESCAPE:
+                self.state = GameState.PAUSED
+
+    def _handle_controller_mission_select(self, controller):
+        mission_list = self._get_mission_select_list()
+        if getattr(self, 'mission_select_confirm', False):
+            h_dir = controller.get_menu_direction_horizontal()
+            if h_dir != 0:
+                self.mission_confirm_sel = 1 - getattr(self, 'mission_confirm_sel', 0)
+            if controller.is_confirm_pressed():
+                if getattr(self, 'mission_confirm_sel', 0) == 0:
+                    self._execute_mission_jump()
+                else:
+                    self.mission_select_confirm = False
+            elif controller.is_cancel_pressed():
+                self.mission_select_confirm = False
+        else:
+            menu_dir = controller.get_menu_direction()
+            if menu_dir == -1:
+                self.mission_select_sel = (getattr(self, 'mission_select_sel', 0) - 1) % len(mission_list)
+            elif menu_dir == 1:
+                self.mission_select_sel = (getattr(self, 'mission_select_sel', 0) + 1) % len(mission_list)
+            if controller.is_confirm_pressed():
+                self.mission_select_confirm = True
+                self.mission_confirm_sel = 0
+            elif controller.is_cancel_pressed():
+                self.state = GameState.PAUSED
+
+    def _execute_mission_jump(self):
+        mission_list = self._get_mission_select_list()
+        selected_m = mission_list[getattr(self, 'mission_select_sel', 0)]
+        target_id = selected_m[0]
+        target_day = selected_m[1]
+        target_text = selected_m[3]
+
+        self.day_number = target_day
+        self.time_of_day_minutes = 7 * 60 # 7:00 AM
+        self._last_time_minutes = 7 * 60
+
+        found_target = False
+        for m_info in mission_list:
+            m_id = m_info[0]
+            m_obj = self.mission_manager.missions.get(m_id)
+            if not m_obj:
+                continue
+            if m_id == target_id:
+                found_target = True
+                m_obj.status = MissionStatus.ACTIVE
+                for prereq in m_obj.prerequisites:
+                    self.mission_manager.completed_ids.add(prereq)
+            elif not found_target:
+                m_obj.status = MissionStatus.COMPLETED
+                for obj in m_obj.objectives:
+                    obj.completed = True
+                    obj.progress = obj.required
+                self.mission_manager.completed_ids.add(m_id)
+            else:
+                m_obj.status = MissionStatus.LOCKED
+                for obj in m_obj.objectives:
+                    obj.completed = False
+                    obj.progress = 0
+
+        self.mission_manager._refresh_availability()
+
+        self._current_main_mission_text = target_text
+        if target_day >= 2 or target_id in ("mission_strange_rumours", "mission_library_secrets"):
+            self._pingpong_unlocked = True
+        if target_day >= 2 or target_id == "mission_library_secrets":
+            self._rooftop_unlocked = True
+        if target_day >= 2:
+            self._day1_story_complete = True
+        if target_id == "mission_final_showdown":
+            self.inventory.add_item("Basement Key", ItemCategory.KEY, "Opens the door to the school basement")
+
+        self.player.rect.center = (2000, 2700)
+        self.current_floor = FLOOR_CAMPUS
+        floor = self.school_map.get_floor(self.current_floor)
+        if floor:
+            self._floor_w = floor.width
+            self._floor_h = floor.height
+            self.camera.set_bounds(floor.width, floor.height)
+        self.camera.update(self.player)
+
+        self.state = GameState.PLAYING
+        self.mission_select_confirm = False
+        self.ui.show_notification(f"Jumped to Day {target_day}: {selected_m[2]}", NOTIF_SUCCESS)
 
     # ──────────────────────────────────────────────────────────
     #  INTERACTION HELPERS
@@ -1187,15 +1398,25 @@ class Game:
             return
         self._entry_prompt_target = self._get_campus_entry_target()
 
+    def _is_pingpong_unlocked(self) -> bool:
+        if getattr(self, "_pingpong_unlocked", False):
+            return True
+        txt = getattr(self, "_current_main_mission_text", "")
+        if not txt:
+            return False
+        if "Mission 2: Go to the Ping Pong court" in txt or "Mission 3:" in txt or "Day 1 all missions completed" in txt or self.day_number > 1:
+            self._pingpong_unlocked = True
+            return True
+        return False
+
     def _try_building_entry_confirm(self) -> bool:
         target = self._entry_prompt_target
         if not target:
             return False
             
         if target["id"] == "ping_pong_court":
-            mission_text = getattr(self, "_current_main_mission_text", None)
-            if mission_text != "Mission 2: Go to the Ping Pong court to play against Oscar Jimenez.":
-                self.ui.show_notification("This mission has not been unlocked yet.", NOTIF_ERROR)
+            if not self._is_pingpong_unlocked():
+                self.ui.show_notification("This location cannot be accessed until the corresponding mission is unlocked.", NOTIF_ERROR)
                 self._entry_prompt_cooldown = 0.6
                 self._entry_prompt_target = None
                 return False
@@ -1206,6 +1427,12 @@ class Game:
         self._entry_prompt_cooldown = 0.6
         self._entry_prompt_target = None
         return True
+
+    def _is_basement_unlocked(self) -> bool:
+        final_mission = self.mission_manager.missions.get("mission_final_showdown")
+        if final_mission and getattr(final_mission.status, "value", str(final_mission.status)) in ("active", "completed"):
+            return True
+        return self.inventory.has_item("Basement Key")
 
     def _check_floor_transition(self):
         """Portal-type transitions (legacy — kept for future use)."""
@@ -1220,6 +1447,11 @@ class Game:
         for tr in floor.transitions:
             if self.player.rect.colliderect(tr.rect):
                 if tr.locked:
+                    return
+                if tr.target_floor == FLOOR_BASEMENT and not self._is_basement_unlocked():
+                    if getattr(self, '_basement_block_timer', 0) <= 0:
+                        self.ui.show_notification("This location cannot be accessed until the corresponding mission is unlocked.", NOTIF_ERROR)
+                        self._basement_block_timer = 2.0
                     return
                 self._go_to_floor(tr.target_floor, tr.spawn_x, tr.spawn_y)
                 self._transition_cooldown = 0.5
@@ -1237,6 +1469,18 @@ class Game:
         for staircase in self.school_map.staircases:
             new_floor = staircase.check(px, py, self.current_floor)
             if new_floor is not None:
+                if new_floor == FLOOR_ROOFTOP and not getattr(self, '_rooftop_unlocked', False):
+                    if getattr(self, '_rooftop_block_timer', 0) <= 0:
+                        self.ui.show_notification("You must talk to Axel Knight to access the rooftop.", NOTIF_ERROR)
+                        self._rooftop_block_timer = 2.0
+                    self.player.rect.centery = staircase.transition_y + 12
+                    return
+                if new_floor == FLOOR_BASEMENT and not self._is_basement_unlocked():
+                    if getattr(self, '_basement_block_timer', 0) <= 0:
+                        self.ui.show_notification("This location cannot be accessed until the corresponding mission is unlocked.", NOTIF_ERROR)
+                        self._basement_block_timer = 2.0
+                    self.player.rect.centery = staircase.transition_y - 12
+                    return
                 self.current_floor = new_floor
                 floor = self.school_map.get_floor(new_floor)
                 if floor:
@@ -1285,6 +1529,31 @@ class Game:
                     self._cafeteria_block_timer = 2.0
                 return
 
+    def _is_library_mission_unlocked(self) -> bool:
+        if getattr(self, "_library_unlocked", False):
+            return True
+        txt = getattr(self, "_current_main_mission_text", "")
+        if not txt:
+            return False
+        if "Mission 3:" in txt or "Day 1 all missions completed" in txt or self.day_number > 1:
+            self._library_unlocked = True
+            return True
+        return False
+
+    def _enforce_library_access(self, floor, previous_rect, dt):
+        if self._library_block_timer > 0:
+            self._library_block_timer -= dt
+
+        if not floor or self.current_floor != FLOOR_1F or self._is_library_mission_unlocked():
+            return
+
+        room = floor.get_room_at(self.player.rect.centerx, self.player.rect.centery)
+        if room and room.id == "f1_library":
+            self.player.rect.update(previous_rect)
+            if self._library_block_timer <= 0:
+                self.ui.show_notification("This location cannot be accessed until the corresponding mission is unlocked.", NOTIF_ERROR)
+                self._library_block_timer = 2.0
+
     def _enforce_bathroom_access(self, floor, previous_rect):
         """Prevent characters from entering the opposite-gender bathroom."""
         if not floor or self.current_floor != FLOOR_1F:
@@ -1318,10 +1587,19 @@ class Game:
 
     def _try_teleport_to(self, floor_id: int, tx: int, ty: int) -> bool:
         if floor_id == FLOOR_PINGPONG_INTERIOR:
-            mission_text = getattr(self, "_current_main_mission_text", None)
-            if mission_text != "Mission 2: Go to the Ping Pong court to play against Oscar Jimenez.":
-                self.ui.show_notification("This mission has not been unlocked yet.", NOTIF_ERROR)
+            if not self._is_pingpong_unlocked():
+                self.ui.show_notification("This location cannot be accessed until the corresponding mission is unlocked.", NOTIF_ERROR)
                 return False
+        if floor_id == FLOOR_ROOFTOP and not getattr(self, '_rooftop_unlocked', False):
+            if getattr(self, '_rooftop_block_timer', 0) <= 0:
+                self.ui.show_notification("You must talk to Axel Knight to access the rooftop.", NOTIF_ERROR)
+                self._rooftop_block_timer = 2.0
+            return False
+        if floor_id == FLOOR_BASEMENT and not self._is_basement_unlocked():
+            if getattr(self, '_basement_block_timer', 0) <= 0:
+                self.ui.show_notification("This location cannot be accessed until the corresponding mission is unlocked.", NOTIF_ERROR)
+                self._basement_block_timer = 2.0
+            return False
 
         floor = self.school_map.get_floor(floor_id)
         if not floor:
@@ -1330,9 +1608,8 @@ class Game:
         room = floor.get_room_at(tx, ty)
         if floor_id == FLOOR_CAMPUS and room:
             if room.id == "c_tennis":
-                mission_text = getattr(self, "_current_main_mission_text", None)
-                if mission_text != "Mission 2: Go to the Ping Pong court to play against Oscar Jimenez.":
-                    self.ui.show_notification("This mission has not been unlocked yet.", NOTIF_ERROR)
+                if not self._is_pingpong_unlocked():
+                    self.ui.show_notification("This location cannot be accessed until the corresponding mission is unlocked.", NOTIF_ERROR)
                     return False
                 self._go_to_floor(FLOOR_PINGPONG_INTERIOR, 650, 900)
                 return True
@@ -1347,6 +1624,9 @@ class Game:
             
             if room.id == "f1_cafeteria" and not self._is_cafeteria_open():
                 self.ui.show_notification("Access prohibited, available from Break Time until the end of the day", NOTIF_WARNING)
+                return False
+            if room.id == "f1_library" and not self._is_library_mission_unlocked():
+                self.ui.show_notification("This location cannot be accessed until the corresponding mission is unlocked.", NOTIF_ERROR)
                 return False
 
         self._go_to_floor(floor_id, tx, ty)
@@ -1393,8 +1673,19 @@ class Game:
     # ──────────────────────────────────────────────────────────
 
     def _update(self, dt: float):
+        if self.current_floor == FLOOR_BASEMENT:
+            if not getattr(self, '_basement_music_playing', False):
+                try:
+                    if pygame.mixer.get_init():
+                        pygame.mixer.music.load("sound/musica menu.mp3")
+                        pygame.mixer.music.set_volume(0.25)
+                        pygame.mixer.music.play(-1)
+                        self._basement_music_playing = True
+                        self._pasillo_playing = False
+                except Exception:
+                    pass
         # Hallway ambient music logic for main building (FLOOR_1F, FLOOR_2F)
-        if self.current_floor in (FLOOR_1F, FLOOR_2F):
+        elif self.current_floor in (FLOOR_1F, FLOOR_2F):
             if not getattr(self, '_pasillo_playing', False):
                 try:
                     if pygame.mixer.get_init():
@@ -1402,14 +1693,16 @@ class Game:
                         pygame.mixer.music.set_volume(0.25)
                         pygame.mixer.music.play(-1)
                         self._pasillo_playing = True
+                        self._basement_music_playing = False
                 except Exception:
                     pass
         else:
-            if getattr(self, '_pasillo_playing', False):
+            if getattr(self, '_pasillo_playing', False) or getattr(self, '_basement_music_playing', False):
                 try:
                     if pygame.mixer.get_init():
                         pygame.mixer.music.stop()
                         self._pasillo_playing = False
+                        self._basement_music_playing = False
                 except Exception:
                     pass
 
@@ -1445,6 +1738,9 @@ class Game:
         # Always tick UI (notifications) and social UI
         self.ui.update(dt)
         self.social_ui.update(dt)
+
+        if getattr(self, "_oscar_win_dialogue_active", False):
+            return
         
         # Check if the player viewed the mention in XSchool-Net
         if getattr(self, "_current_main_mission_text", None) == "Mission 2: Open Social app and click Oscar's post.":
@@ -1586,14 +1882,10 @@ class Game:
                 if result == "win":
                     # add +20 reputation
                     self.reputation.reputation_score = min(100, self.reputation.reputation_score + 20)
-                    self.player.level += 1
-                    from settings import SKILL_POINT_PER_LEVEL
-                    self.player.skill_points += SKILL_POINT_PER_LEVEL
-                    self.pingpong.end_message = "Win Match\n+20 Reputation\nLevel Up!"
-                    if hasattr(self.ui, 'trigger_level_up'):
-                        self.ui.trigger_level_up()
-                    self._last_known_level = self.player.level
+                    self.pingpong.end_message = "Win Match\n+20 Reputation"
+                    self._pending_pingpong_result = "win"
                 elif result == "lose":
+                    self._pending_pingpong_result = "lose"
                     if self.reputation.reputation_score > 0:
                         self.reputation.reputation_score = max(0, self.reputation.reputation_score - 10)
                         self.pingpong.end_message = "Lose Match\n-10 Reputation"
@@ -1612,6 +1904,7 @@ class Game:
                     self.player.level += 1
                     from settings import SKILL_POINT_PER_LEVEL
                     self.player.skill_points += SKILL_POINT_PER_LEVEL
+                    self.player.money += (self.player.level - 1) * 10
                     if hasattr(self.ui, 'trigger_level_up'):
                         self.ui.trigger_level_up()
                     self._last_known_level = self.player.level
@@ -1653,9 +1946,13 @@ class Game:
             self._update_class_schedule()
 
         if getattr(self.pingpong, 'finished', False):
+            pingpong_result = getattr(self, "_pending_pingpong_result", None)
             self.pingpong.finished = False
             self.pingpong.reset()
             self.state = GameState.PLAYING
+            self._pending_pingpong_result = None
+            if pingpong_result == "win":
+                self._begin_oscar_win_dialogue()
 
         if getattr(self.basketball, 'finished', False):
             self.basketball.finished = False
@@ -1698,7 +1995,7 @@ class Game:
         # Exception: Gordon Ramsay is solid (collision).
         npcs_on_floor = self.npc_manager.get_npcs_on_floor(self.current_floor)
         for npc in npcs_on_floor:
-            if npc.id == "npc_gordon":
+            if npc.id in ("npc_gordon", "npc_axel_knight"):
                 walls.append(npc.rect)
                 continue
             if npc.id.startswith("npc_oscar_obs"):
@@ -1746,13 +2043,18 @@ class Game:
             self.player.update(keys, walls, dt, trail_decay=decay, speed_multiplier=speed_mult)
         self._enforce_bathroom_access(floor, previous_rect)
         self._enforce_cafeteria_access(floor, previous_rect, dt)
+        self._enforce_library_access(floor, previous_rect, dt)
+        if getattr(self, '_basement_block_timer', 0) > 0:
+            self._basement_block_timer -= dt
+        if getattr(self, '_rooftop_block_timer', 0) > 0:
+            self._rooftop_block_timer -= dt
 
         # ── Player pushes NPCs on contact ──────────────────────────────────
         # Stationary NPCs = heavy resistance (1px nudge), moving NPCs = light push
         from settings import NPC_SIZE
         floor1_ref = self.school_map.get_floor(FLOOR_1F)
         for _npc in npcs_on_floor:
-            if _npc.id == "npc_gordon":
+            if _npc.id in ("npc_gordon", "npc_axel_knight"):
                 continue
             if _npc.id.startswith("npc_oscar_obs"):
                 continue
@@ -1815,8 +2117,12 @@ class Game:
             self._car_panel_input_delay -= dt
         if self.current_floor == FLOOR_CAMPUS and not self._car_panel_active and self._car_panel_cooldown <= 0:
             if self.player.rect.inflate(12, 12).colliderect(self._parked_car_rect):
-                self._car_panel_active = True
-                self._car_panel_input_delay = 0.4  # require a fresh key press
+                if not (self._day1_story_complete or self.time_of_day_minutes >= 16 * 60):
+                    self.ui.show_notification("You cannot leave school early.", NOTIF_ERROR)
+                    self._car_panel_cooldown = 1.0
+                else:
+                    self._car_panel_active = True
+                    self._car_panel_input_delay = 0.4  # require a fresh key press
                 # Push player out of the car rect
                 px, py = self.player.rect.centerx, self.player.rect.centery
                 cx, cy = self._parked_car_rect.center
@@ -1985,6 +2291,8 @@ class Game:
                 current, self.npc_manager, self.school_map, self.current_floor,
                 is_visible=self._is_npc_on_camera
             )
+        if self.day_number >= 2:
+            self._place_ava_for_story()
 
         # Update cafeteria door visual/physical state
         floor1 = self.school_map.get_floor(FLOOR_1F)
@@ -1998,7 +2306,7 @@ class Game:
         blocked_ids = {
             "npc_gordon", "npc_oscar", "npc_director",
             "npc_oscar_obs1", "npc_oscar_obs2", "npc_oscar_obs3", "npc_oscar_obs4",
-            "npc_bath_m_attendant", "npc_bath_f_attendant",
+            "npc_ava_thompson", "npc_bath_m_attendant", "npc_bath_f_attendant",
         }
 
         count = 0
@@ -2145,6 +2453,7 @@ class Game:
             "npc_oscar_obs2",
             "npc_oscar_obs3",
             "npc_oscar_obs4",
+            "npc_ava_thompson",
             "npc_bath_m_attendant",
             "npc_bath_f_attendant",
         }
@@ -2251,6 +2560,7 @@ class Game:
             "npc_marcus":      ("Marcus Rivera",  (50, 100, 200)),
             "npc_director":    ("Director Walsh", (150, 50, 200)),
             "npc_noah_carter": ("Noah Carter",    (50, 180, 120)),
+            "npc_ava_thompson": ("Ava Thompson",  (255, 180, 80)),
         }
         for nid, (label, col) in key_npcs.items():
             npc = self.npc_manager.get_npc_by_id(nid)
@@ -2564,6 +2874,19 @@ class Game:
             self.mission_manager.unlock_mission(result["mission_unlock"])
             self.mission_manager.activate_mission(result["mission_unlock"])
             self.ui.show_notification("📋 New mission available!", NOTIF_INFO)
+        if "rooftop_check" in result:
+            pop_rep = self.reputation.get("populars")
+            overall_rep = self.reputation.reputation_score
+            if pop_rep >= 60 or overall_rep >= 60:
+                self._rooftop_unlocked = True
+                self.ui.show_notification("Axel Knight steps aside. Rooftop access unlocked!", NOTIF_SUCCESS)
+                axel = self.npc_manager.get_npc_by_id("npc_axel_knight")
+                if axel:
+                    axel.rect.center = (1010, 90)
+            else:
+                self.ui.show_notification(f"Axel sneers: 'You need 60 Popular reputation (Current: {pop_rep}). Get lost!'", NOTIF_ERROR)
+        if result.get("day1_complete"):
+            self._complete_day1_story()
         if "xp" in result:
             self.player.gain_xp(result["xp"])
         if "reveal_mask" in result:
@@ -2657,6 +2980,17 @@ class Game:
                 self.basketball.draw(self.screen) if getattr(self, 'previous_state', None) == GameState.BASKETBALL else self._draw_world(),
                 self.ui.draw_pause_menu(self.screen, getattr(self, 'pause_sel', 0), self.pause_options)
             ),
+            GameState.MISSION_SELECT:    lambda: (
+                self.basketball.draw(self.screen) if getattr(self, 'previous_state', None) == GameState.BASKETBALL else self._draw_world(),
+                self.ui.draw_mission_select_menu(
+                    self.screen,
+                    getattr(self, 'mission_select_sel', 0),
+                    getattr(self, 'mission_select_confirm', False),
+                    getattr(self, 'mission_confirm_sel', 0),
+                    self._get_mission_select_list(),
+                    self.mission_manager
+                )
+            ),
             GameState.INVENTORY_SCREEN:  lambda: self.ui.draw_inventory(self.screen, self.inventory),
             GameState.SKILL_TREE_SCREEN: lambda: self.ui.draw_skill_tree(self.screen, self.player.skill_tree, self.player),
             GameState.HELP:              lambda: self.ui.draw_help_screen(self.screen, self.character),
@@ -2669,6 +3003,7 @@ class Game:
                     self.controller.connected if self.controller else False,
                     self.wallet_focus_item if (self.controller and self.controller.connected) else None,
                     self._get_yearbook_data() if self.active_wallet_item == "yearbook" else None,
+                    player=self.player,
                 ),
             ),
             GameState.GAME_OVER:         lambda: self.ui.draw_game_over(self.screen, self.reputation.calculate_ending()),
@@ -2718,6 +3053,9 @@ class Game:
 
         self.phone.set_hud_anchor(self.ui.phone_icon_rect)
         self.phone.draw()
+
+        if getattr(self, "_oscar_win_dialogue_active", False):
+            self._draw_oscar_win_dialogue()
 
         # ── Fullscreen overlays (drawn on top of everything) ──
         if self._day_transition_active:
@@ -2972,7 +3310,8 @@ class Game:
                 # Level Up 
                 self.player.level = 2
                 self.player.xp = 0
-                self.ui.trigger_level_up()
+                self.player.money += 10
+                self.ui.trigger_level_up(10)
                 
                 self._add_noah_contact()
                 self._start_oscar_mission()
@@ -2996,7 +3335,8 @@ class Game:
         # Level Up
         self.player.level = 2
         self.player.xp = 0
-        self.ui.trigger_level_up()
+        self.player.money += 10
+        self.ui.trigger_level_up(10)
         
         self._add_noah_contact()
         self._start_oscar_mission()
@@ -3075,6 +3415,73 @@ class Game:
         )
         self.phone.add_social_post(post)
         self._current_main_mission_text = "Mission 2: Open Social app and click Oscar's post."
+
+    def _begin_oscar_win_dialogue(self):
+        if self._oscar_win_dialogue_completed:
+            return
+        player_name = self.player.character.value.capitalize()
+        curious_line = (
+            "Students meeting under the school? Oscar, tell me more about that."
+        )
+        self._oscar_win_dialogue_lines = [
+            ("Oscar Jimenez", "I haven't had an opponent like that since Eli..."),
+            ("Oscar Jimenez", "Eli left the school after online bullying got too bad. People acted like it was just drama, but it was not."),
+            ("Oscar Jimenez", "I have also heard weird conversations about students meeting underneath the school."),
+            (player_name, curious_line),
+            ("Oscar Jimenez", "I do not know much more. But I can introduce you to Ava Thompson. She is always in the Library, and she knows more than I do."),
+        ]
+        self._oscar_win_dialogue_index = 0
+        self._oscar_win_dialogue_active = True
+        if hasattr(self.player, "stop_audio"):
+            self.player.stop_audio()
+
+    def _advance_oscar_win_dialogue(self):
+        if not self._oscar_win_dialogue_active:
+            return
+        self._oscar_win_dialogue_index += 1
+        if self._oscar_win_dialogue_index >= len(self._oscar_win_dialogue_lines):
+            self._finish_oscar_win_dialogue()
+
+    def _finish_oscar_win_dialogue(self):
+        self._oscar_win_dialogue_active = False
+        self._oscar_win_dialogue_completed = True
+        self._current_main_mission_text = "Mission 3: Go to the Library and talk to Ava Thompson."
+        self.mission_manager.unlock_mission("mission_library_secrets")
+        self.mission_manager.activate_mission("mission_library_secrets")
+        self._add_oscar_contact()
+        self.ui.show_notification("New mission available!", NOTIF_INFO)
+        
+        # Trigger Level Up after conversation finishes
+        self.player.level += 1
+        from settings import SKILL_POINT_PER_LEVEL
+        self.player.skill_points += SKILL_POINT_PER_LEVEL
+        self.player.money += 10
+        if hasattr(self.ui, 'trigger_level_up'):
+            self.ui.trigger_level_up(10)
+        self._last_known_level = self.player.level
+
+    def _add_oscar_contact(self):
+        from src.phone import TextMessage
+        import uuid
+        if "npc_oscar" in getattr(self.phone, "messages", {}):
+            return
+        msg = TextMessage(
+            id=str(uuid.uuid4()),
+            sender_npc_id="npc_oscar",
+            sender_name="Oscar Jimenez",
+            content="Reminder: whenever you want, you can play ping pong against me again.",
+            timestamp=self._get_time_string(),
+            is_read=False,
+            reply_options=["I'll be there.", "Not right now.", "You really never stop, huh?"],
+        )
+        self.phone.add_text_message("npc_oscar", msg)
+
+    def _complete_day1_story(self):
+        self._day1_story_complete = True
+        message = "Day 1 all missions completed, go take the School Bus to go home."
+        self._current_main_mission_text = message
+        self.ui.trigger_announcement("DAY 1 COMPLETE", message)
+        self.ui.show_notification(message, NOTIF_SUCCESS, 8.0)
 
     def _start_noah_guide(self):
         """Set up Noah Carter's walking route through the school."""
@@ -3282,10 +3689,20 @@ class Game:
         pygame.draw.circle(self.screen, UI_ACCENT, (av_cx, av_cy), av_radius + 4)
         pygame.draw.circle(self.screen, BLACK, (av_cx, av_cy), av_radius)
 
-        # Draw Noah Carter's avatar
+        avatar_ids = {
+            "Noah Carter": "npc_noah_carter",
+            "Oscar Jimenez": "npc_oscar",
+            "Aiden": "npc_aiden",
+            "Lena": "npc_lena",
+            "Aiden Parker": "npc_aiden",
+            "Lena Parker": "npc_lena",
+        }
+        avatar_id = avatar_ids.get(speaker, "npc_noah_carter")
+
+        # Draw the speaker avatar when available.
         avatar_drawn = False
-        if hasattr(self, "phone") and "npc_noah_carter" in self.phone.avatars:
-            img = self.phone.avatars["npc_noah_carter"]
+        if hasattr(self, "phone") and avatar_id in self.phone.avatars:
+            img = self.phone.avatars[avatar_id]
             size = av_radius * 2
             av_surf = pygame.Surface((size, size), pygame.SRCALPHA)
             pygame.draw.circle(av_surf, (255, 255, 255), (av_radius, av_radius), av_radius)
@@ -3311,6 +3728,19 @@ class Game:
         font_text = pygame.font.Font(VT323_PATH, 20)
         self._draw_cinematic_wrapped_text(text, font_text, UI_TEXT,
                                            box.x + 18, box.y + 42, box.width - 36)
+
+    def _draw_oscar_win_dialogue(self):
+        if not self._oscar_win_dialogue_lines:
+            return
+        idx = min(self._oscar_win_dialogue_index, len(self._oscar_win_dialogue_lines) - 1)
+        speaker, text = self._oscar_win_dialogue_lines[idx]
+        dim = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+        dim.fill((0, 0, 0, 65))
+        self.screen.blit(dim, (0, 0))
+        self._draw_cinematic_dialogue(text, speaker)
+        font_hint = pygame.font.Font(VT323_PATH, 16)
+        hint = font_hint.render("Press SPACE to continue", True, (160, 160, 160))
+        self.screen.blit(hint, hint.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT - 30)))
 
     def _draw_cinematic_wrapped_text(self, text: str, font, colour, x: int, y: int, max_w: int):
         """Render text with simple word-wrap for cinematic dialogue."""
@@ -3391,6 +3821,7 @@ class Game:
         # Re-init NPCs for the new day positions
         self.npc_manager.update_schedules(self.current_phase, self.school_map, is_visible=self._is_npc_on_camera)
         self._spread_first_floor_npcs()
+        self._place_ava_for_story()
         if hasattr(self, 'schedule_manager'):
             self.schedule_manager.reset_day()
         
@@ -3587,8 +4018,13 @@ class Game:
         # Handle mouse clicks
         if pygame.mouse.get_pressed()[0] and getattr(self, "_car_panel_input_delay", 0) <= 0:
             if hover_accept:
-                self._car_panel_active = False
-                self._start_car_departure()
+                if self._day1_story_complete:
+                    self._car_panel_active = False
+                    self._start_car_departure()
+                else:
+                    self._car_panel_active = False
+                    self._car_panel_cooldown = 1.0
+                    self.ui.show_notification("You cannot leave school early.", NOTIF_ERROR)
             elif hover_cancel:
                 self._car_panel_active = False
                 self._car_panel_cooldown = 1.0

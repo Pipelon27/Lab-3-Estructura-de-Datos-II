@@ -140,12 +140,14 @@ class DialogueTree:
             return dict(self.current.consequences)
         return {}
 
-    def advance(self) -> bool:
+    def advance(self, consequences_list: list = None) -> bool:
         """Try to auto-advance to the next NPC line.
         Returns *False* if at a leaf (dialogue over)."""
         cont = self.get_npc_continuation()
         if cont:
             self.current = cont
+            if consequences_list is not None and cont.consequences:
+                consequences_list.append(dict(cont.consequences))
             return True
         # If no continuation and no choices, dialogue ends
         if not self.get_choices():
@@ -279,6 +281,8 @@ class DialogueSystem:
         self.reputation  = reputation
         self._choice_index = 0
         self._all_consequences = []
+        if tree.root.consequences:
+            self._all_consequences.append(dict(tree.root.consequences))
         self._finished = False
         self._result   = None
 
@@ -299,12 +303,12 @@ class DialogueSystem:
                 if cons:
                     self._all_consequences.append(cons)
                 self._choice_index = 0
-                if not self.active_tree.advance():
+                if not self.active_tree.advance(self._all_consequences):
                     self._finish()
         else:
             # No choices — advance on any key
             if event.key in (pygame.K_RETURN, pygame.K_SPACE):
-                if not self.active_tree.advance():
+                if not self.active_tree.advance(self._all_consequences):
                     self._finish()
 
     def handle_controller(self, controller):
@@ -332,12 +336,12 @@ class DialogueSystem:
                 if cons:
                     self._all_consequences.append(cons)
                 self._choice_index = 0
-                if not self.active_tree.advance():
+                if not self.active_tree.advance(self._all_consequences):
                     self._finish()
         else:
             # No choices — A button to advance
             if controller.is_confirm_pressed():
-                if not self.active_tree.advance():
+                if not self.active_tree.advance(self._all_consequences):
                     self._finish()
 
     def _finish(self):

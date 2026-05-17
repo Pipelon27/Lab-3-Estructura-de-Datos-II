@@ -184,6 +184,7 @@ class GameState(Enum):
     WALLET           = auto()
     DAY_OVER         = auto()
     INTRO_CINEMATIC  = auto()
+    MISSION_SELECT   = auto()
 
 
 class Character(Enum):
