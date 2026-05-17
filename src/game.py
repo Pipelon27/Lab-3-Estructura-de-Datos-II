@@ -499,10 +499,79 @@ class Game:
         self.aiden_phone._map_ref = self.world_map
         self.lena_phone._map_ref = self.world_map
 
+    def _enforce_sibling_safe_location(self):
+        if not getattr(self, 'sibling_npc', None):
+            return
+
+        # Sibling character enum
+        sib_char = Character.LENA if self.character == Character.AIDEN else Character.AIDEN
+
+        from settings import FLOOR_PINGPONG_INTERIOR, FLOOR_ROOFTOP, FLOOR_BASEMENT, FLOOR_CAMPUS, FLOOR_1F, FLOOR_2F
+
+        # 1. Check restricted floors
+        relocate = False
+        if self.sibling_npc.current_floor == FLOOR_PINGPONG_INTERIOR and not self._is_pingpong_unlocked():
+            relocate = True
+        elif self.sibling_npc.current_floor == FLOOR_ROOFTOP and not getattr(self, '_rooftop_unlocked', False):
+            relocate = True
+        elif self.sibling_npc.current_floor == FLOOR_BASEMENT and not self._is_basement_unlocked():
+            relocate = True
+
+        if relocate:
+            # Move sibling to Floor 1F safe hallway
+            self.sibling_npc.current_floor = FLOOR_1F
+            self.sibling_npc.rect.center = (1080, 500)
+            self.sibling_npc.target_pos = None
+            self.sibling_npc.target_queue = []
+            return
+
+        # 2. Check restricted rooms on sibling's current floor
+        floor = self.school_map.get_floor(self.sibling_npc.current_floor)
+        if not floor:
+            return
+
+        room = floor.get_room_at(self.sibling_npc.rect.centerx, self.sibling_npc.rect.centery)
+        if not room:
+            return
+
+        room_invalid = False
+        if self.sibling_npc.current_floor == FLOOR_CAMPUS:
+            if room.id == "c_tennis" and not self._is_pingpong_unlocked():
+                room_invalid = True
+            elif room.id in ("c_coliseum", "c_coliseum_court") and not self._is_pingpong_unlocked():
+                room_invalid = True
+            elif room.id in ("c_b_lab", "c_b_lib", "c_b_hall"):
+                if room.id == "c_b_lab" and not self._is_tech_lab_unlocked(): room_invalid = True
+                elif room.id == "c_b_lib" and not self._is_library_mission_unlocked(): room_invalid = True
+        elif self.sibling_npc.current_floor == FLOOR_1F:
+            if room.id == "f1_cafeteria" and not self._is_cafeteria_open():
+                room_invalid = True
+            elif room.id == "f1_computer_lab" and not self._is_tech_lab_unlocked():
+                room_invalid = True
+            elif room.id == "f1_library" and not self._is_library_mission_unlocked():
+                room_invalid = True
+            else:
+                allowed_bath, _ = self._is_bathroom_access_allowed(room.id, sib_char)
+                if not allowed_bath:
+                    room_invalid = True
+
+        if room_invalid:
+            # Teleport sibling to safe corridor/spawn on that floor
+            if self.sibling_npc.current_floor == FLOOR_CAMPUS:
+                self.sibling_npc.rect.center = (2000, 2500)
+            elif self.sibling_npc.current_floor == FLOOR_1F:
+                self.sibling_npc.rect.center = (1080, 500)
+            elif self.sibling_npc.current_floor == FLOOR_2F:
+                self.sibling_npc.rect.center = (1080, 500)
+            self.sibling_npc.target_pos = None
+            self.sibling_npc.target_queue = []
+
     def _swap_character(self):
         if self.multiplayer:
             self.ui.show_notification("Cannot change character: Roles are already established in co-op mode.", NOTIF_ERROR)
             return
+
+        self._enforce_sibling_safe_location()
 
         from settings import SocialGroup
         old_floor = self.current_floor
@@ -1418,6 +1487,7 @@ class Game:
         self.day_number = target_day
         self.time_of_day_minutes = 7 * 60 # 7:00 AM
         self._last_time_minutes = 7 * 60
+        self._school_day_ended = False
 
         found_target = False
         for m_info in mission_list:
@@ -1867,6 +1937,7 @@ class Game:
     # ──────────────────────────────────────────────────────────
 
     def _update(self, dt: float):
+        self._enforce_sibling_safe_location()
         if self.day_number == 2:
             floor1 = self.school_map.get_floor(FLOOR_1F)
             if floor1:
@@ -2454,18 +2525,26 @@ class Game:
 
         # Check mainframe login collision for Mission 8
         if self.current_floor == FLOOR_1F:
+            if getattr(self, '_aiden_comp_warning_timer', 0) > 0:
+                self._aiden_comp_warning_timer -= dt
             m_obj = self.mission_manager.missions.get("mission_high_school_mainframe")
             if m_obj and m_obj.status == MissionStatus.ACTIVE:
-                if self.player.rect.colliderect(pygame.Rect(850, 200, 140, 70)):
-                    self.state = GameState.MAINFRAME
-                    self.mainframe_user_input = ""
-                    self.mainframe_pass_input = ""
-                    self.mainframe_active_field = "user"
-                    self.mainframe_screen = "login"
-                    self.mainframe_error = ""
-                    self.mainframe_alarm = False
-                    self.mainframe_selected_email = None
-                    self.player.rect.y += 20  # Bounce back slightly
+                if self.player.rect.colliderect(pygame.Rect(830, 80, 110, 100)):
+                    if self.player.character == Character.AIDEN:
+                        if getattr(self, '_aiden_comp_warning_timer', 0) <= 0:
+                            self.ui.show_notification("Ava Thompson: 'Let Lena handle the computer, she is the technology expert. Switch character to Lena [C].'", NOTIF_WARNING)
+                            self._aiden_comp_warning_timer = 2.0
+                        self.player.rect.y += 10
+                    else:
+                        self.state = GameState.MAINFRAME
+                        self.mainframe_user_input = ""
+                        self.mainframe_pass_input = ""
+                        self.mainframe_active_field = "user"
+                        self.mainframe_screen = "login"
+                        self.mainframe_error = ""
+                        self.mainframe_alarm = False
+                        self.mainframe_selected_email = None
+                        self.player.rect.y += 20  # Bounce back slightly
 
         # Check game-over
         if not self.player.is_alive():
@@ -3008,6 +3087,7 @@ class Game:
             self.aiden_phone.update_day_schedule(self.day_number)
             self.lena_phone.update_day_schedule(self.day_number)
             self.time_of_day_minutes = 7 * 60
+            self._school_day_ended = False
             # Clear NPCs from cafeteria instantly before the new day
             self._move_npcs_out_of_cafeteria(instant=True)
 
@@ -3163,7 +3243,7 @@ class Game:
                 self.ui.show_notification(f"Alan Chen shakes his head: 'You need 70 Tech Club reputation (Current: {tech_rep}). I can't trust you yet.'", NOTIF_ERROR)
         if "give_hacked_credentials" in result:
             if self.inventory.has_item("Hacked Credentials"):
-                self.ui.show_notification("Ava Thompson: 'With these credentials we can log in to decrypt the encrypted messages. Go to the computer marked with X.'", NOTIF_SUCCESS, 8.0)
+                self.ui.show_notification("Ava Thompson: 'With these credentials we can log in. Call your sister Lena to complete the inspection, she handles technology best. Go to the computer marked with X.'", NOTIF_SUCCESS, 8.0)
                 ava = self.npc_manager.get_npc_by_id("npc_ava_thompson")
                 if ava:
                     ava.ai_enabled = False
@@ -3180,7 +3260,7 @@ class Game:
                     self.mission_manager.completed_ids.add("mission_return_tech_lab")
                     self.mission_manager.unlock_mission("mission_high_school_mainframe")
                     self.mission_manager.activate_mission("mission_high_school_mainframe")
-                    self._current_main_mission_text = "Mission 8: Go to the computer marked with X in the Tech Lab and extract information."
+                    self._current_main_mission_text = "Mission 8: Switch to Lena [C] and go to the computer marked with X in the Tech Lab."
             else:
                 self.ui.show_notification("Ava Thompson looks at you: 'You don't have the credentials yet. Go talk to Alan Chen.'", NOTIF_ERROR)
         if "rooftop_check" in result:
@@ -3427,7 +3507,7 @@ class Game:
         if self.current_floor == FLOOR_1F:
             m_obj = self.mission_manager.missions.get("mission_high_school_mainframe")
             if m_obj and m_obj.status == MissionStatus.ACTIVE:
-                comp_rect = self.camera.apply_rect(pygame.Rect(850, 200, 140, 70))
+                comp_rect = self.camera.apply_rect(pygame.Rect(840, 90, 90, 64))
                 pulse = (math.sin(pygame.time.get_ticks() * 0.005) + 1) * 0.5
                 x_col = (255, int(50 + 100 * pulse), 50)
                 pygame.draw.line(target_surf, x_col, comp_rect.topleft, comp_rect.bottomright, 6)
