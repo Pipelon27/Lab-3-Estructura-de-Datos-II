@@ -495,7 +495,7 @@
               {
                 "id": "ava_r1",
                 "speaker": "Ava Thompson",
-                "text": "Tomorrow, meet me in the Tech Lab. On Tuesday there are no people in that classroom, but be very careful: do not tell anyone.",
+                "text": "Tomorrow, meet me in the Tech Lab. On Tuesday there are no people in that classroom. I have uncovered whispers about a secretive group orchestrating these underground meetings—they call themselves the Smile Club. But be very careful: do not tell anyone.",
                 "consequences": {"reputation_changes": {"academics": 5}, "day1_complete": true},
                 "is_player_choice": false,
                 "children": []
@@ -526,6 +526,71 @@
             "id": "ax_c2",
             "speaker": "Player",
             "text": "I'll come back later.",
+            "consequences": {},
+            "is_player_choice": true,
+            "children": []
+          }
+        ]
+      }
+    },
+    {
+      "id": "dlg_ava_tech_lab",
+      "tree": {
+        "id": "ava2_root",
+        "speaker": "Ava Thompson",
+        "text": "You made it. Good. I've been monitoring the school's network traffic from these terminals.",
+        "consequences": {},
+        "is_player_choice": false,
+        "children": [
+          {
+            "id": "ava2_q1",
+            "speaker": "Player",
+            "text": "Did you find anything about the Smile Club?",
+            "consequences": {"xp": 20},
+            "is_player_choice": true,
+            "children": [
+              {
+                "id": "ava2_r1",
+                "speaker": "Ava Thompson",
+                "text": "They're encrypting everything. But Alan Chen claims to have actual hacked evidence against them. He is usually found in discreet places. Check your map to find him.",
+                "consequences": {"reputation_changes": {"tech_club": 10}, "mission_unlock": "mission_alan_chen_bathroom", "complete_tech_lab_ava": true, "show_alan_chen_map": true},
+                "is_player_choice": false,
+                "children": []
+              }
+            ]
+          },
+          {
+            "id": "ava2_q2",
+            "speaker": "Player",
+            "text": "[Give Hacked Credentials] Alan Chen gave me these hacked high school system credentials.",
+            "consequences": {"give_hacked_credentials": true},
+            "is_player_choice": true,
+            "children": []
+          }
+        ]
+      }
+    },
+    {
+      "id": "dlg_alan_chen",
+      "tree": {
+        "id": "alan_root",
+        "speaker": "Alan Chen",
+        "text": "You're looking for information on the Smile Club? I know things. But to give you the information, I need you to earn my trust. Get at least 70 Tech Club reputation, and not a word to anyone until then.",
+        "consequences": {"talked_to_alan_chen_first": true},
+        "is_player_choice": false,
+        "children": [
+          {
+            "id": "alan_c1",
+            "speaker": "Player",
+            "text": "[Check Reputation] I have 70 Tech Club reputation. Give me the information.",
+            "consequences": {"alan_chen_rep_check": true},
+            "is_player_choice": true,
+            "children": []
+          },
+          {
+            "id": "alan_c2",
+            "speaker": "Player",
+            "text": "I'll come back when I have more reputation.",
             "consequences": {},
             "is_player_choice": true,
             "children": []

@@ -37,31 +37,62 @@
       "status": "locked"
     },
     {
-      "id": "mission_rebel_evidence",
-      "title": "Rebel Evidence",
-      "description": "Jake Morrison on the Rooftop claims to have evidence against the Smile Club. Can you convince him to share it?",
+      "id": "mission_tech_lab_ava",
+      "title": "Meet Ava in Tech Lab",
+      "description": "Ava Thompson asked you to meet her in the Tech Lab on Day 2 to discuss the strange meetings under the school.",
       "objectives": [
-        {"type": "go_to_zone", "target": "5", "description": "Go to the Rooftop", "required": 1},
-        {"type": "talk_to", "target": "npc_jake", "description": "Talk to Jake Morrison", "required": 1}
+        {"type": "go_to_zone", "target": "2", "description": "Go to the Tech Lab", "required": 1},
+        {"type": "talk_to", "target": "npc_ava_thompson", "description": "Talk to Ava Thompson", "required": 1}
       ],
-      "prerequisites": ["mission_strange_rumours"],
-      "rewards": {"xp": 90, "reputation": {"rebels": 12}},
+      "prerequisites": ["mission_library_secrets"],
+      "rewards": {"xp": 70, "reputation": {"tech_club": 5, "academics": 5}},
       "status": "locked"
     },
     {
-      "id": "mission_unmasked",
-      "title": "Unmasked",
-      "description": "You need hard proof. Hack into the Computer Lab server and confront Jake with what you find.",
+      "id": "mission_alan_chen_bathroom",
+      "title": "Talk to Alan Chen",
+      "description": "Ava Thompson says Alan Chen is usually found in discreet places. Check your map to find him.",
       "objectives": [
-        {"type": "hack_target", "target": "lab_server", "description": "Hack the lab server", "required": 1},
-        {"type": "talk_to", "target": "npc_jake", "description": "Share what you found with Jake", "required": 1}
+        {"type": "talk_to", "target": "npc_alan_chen", "description": "Talk to Alan Chen in his discreet location", "required": 1}
       ],
-      "prerequisites": ["mission_rebel_evidence"],
+      "prerequisites": ["mission_tech_lab_ava"],
+      "rewards": {"xp": 70},
+      "status": "locked"
+    },
+    {
+      "id": "mission_tech_club_rep",
+      "title": "Earn Alan's Trust",
+      "description": "Alan Chen won't give you the hacked information until you prove yourself. Gain at least 70 Tech Club reputation, then return to him in his discreet location.",
+      "objectives": [
+        {"type": "talk_to", "target": "npc_alan_chen", "description": "Return to Alan Chen with 70 Tech Club reputation", "required": 1}
+      ],
+      "prerequisites": ["mission_alan_chen_bathroom"],
       "rewards": {
-        "xp": 120,
-        "reputation": {"rebels": 15, "tech_club": 10},
-        "items": [{"name": "USB Evidence", "category": "usb", "description": "Contains proof of the Smile Club's activities"}]
+        "xp": 90,
+        "items": [{"name": "Hacked Credentials", "category": "note", "description": "Hacked high school system credentials provided by Alan Chen."}]
       },
+      "status": "locked"
+    },
+    {
+      "id": "mission_return_tech_lab",
+      "title": "Return to Ava Thompson",
+      "description": "You have the hacked credentials from Alan Chen. Return to the Tech Lab and deliver them to Ava Thompson.",
+      "objectives": [
+        {"type": "talk_to", "target": "npc_ava_thompson", "description": "Talk to Ava Thompson in the Tech Lab", "required": 1}
+      ],
+      "prerequisites": ["mission_tech_club_rep"],
+      "rewards": {"xp": 100, "reputation": {"tech_club": 15}},
+      "status": "locked"
+    },
+    {
+      "id": "mission_high_school_mainframe",
+      "title": "High School Mainframe",
+      "description": "Ava Thompson says you can now log in to decrypt the encrypted messages. Go to the computer marked with X in the Tech Lab and extract information from the school system.",
+      "objectives": [
+        {"type": "special", "target": "mainframe_login", "description": "Log into the Ravenside High School Mainframe and find Eli's email", "required": 1}
+      ],
+      "prerequisites": ["mission_return_tech_lab"],
+      "rewards": {"xp": 150, "reputation": {"tech_club": 20}},
       "status": "locked"
     },
     {
@@ -84,7 +115,7 @@
         {"type": "talk_to", "target": "npc_lucas", "description": "Ask Lucas about the basement servers", "required": 1},
         {"type": "collect_item", "target": "Basement Key", "description": "Obtain the Basement Key", "required": 1}
       ],
-      "prerequisites": ["mission_unmasked"],
+      "prerequisites": ["mission_high_school_mainframe"],
       "rewards": {
         "xp": 100,
         "unlock_zone": 6,

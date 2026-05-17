@@ -771,16 +771,30 @@ class NPCManager:
             is_visible: Optional callback(npc) -> bool. If provided,
                 NPCs where is_visible returns True will NOT be teleported.
         """
-        from settings import FLOOR_CAMPUS, FLOOR_1F, FLOOR_2F
+        from settings import FLOOR_CAMPUS, FLOOR_1F, FLOOR_2F, SocialGroup
         special_ids = {"npc_director", "npc_oscar", "npc_noah_carter", "npc_gordon",
                        "npc_oscar_obs1", "npc_oscar_obs2", "npc_oscar_obs3", "npc_oscar_obs4",
                        "npc_bath_m_attendant", "npc_bath_f_attendant"}
+
+        regular_populars = [
+            n for n in self.npcs.values()
+            if n.group == SocialGroup.POPULARS and n.id not in special_ids and n.id != "npc_ava_thompson"
+        ]
+        scheduled_rooftop_populars = [n for n in regular_populars if n.get_zone_for_phase(phase) == 5]
+        needed = 5 - len(scheduled_rooftop_populars)
+        other_populars = [n for n in regular_populars if n not in scheduled_rooftop_populars]
+        rooftop_populars = set(scheduled_rooftop_populars + other_populars[:max(0, needed)])
 
         for npc in self.npcs.values():
             if getattr(npc, "ignore_schedule", False):
                 continue
                 
             target_zone = npc.get_zone_for_phase(phase)
+            if npc in rooftop_populars:
+                target_zone = 5
+            elif target_zone == 5 and npc.id != "npc_jake":
+                target_zone = 0
+
             if npc.current_zone != target_zone:
                 # If target is cafeteria (Zone 3), don't teleport - let game.py handle walking them in
                 if target_zone == 3:

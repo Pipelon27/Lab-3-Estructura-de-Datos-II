@@ -425,10 +425,7 @@ class Game:
         axel.ai_enabled = False
         axel.ignore_schedule = True
         axel.show_name = True
-        if not getattr(self, '_rooftop_unlocked', False):
-            axel.rect.center = (1010, 202)
-        else:
-            axel.rect.center = (1010, 90)
+        axel.rect.center = (1010, 202)
 
     def _is_npc_on_camera(self, npc) -> bool:
         """Return True if the NPC is on the same floor as the player AND within the camera viewport.
@@ -448,6 +445,7 @@ class Game:
         self.npc_manager.relationships.add_node(npc.id)
 
     def _place_ava_for_story(self):
+        self._place_alan_chen_for_story()
         ava = self.npc_manager.get_npc_by_id("npc_ava_thompson")
         floor1 = self.school_map.get_floor(FLOOR_1F)
         if not ava or not floor1:
@@ -464,7 +462,26 @@ class Game:
         ava.bound_rect = room.rect.inflate(-120, -120)
         ava.rect.center = (room.rect.centerx + 120, room.rect.centery + 40)
         if self.day_number >= 2 and target_room_id == "f1_computer_lab":
+            ava.dialogue_ids = {"aiden": "dlg_ava_tech_lab", "lena": "dlg_ava_tech_lab"}
             self._clear_tech_lab_for_ava(room)
+        else:
+            ava.dialogue_ids = {"aiden": "dlg_ava_thompson", "lena": "dlg_ava_thompson"}
+
+    def _place_alan_chen_for_story(self):
+        alan = self.npc_manager.get_npc_by_id("npc_alan_chen")
+        floor1 = self.school_map.get_floor(FLOOR_1F)
+        if not alan or not floor1:
+            return
+        room = floor1.rooms.get("f1_men_bath")
+        if not room:
+            return
+        alan.current_floor = FLOOR_1F
+        alan.current_zone = 0
+        alan.ai_enabled = False
+        alan.ignore_schedule = True
+        alan.show_name = True
+        alan.rect.center = room.rect.center
+        alan.dialogue_ids = {"aiden": "dlg_alan_chen", "lena": "dlg_alan_chen"}
 
     def _clear_tech_lab_for_ava(self, room):
         for npc in self.npc_manager.npcs.values():
@@ -599,6 +616,127 @@ class Game:
         except Exception:
             pass
 
+    def _exit_mainframe_success(self):
+        self.state = GameState.PLAYING
+        m_obj = self.mission_manager.missions.get("mission_high_school_mainframe")
+        if m_obj and m_obj.status != MissionStatus.COMPLETED:
+            m_obj.status = MissionStatus.COMPLETED
+            for obj in m_obj.objectives:
+                obj.completed = True
+                obj.progress = obj.required
+            self.mission_manager.completed_ids.add("mission_high_school_mainframe")
+            self.mission_manager.unlock_mission("mission_server_room")
+            self.mission_manager.activate_mission("mission_server_room")
+            self._current_main_mission_text = "Mission 9: Ask Lucas Kim about basement servers and get Basement Key."
+            self.ui.show_notification("SUCCESS: School mainframe data acquired! The Smile Club knows you're coming.", NOTIF_SUCCESS, 8.0)
+            self.player.level += 1
+            from settings import SKILL_POINT_PER_LEVEL
+            self.player.skill_points += SKILL_POINT_PER_LEVEL
+            self.player.money += 10
+            if hasattr(self.ui, 'trigger_level_up'):
+                self.ui.trigger_level_up(10)
+            self._last_known_level = self.player.level
+
+    def _handle_mainframe_event(self, event):
+        if event.type == pygame.KEYDOWN:
+            if self.mainframe_screen == "login":
+                if event.key == pygame.K_TAB:
+                    self.mainframe_active_field = "pass" if self.mainframe_active_field == "user" else "user"
+                elif event.key == pygame.K_RETURN:
+                    if self.mainframe_user_input == "admin_techlab" and self.mainframe_pass_input == "pWd_sMiLe_cLuB_99!":
+                        self.mainframe_screen = "desktop"
+                        self.mainframe_error = ""
+                    else:
+                        self.mainframe_error = "INVALID CREDENTIALS"
+                elif event.key == pygame.K_BACKSPACE:
+                    if self.mainframe_active_field == "user":
+                        self.mainframe_user_input = self.mainframe_user_input[:-1]
+                    else:
+                        self.mainframe_pass_input = self.mainframe_pass_input[:-1]
+                elif event.key == pygame.K_ESCAPE:
+                    self.state = GameState.PLAYING
+                else:
+                    if len(event.unicode) > 0 and event.unicode.isprintable():
+                        if self.mainframe_active_field == "user":
+                            self.mainframe_user_input += event.unicode
+                        else:
+                            self.mainframe_pass_input += event.unicode
+            elif self.mainframe_screen == "desktop":
+                if event.key == pygame.K_ESCAPE:
+                    self.mainframe_screen = "alarm"
+            elif self.mainframe_screen == "mail":
+                if event.key == pygame.K_ESCAPE:
+                    self.mainframe_screen = "desktop"
+            elif self.mainframe_screen == "mail_view":
+                if event.key == pygame.K_ESCAPE:
+                    self.mainframe_screen = "mail"
+            elif self.mainframe_screen == "alarm":
+                if event.key in (pygame.K_SPACE, pygame.K_RETURN, pygame.K_ESCAPE):
+                    self._exit_mainframe_success()
+
+        elif event.type == pygame.MOUSEBUTTONDOWN:
+            pos = event.pos
+            cx, cy = SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2
+            if self.mainframe_screen == "login":
+                user_rect = pygame.Rect(cx - 150, cy - 40, 300, 40)
+                pass_rect = pygame.Rect(cx - 150, cy + 40, 300, 40)
+                login_btn = pygame.Rect(cx - 150, cy + 110, 140, 45)
+                exit_btn  = pygame.Rect(cx + 10, cy + 110, 140, 45)
+                autofill_btn = pygame.Rect(cx - 150, cy + 170, 300, 35)
+
+                if user_rect.collidepoint(pos):
+                    self.mainframe_active_field = "user"
+                elif pass_rect.collidepoint(pos):
+                    self.mainframe_active_field = "pass"
+                elif login_btn.collidepoint(pos):
+                    if self.mainframe_user_input == "admin_techlab" and self.mainframe_pass_input == "pWd_sMiLe_cLuB_99!":
+                        self.mainframe_screen = "desktop"
+                        self.mainframe_error = ""
+                    else:
+                        self.mainframe_error = "INVALID CREDENTIALS"
+                elif exit_btn.collidepoint(pos):
+                    self.state = GameState.PLAYING
+                elif autofill_btn.collidepoint(pos):
+                    self.mainframe_user_input = "admin_techlab"
+                    self.mainframe_pass_input = "pWd_sMiLe_cLuB_99!"
+                    self.mainframe_screen = "desktop"
+                    self.mainframe_error = ""
+
+            elif self.mainframe_screen == "desktop":
+                mail_icon = pygame.Rect(cx - 240, cy - 150, 100, 100)
+                disc_icon = pygame.Rect(cx + 180, cy - 150, 100, 100)
+
+                if mail_icon.collidepoint(pos):
+                    self.mainframe_screen = "mail"
+                elif disc_icon.collidepoint(pos):
+                    self.mainframe_screen = "alarm"
+
+            elif self.mainframe_screen == "mail":
+                back_btn = pygame.Rect(cx - 380, cy - 230, 80, 35)
+                disc_btn = pygame.Rect(cx + 280, cy - 230, 100, 35)
+                eli_item = pygame.Rect(cx - 180, cy - 60, 560, 50)
+                if back_btn.collidepoint(pos):
+                    self.mainframe_screen = "desktop"
+                elif disc_btn.collidepoint(pos):
+                    self.mainframe_screen = "alarm"
+                elif eli_item.collidepoint(pos):
+                    self.mainframe_screen = "mail_view"
+                    self.mainframe_selected_email = "eli"
+
+            elif self.mainframe_screen == "mail_view":
+                back_btn = pygame.Rect(cx - 380, cy - 230, 80, 35)
+                disc_btn = pygame.Rect(cx + 280, cy - 230, 100, 35)
+                close_btn = pygame.Rect(cx - 100, cy + 180, 200, 45)
+                if back_btn.collidepoint(pos) or close_btn.collidepoint(pos):
+                    self.mainframe_screen = "mail"
+                elif disc_btn.collidepoint(pos):
+                    self.mainframe_screen = "alarm"
+
+            elif self.mainframe_screen == "alarm":
+                ack_btn = pygame.Rect(cx - 150, cy + 120, 300, 50)
+                if ack_btn.collidepoint(pos):
+                    self._exit_mainframe_success()
+
     # ──────────────────────────────────────────────────────────
     #  EVENT HANDLING
     # ──────────────────────────────────────────────────────────
@@ -632,6 +770,9 @@ class Game:
                         if not self._try_teleport_to(tfloor, int(tx), int(ty)):
                             continue
                     self.world_map.reset_teleport_state()
+                continue
+            if self.state == GameState.MAINFRAME:
+                self._handle_mainframe_event(event)
                 continue
             if event.type == pygame.KEYDOWN:
                 self._on_key_down(event)
@@ -671,6 +812,9 @@ class Game:
                         elif self.ui.wallet_yearbook_rect.collidepoint(event.pos):
                             self.active_wallet_item = "yearbook"
                             self.wallet_focus_item = "yearbook"
+                        elif getattr(self.ui, 'wallet_cred_rect', None) and self.ui.wallet_cred_rect.collidepoint(event.pos) and self.inventory.has_item("Hacked Credentials"):
+                            self.active_wallet_item = "cred"
+                            self.wallet_focus_item = "cred"
                         elif not self.ui.wallet_bg_rect.collidepoint(event.pos) and not self.ui.wallet_bill_rect.collidepoint(event.pos):
                             self.state = GameState.PLAYING
                             self.wallet_focus_item = None
@@ -956,6 +1100,8 @@ class Game:
     def _handle_controller_wallet(self, controller):
         """Handle controller input during WALLET state."""
         focus_cycle = ["id", "bill", "yearbook"]
+        if self.inventory.has_item("Hacked Credentials"):
+            focus_cycle.append("cred")
 
         if controller.is_cancel_pressed():
             if self.active_wallet_item:
@@ -1191,12 +1337,27 @@ class Game:
             ("mission_first_day", 1, "Day 1: Follow Noah Carter around the school", "Mission 1: Follow Noah Carter through the school."),
             ("mission_strange_rumours", 1, "Day 1: Ping Pong match against Oscar Jimenez", "Mission 2: Go to the Ping Pong court to play against Oscar Jimenez."),
             ("mission_library_secrets", 1, "Day 1: Talk to Ava Thompson in the Library", "Mission 3: Go to the Library and talk to Ava Thompson."),
-            ("mission_rebel_evidence", 2, "Day 2: Rebel Evidence", "Day 2 - Mission 1: Go to the Rooftop and talk to Jake Morrison."),
-            ("mission_unmasked", 2, "Day 2: Unmasked", "Day 2 - Mission 2: Hack the Computer Lab server and confront Jake."),
+            ("mission_tech_lab_ava", 2, "Day 2: Meet Ava Thompson in Tech Lab", "Mission 4: Go to Tech Lab to meet Ava Thompson."),
+            ("mission_alan_chen_bathroom", 2, "Day 2: Talk to Alan Chen", "Mission 5: Find Alan Chen in his discreet location."),
+            ("mission_tech_club_rep", 2, "Day 2: Earn Alan's Trust", "Mission 6: Gain 70 Tech Club reputation, then return to Alan Chen."),
+            ("mission_return_tech_lab", 2, "Day 2: Return to Ava Thompson", "Mission 7: Deliver the hacked credentials to Ava Thompson."),
+            ("mission_high_school_mainframe", 2, "Day 2: High School Mainframe", "Mission 8: Go to the computer marked with X in the Tech Lab and extract information."),
             ("mission_helping_mia", 3, "Day 3: Helping Mia", "Day 3 - Mission 1: Talk to Mia Nakamura and confront Ava Patel."),
             ("mission_server_room", 4, "Day 4: Server Room Access", "Day 4 - Mission 1: Ask Lucas Kim about basement servers and get the key."),
             ("mission_final_showdown", 5, "Day 5: Final Showdown", "Day 5 - Mission 1: Enter Basement, disable Smile Club server, confront Director Walsh.")
         ]
+
+    def _get_current_mission_index(self) -> int:
+        mission_list = self._get_mission_select_list()
+        for i, m_info in enumerate(mission_list):
+            m_obj = self.mission_manager.missions.get(m_info[0])
+            if m_obj and m_obj.status in (MissionStatus.ACTIVE, MissionStatus.AVAILABLE):
+                return i
+        for i in range(len(mission_list) - 1, -1, -1):
+            m_obj = self.mission_manager.missions.get(mission_list[i][0])
+            if m_obj and m_obj.status == MissionStatus.COMPLETED:
+                return min(i + 1, len(mission_list) - 1)
+        return 0
 
     def _keys_mission_select(self, event: pygame.event.Event):
         mission_list = self._get_mission_select_list()
@@ -1216,8 +1377,12 @@ class Game:
             elif event.key in (pygame.K_DOWN, pygame.K_s):
                 self.mission_select_sel = (getattr(self, 'mission_select_sel', 0) + 1) % len(mission_list)
             elif event.key in (pygame.K_RETURN, pygame.K_SPACE):
-                self.mission_select_confirm = True
-                self.mission_confirm_sel = 0
+                curr_idx = self._get_current_mission_index()
+                if getattr(self, 'mission_select_sel', 0) < curr_idx:
+                    self.ui.show_notification("You cannot jump back to previous missions.", NOTIF_ERROR)
+                else:
+                    self.mission_select_confirm = True
+                    self.mission_confirm_sel = 0
             elif event.key == pygame.K_ESCAPE:
                 self.state = GameState.PAUSED
 
@@ -1241,8 +1406,12 @@ class Game:
             elif menu_dir == 1:
                 self.mission_select_sel = (getattr(self, 'mission_select_sel', 0) + 1) % len(mission_list)
             if controller.is_confirm_pressed():
-                self.mission_select_confirm = True
-                self.mission_confirm_sel = 0
+                curr_idx = self._get_current_mission_index()
+                if getattr(self, 'mission_select_sel', 0) < curr_idx:
+                    self.ui.show_notification("You cannot jump back to previous missions.", NOTIF_ERROR)
+                else:
+                    self.mission_select_confirm = True
+                    self.mission_confirm_sel = 0
             elif controller.is_cancel_pressed():
                 self.state = GameState.PAUSED
 
@@ -1300,6 +1469,8 @@ class Game:
             self._floor_h = floor.height
             self.camera.set_bounds(floor.width, floor.height)
         self.camera.update(self.player)
+
+        self._place_ava_for_story()
 
         self.state = GameState.PLAYING
         self.mission_select_confirm = False
@@ -1529,6 +1700,33 @@ class Game:
                     self._cafeteria_block_timer = 2.0
                 return
 
+    def _is_tech_lab_unlocked(self) -> bool:
+        if getattr(self, "_tech_lab_unlocked", False):
+            return True
+        txt = getattr(self, "_current_main_mission_text", "")
+        if not txt:
+            return False
+        if "Mission 4:" in txt or self.day_number >= 2:
+            self._tech_lab_unlocked = True
+            return True
+        return False
+
+    def _enforce_tech_lab_access(self, floor, previous_rect, dt):
+        if not hasattr(self, '_tech_lab_block_timer'):
+            self._tech_lab_block_timer = 0.0
+        if self._tech_lab_block_timer > 0:
+            self._tech_lab_block_timer -= dt
+
+        if not floor or self.current_floor != FLOOR_1F or self._is_tech_lab_unlocked():
+            return
+
+        room = floor.get_room_at(self.player.rect.centerx, self.player.rect.centery)
+        if room and room.id == "f1_computer_lab":
+            self.player.rect.update(previous_rect)
+            if self._tech_lab_block_timer <= 0:
+                self.ui.show_notification("This location cannot be accessed until the corresponding mission is unlocked.", NOTIF_ERROR)
+                self._tech_lab_block_timer = 2.0
+
     def _is_library_mission_unlocked(self) -> bool:
         if getattr(self, "_library_unlocked", False):
             return True
@@ -1625,6 +1823,9 @@ class Game:
             if room.id == "f1_cafeteria" and not self._is_cafeteria_open():
                 self.ui.show_notification("Access prohibited, available from Break Time until the end of the day", NOTIF_WARNING)
                 return False
+            if room.id == "f1_computer_lab" and not self._is_tech_lab_unlocked():
+                self.ui.show_notification("This location cannot be accessed until the corresponding mission is unlocked.", NOTIF_ERROR)
+                return False
             if room.id == "f1_library" and not self._is_library_mission_unlocked():
                 self.ui.show_notification("This location cannot be accessed until the corresponding mission is unlocked.", NOTIF_ERROR)
                 return False
@@ -1673,6 +1874,13 @@ class Game:
     # ──────────────────────────────────────────────────────────
 
     def _update(self, dt: float):
+        if self.day_number == 2:
+            floor1 = self.school_map.get_floor(FLOOR_1F)
+            if floor1:
+                room = floor1.rooms.get("f1_computer_lab")
+                if room:
+                    self._clear_tech_lab_for_ava(room)
+
         if self.current_floor == FLOOR_BASEMENT:
             if not getattr(self, '_basement_music_playing', False):
                 try:
@@ -1786,7 +1994,7 @@ class Game:
         if self.player.level > self._last_known_level:
             self._last_known_level = self.player.level
             if hasattr(self.ui, 'trigger_level_up'):
-                self.ui.trigger_level_up()
+                self.ui.trigger_level_up(10)
         if self.state not in (GameState.PLAYING, GameState.INTRO_CINEMATIC):
             if hasattr(self.player, 'stop_audio'):
                 self.player.stop_audio()
@@ -1995,8 +2203,12 @@ class Game:
         # Exception: Gordon Ramsay is solid (collision).
         npcs_on_floor = self.npc_manager.get_npcs_on_floor(self.current_floor)
         for npc in npcs_on_floor:
-            if npc.id in ("npc_gordon", "npc_axel_knight"):
+            if npc.id == "npc_gordon":
                 walls.append(npc.rect)
+                continue
+            if npc.id == "npc_axel_knight":
+                if not getattr(self, '_rooftop_unlocked', False):
+                    walls.append(npc.rect)
                 continue
             if npc.id.startswith("npc_oscar_obs"):
                 walls.append(npc.rect)
@@ -2043,6 +2255,7 @@ class Game:
             self.player.update(keys, walls, dt, trail_decay=decay, speed_multiplier=speed_mult)
         self._enforce_bathroom_access(floor, previous_rect)
         self._enforce_cafeteria_access(floor, previous_rect, dt)
+        self._enforce_tech_lab_access(floor, previous_rect, dt)
         self._enforce_library_access(floor, previous_rect, dt)
         if getattr(self, '_basement_block_timer', 0) > 0:
             self._basement_block_timer -= dt
@@ -2221,6 +2434,13 @@ class Game:
             rewards = self.mission_manager.complete_mission(mid)
             if rewards:
                 self._apply_rewards(rewards)
+                self.player.level += 1
+                from settings import SKILL_POINT_PER_LEVEL
+                self.player.skill_points += SKILL_POINT_PER_LEVEL
+                self.player.money += 10
+                if hasattr(self.ui, 'trigger_level_up'):
+                    self.ui.trigger_level_up(10)
+                self._last_known_level = self.player.level
                 msg = self.mission_manager.get_motivational_message()
                 self.ui.show_notification(f"✅ Mission complete! {msg}", NOTIF_SUCCESS, 5.0)
                 # Auto-activate newly available missions
@@ -2229,6 +2449,21 @@ class Game:
 
         # Update markers for key NPCs
         self._update_minimap_markers()
+
+        # Check mainframe login collision for Mission 8
+        if self.current_floor == FLOOR_1F:
+            m_obj = self.mission_manager.missions.get("mission_high_school_mainframe")
+            if m_obj and m_obj.status == MissionStatus.ACTIVE:
+                if self.player.rect.colliderect(pygame.Rect(850, 200, 140, 70)):
+                    self.state = GameState.MAINFRAME
+                    self.mainframe_user_input = ""
+                    self.mainframe_pass_input = ""
+                    self.mainframe_active_field = "user"
+                    self.mainframe_screen = "login"
+                    self.mainframe_error = ""
+                    self.mainframe_alarm = False
+                    self.mainframe_selected_email = None
+                    self.player.rect.y += 20  # Bounce back slightly
 
         # Check game-over
         if not self.player.is_alive():
@@ -2431,7 +2666,6 @@ class Game:
             (FLOOR_CAMPUS, pygame.Rect(2780, 1080, 980, 650), None),      # Athletic Coliseum campus side
             (FLOOR_COLISEUM_INTERIOR, pygame.Rect(320, 260, 1160, 650), None),
             (FLOOR_1F, pygame.Rect(1120, 120, 960, 1650), None),          # 1F main hall
-            (FLOOR_ROOFTOP, pygame.Rect(1250, 50, 1100, 900), None),      # ROOFTOP (double weight)
             (FLOOR_1F, pygame.Rect(120, 120, 850, 720), None),            # lab / infirmary side
             (FLOOR_1F, pygame.Rect(2260, 120, 780, 480), None),           # library wing
             (FLOOR_2F, pygame.Rect(1120, 120, 960, 1650), None),          # 2F corridor
@@ -2443,7 +2677,7 @@ class Game:
             (FLOOR_1F, pygame.Rect(1180, 2020, 860, 280), None),          # reception (moved to end, less priority)
         ]
 
-        from settings import NPC_SIZE
+        from settings import NPC_SIZE, SocialGroup
         blocked_ids = {
             "npc_noah_carter",
             "npc_gordon",
@@ -2474,7 +2708,12 @@ class Game:
             for floor_id in floors
         }
 
+        popular_candidates = [n for n in candidates if getattr(n, "group", None) == SocialGroup.POPULARS]
+        rooftop_npcs = set(sorted(popular_candidates, key=lambda n: n.id)[:5])
+
         def choose_area(npc, start_idx):
+            if npc in rooftop_npcs:
+                return FLOOR_ROOFTOP, pygame.Rect(1250, 50, 1100, 900)
             for offset in range(len(scatter_areas)):
                 floor_id, area, allowed_gender = scatter_areas[(start_idx + offset) % len(scatter_areas)]
                 if allowed_gender is None or getattr(npc, "gender", "unspecified") == allowed_gender:
@@ -2561,7 +2800,10 @@ class Game:
             "npc_director":    ("Director Walsh", (150, 50, 200)),
             "npc_noah_carter": ("Noah Carter",    (50, 180, 120)),
             "npc_ava_thompson": ("Ava Thompson",  (255, 180, 80)),
+            "npc_axel_knight": ("Axel Knight",    (220, 50, 50)),
         }
+        if getattr(self, '_alan_chen_map_unlocked', False):
+            key_npcs["npc_alan_chen"] = ("Alan Chen", (100, 200, 255))
         for nid, (label, col) in key_npcs.items():
             npc = self.npc_manager.get_npc_by_id(nid)
             if npc:
@@ -2874,15 +3116,77 @@ class Game:
             self.mission_manager.unlock_mission(result["mission_unlock"])
             self.mission_manager.activate_mission(result["mission_unlock"])
             self.ui.show_notification("📋 New mission available!", NOTIF_INFO)
+        if result.get("complete_tech_lab_ava"):
+            m_obj = self.mission_manager.missions.get("mission_tech_lab_ava")
+            if m_obj:
+                m_obj.status = MissionStatus.COMPLETED
+                for obj in m_obj.objectives:
+                    obj.completed = True
+                    obj.progress = obj.required
+                self.mission_manager.completed_ids.add("mission_tech_lab_ava")
+            self._current_main_mission_text = "Mission 5: Open map to find Alan Chen's discreet location and talk to him."
+        if result.get("show_alan_chen_map"):
+            self._alan_chen_map_unlocked = True
+        if result.get("talked_to_alan_chen_first"):
+            m_obj = self.mission_manager.missions.get("mission_alan_chen_bathroom")
+            if m_obj and m_obj.status != MissionStatus.COMPLETED:
+                m_obj.status = MissionStatus.COMPLETED
+                for obj in m_obj.objectives:
+                    obj.completed = True
+                    obj.progress = obj.required
+                self.mission_manager.completed_ids.add("mission_alan_chen_bathroom")
+                self.mission_manager.unlock_mission("mission_tech_club_rep")
+                self.mission_manager.activate_mission("mission_tech_club_rep")
+                self._current_main_mission_text = "Mission 6: Gain 70 Tech Club reputation, then return to Alan Chen in his discreet location."
+        if "alan_chen_rep_check" in result:
+            tech_rep = self.reputation.get("tech_club")
+            if tech_rep >= 70:
+                self.ui.show_notification("Alan Chen nods: 'You've earned my trust. Here are the hacked credentials.'", NOTIF_SUCCESS)
+                m_obj = self.mission_manager.missions.get("mission_tech_club_rep")
+                if m_obj and m_obj.status != MissionStatus.COMPLETED:
+                    m_obj.status = MissionStatus.COMPLETED
+                    for obj in m_obj.objectives:
+                        obj.completed = True
+                        obj.progress = obj.required
+                    self.mission_manager.completed_ids.add("mission_tech_club_rep")
+                    from src.inventory import ItemCategory
+                    self.inventory.add_item(
+                        "Hacked Credentials", ItemCategory.NOTE,
+                        "Hacked high school system credentials provided by Alan Chen.",
+                    )
+                    self.mission_manager.unlock_mission("mission_return_tech_lab")
+                    self.mission_manager.activate_mission("mission_return_tech_lab")
+                    self._current_main_mission_text = "Mission 7: Return to the Tech Lab and give the hacked credentials to Ava Thompson."
+            else:
+                self.ui.show_notification(f"Alan Chen shakes his head: 'You need 70 Tech Club reputation (Current: {tech_rep}). I can't trust you yet.'", NOTIF_ERROR)
+        if "give_hacked_credentials" in result:
+            if self.inventory.has_item("Hacked Credentials"):
+                self.ui.show_notification("Ava Thompson: 'With these credentials we can log in to decrypt the encrypted messages. Go to the computer marked with X.'", NOTIF_SUCCESS, 8.0)
+                ava = self.npc_manager.get_npc_by_id("npc_ava_thompson")
+                if ava:
+                    ava.ai_enabled = False
+                    ava.ignore_schedule = True
+                    ava.rect.center = (820, 235)
+                    ava.target_queue = []
+                    ava.target_pos = ava.rect.center
+                m_obj = self.mission_manager.missions.get("mission_return_tech_lab")
+                if m_obj and m_obj.status != MissionStatus.COMPLETED:
+                    m_obj.status = MissionStatus.COMPLETED
+                    for obj in m_obj.objectives:
+                        obj.completed = True
+                        obj.progress = obj.required
+                    self.mission_manager.completed_ids.add("mission_return_tech_lab")
+                    self.mission_manager.unlock_mission("mission_high_school_mainframe")
+                    self.mission_manager.activate_mission("mission_high_school_mainframe")
+                    self._current_main_mission_text = "Mission 8: Go to the computer marked with X in the Tech Lab and extract information."
+            else:
+                self.ui.show_notification("Ava Thompson looks at you: 'You don't have the credentials yet. Go talk to Alan Chen.'", NOTIF_ERROR)
         if "rooftop_check" in result:
             pop_rep = self.reputation.get("populars")
             overall_rep = self.reputation.reputation_score
             if pop_rep >= 60 or overall_rep >= 60:
                 self._rooftop_unlocked = True
-                self.ui.show_notification("Axel Knight steps aside. Rooftop access unlocked!", NOTIF_SUCCESS)
-                axel = self.npc_manager.get_npc_by_id("npc_axel_knight")
-                if axel:
-                    axel.rect.center = (1010, 90)
+                self.ui.show_notification("Axel Knight nods. Rooftop access unlocked!", NOTIF_SUCCESS)
             else:
                 self.ui.show_notification(f"Axel sneers: 'You need 60 Popular reputation (Current: {pop_rep}). Get lost!'", NOTIF_ERROR)
         if result.get("day1_complete"):
@@ -3004,8 +3308,10 @@ class Game:
                     self.wallet_focus_item if (self.controller and self.controller.connected) else None,
                     self._get_yearbook_data() if self.active_wallet_item == "yearbook" else None,
                     player=self.player,
+                    inventory=self.inventory,
                 ),
             ),
+            GameState.MAINFRAME:         lambda: (self._draw_world(), self.ui.draw_mainframe(self.screen, self)),
             GameState.GAME_OVER:         lambda: self.ui.draw_game_over(self.screen, self.reputation.calculate_ending()),
             GameState.MAP:               lambda: self._draw_map(),
 
@@ -3115,6 +3421,15 @@ class Game:
                 # Ghosting bug fix: only draw if on same floor
                 if self.remote_player.current_floor == self.current_floor:
                     self.remote_player.draw(target_surf, self.camera)
+
+        if self.current_floor == FLOOR_1F:
+            m_obj = self.mission_manager.missions.get("mission_high_school_mainframe")
+            if m_obj and m_obj.status == MissionStatus.ACTIVE:
+                comp_rect = self.camera.apply_rect(pygame.Rect(850, 200, 140, 70))
+                pulse = (math.sin(pygame.time.get_ticks() * 0.005) + 1) * 0.5
+                x_col = (255, int(50 + 100 * pulse), 50)
+                pygame.draw.line(target_surf, x_col, comp_rect.topleft, comp_rect.bottomright, 6)
+                pygame.draw.line(target_surf, x_col, comp_rect.topright, comp_rect.bottomleft, 6)
 
         if floor and hasattr(floor, 'draw_roofs'):
             floor.draw_roofs(target_surf, self.camera, self.player)
@@ -3415,6 +3730,15 @@ class Game:
         )
         self.phone.add_social_post(post)
         self._current_main_mission_text = "Mission 2: Open Social app and click Oscar's post."
+        m_obj = self.mission_manager.missions.get("mission_first_day")
+        if m_obj:
+            m_obj.status = MissionStatus.COMPLETED
+            for obj in m_obj.objectives:
+                obj.completed = True
+                obj.progress = obj.required
+            self.mission_manager.completed_ids.add("mission_first_day")
+        self.mission_manager.unlock_mission("mission_strange_rumours")
+        self.mission_manager._refresh_availability()
 
     def _begin_oscar_win_dialogue(self):
         if self._oscar_win_dialogue_completed:
@@ -3822,6 +4146,8 @@ class Game:
         self.npc_manager.update_schedules(self.current_phase, self.school_map, is_visible=self._is_npc_on_camera)
         self._spread_first_floor_npcs()
         self._place_ava_for_story()
+        if self.day_number == 2:
+            self._current_main_mission_text = "Mission 4: Go to Tech Lab to meet Ava Thompson."
         if hasattr(self, 'schedule_manager'):
             self.schedule_manager.reset_day()
         

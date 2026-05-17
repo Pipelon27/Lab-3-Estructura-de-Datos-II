@@ -185,6 +185,7 @@ class GameState(Enum):
     DAY_OVER         = auto()
     INTRO_CINEMATIC  = auto()
     MISSION_SELECT   = auto()
+    MAINFRAME        = auto()
 
 
 class Character(Enum):
@@ -220,6 +221,7 @@ class ItemCategory(Enum):
     USB     = "usb"
     SPECIAL = "special"
     WEAPON  = "weapon"
+    NOTE    = "note"
 
 
 class MissionStatus(Enum):

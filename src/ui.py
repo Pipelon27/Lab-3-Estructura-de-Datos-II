@@ -104,8 +104,11 @@ class UI:
         # Yearbook inside Left Slot 3 (visible area)
         self.wallet_yearbook_rect = pygame.Rect(cx - 310, cy - 50, 280, 50)
 
+        # Hacked Credentials inside Right Slot 3 (visible area)
+        self.wallet_cred_rect = pygame.Rect(cx + 30, cy - 50, 280, 50)
+
         # Hover animation offsets for wallet items
-        self._wallet_hover_offsets = {"id": 0.0, "bill": 0.0, "yearbook": 0.0}
+        self._wallet_hover_offsets = {"id": 0.0, "bill": 0.0, "yearbook": 0.0, "cred": 0.0}
 
         # Announcement state
         self._announcement_timer = 0.0
@@ -860,7 +863,7 @@ class UI:
 
     def draw_wallet(self, screen: pygame.Surface, active_item: str | None, character, 
                     controller_connected: bool = False, focus_item: str | None = None,
-                    yearbook_data: dict | None = None, player=None):
+                    yearbook_data: dict | None = None, player=None, inventory=None):
         """Draw the wallet interface. Semi-transparent background."""
         money_val = player.money if player else 5
         overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
@@ -892,17 +895,20 @@ class UI:
                 mouse_item = "bill"
             elif self.wallet_yearbook_rect.collidepoint((mx, my)):
                 mouse_item = "yearbook"
+            elif self.wallet_cred_rect.collidepoint((mx, my)) and inventory and inventory.has_item("Hacked Credentials"):
+                mouse_item = "cred"
             if mouse_item:
                 highlight_item = mouse_item
 
-            for key in ("id", "bill", "yearbook"):
+            for key in ("id", "bill", "yearbook", "cred"):
                 target = -24 if highlight_item == key else 0
-                current = self._wallet_hover_offsets[key]
+                current = self._wallet_hover_offsets.get(key, 0.0)
                 self._wallet_hover_offsets[key] = current + (target - current) * 0.25
 
             id_offset = int(round(self._wallet_hover_offsets["id"]))
             bill_offset = int(round(self._wallet_hover_offsets["bill"]))
             yearbook_offset = int(round(self._wallet_hover_offsets["yearbook"]))
+            cred_offset = int(round(self._wallet_hover_offsets.get("cred", 0.0)))
             
             for i, sy in enumerate(slot_ys):
                 # --- Left Side ---
@@ -910,8 +916,8 @@ class UI:
                 if i == 1:
                     full_id_base = pygame.Rect(self.wallet_id_rect.x, self.wallet_id_rect.y, self.wallet_id_rect.width, 160)
                     full_id = full_id_base.move(0, id_offset)
-                    pygame.draw.rect(screen, (220, 220, 230), full_id, border_radius=8)
-                    pygame.draw.rect(screen, (100, 100, 150), full_id, 2, border_radius=8)
+                    pygame.draw.rect(screen, (215, 235, 255), full_id, border_radius=8)
+                    pygame.draw.rect(screen, (120, 160, 220), full_id, 2, border_radius=8)
                     id_title = self.font_hud_md.render("Ravenside High ID", True, BLACK)
                     screen.blit(id_title, (full_id.x + 10, full_id.y + 8))
                     if highlight_item == "id":
@@ -935,6 +941,17 @@ class UI:
                     screen.blit(bill_title, (full_bill.x + 10, full_bill.y + 6))
                     if highlight_item == "bill":
                         pygame.draw.rect(screen, UI_ACCENT, full_bill.inflate(6, 6), 2, border_radius=8)
+
+                # --- Right Side Slot 3 ---
+                if i == 2 and inventory and inventory.has_item("Hacked Credentials"):
+                    full_cred_base = pygame.Rect(self.wallet_cred_rect.x, self.wallet_cred_rect.y, self.wallet_cred_rect.width, 160)
+                    full_cred = full_cred_base.move(0, cred_offset)
+                    pygame.draw.rect(screen, (240, 240, 245), full_cred, border_radius=4)
+                    pygame.draw.rect(screen, (150, 150, 150), full_cred, 2, border_radius=4)
+                    cred_title = self.font_hud_md.render("Hacked Credentials", True, (180, 40, 40))
+                    screen.blit(cred_title, (full_cred.x + 10, full_cred.y + 12))
+                    if highlight_item == "cred":
+                        pygame.draw.rect(screen, UI_ACCENT, full_cred.inflate(6, 6), 2, border_radius=8)
 
                 # Draw Right Pocket Cover
                 pocket_rect_right = pygame.Rect(cx + 20, sy, 300, pocket_h)
@@ -972,13 +989,13 @@ class UI:
             # Draw active item zoomed in
             if active_item == "id":
                 big_id = pygame.Rect(cx - 250, cy - 150, 500, 300)
-                pygame.draw.rect(screen, (220, 220, 230), big_id, border_radius=12)
-                pygame.draw.rect(screen, UI_ACCENT, big_id, 4, border_radius=12)
+                pygame.draw.rect(screen, (215, 235, 255), big_id, border_radius=12)
+                pygame.draw.rect(screen, (120, 160, 220), big_id, 4, border_radius=12)
                 
                 # ID Header
                 header = self.font_menu.render("Ravenside High - Student ID", True, (50, 50, 100))
                 screen.blit(header, header.get_rect(center=(cx, big_id.y + 40)))
-                pygame.draw.line(screen, (100, 100, 150), (big_id.x + 20, big_id.y + 70), (big_id.right - 20, big_id.y + 70), 3)
+                pygame.draw.line(screen, (120, 160, 220), (big_id.x + 20, big_id.y + 70), (big_id.right - 20, big_id.y + 70), 3)
                 
                 # Details
                 y_off = big_id.y + 100
@@ -998,10 +1015,16 @@ class UI:
                     screen.blit(text, (big_id.x + 40, y_off))
                     y_off += 50
                     
-                # Photo placeholder
+                # Photo placeholder / Character Avatar
                 photo_rect = pygame.Rect(big_id.right - 140, big_id.y + 100, 100, 130)
-                pygame.draw.rect(screen, (180, 180, 190), photo_rect)
-                pygame.draw.rect(screen, (100, 100, 100), photo_rect, 2)
+                cur_char = character if character else Character.AIDEN
+                avatar_img = self.player_avatars.get(cur_char)
+                if avatar_img:
+                    scaled_av = pygame.transform.smoothscale(avatar_img, (photo_rect.width, photo_rect.height))
+                    screen.blit(scaled_av, photo_rect)
+                else:
+                    pygame.draw.rect(screen, (180, 180, 190), photo_rect)
+                pygame.draw.rect(screen, (100, 120, 160), photo_rect, 2)
                 
                 # Description panel
                 desc_panel = pygame.Rect(big_id.x + 30, big_id.bottom + 20, big_id.width - 60, 130)
@@ -1062,4 +1085,326 @@ class UI:
                 npc_groups = yearbook_data.get("npc_groups", {}) if yearbook_data else {}
                 self.draw_yearbook_view(screen, controller_connected, reputation_data, npc_groups)
 
+            elif active_item == "cred":
+                big_cred = pygame.Rect(cx - 250, cy - 150, 500, 300)
+                pygame.draw.rect(screen, (245, 245, 250), big_cred, border_radius=8)
+                pygame.draw.rect(screen, UI_ACCENT, big_cred, 4, border_radius=8)
+                
+                # Header
+                header = self.font_menu.render("TECH LAB ADMIN - CREDENTIALS", True, (180, 40, 40))
+                screen.blit(header, header.get_rect(center=(cx, big_cred.y + 40)))
+                pygame.draw.line(screen, (180, 40, 40), (big_cred.x + 20, big_cred.y + 70), (big_cred.right - 20, big_cred.y + 70), 3)
+                
+                # Details (Username & Password)
+                y_off = big_cred.y + 110
+                details = [
+                    "SYSTEM: Ravenside High School Mainframe",
+                    "USERNAME: admin_techlab",
+                    "PASSWORD: pWd_sMiLe_cLuB_99!",
+                    "STATUS: ACTIVE (HACKED BY ALAN CHEN)",
+                ]
+                for d in details:
+                    text = self.font_hud_md.render(d, True, BLACK)
+                    screen.blit(text, (big_cred.x + 40, y_off))
+                    y_off += 40
+
+                return_text = "[B] Return to wallet" if controller_connected else "Press ESC or click to return to wallet"
+                hint_surface = self.font_hint.render(return_text, True, UI_ACCENT)
+                screen.blit(hint_surface, hint_surface.get_rect(center=(cx, big_cred.y - 40)))
+                
+                # Description panel
+                desc_panel = pygame.Rect(big_cred.x + 30, big_cred.bottom + 20, big_cred.width - 60, 130)
+                pygame.draw.rect(screen, (14, 14, 24), desc_panel, border_radius=18)
+                pygame.draw.rect(screen, UI_ACCENT, desc_panel, 3, border_radius=18)
+
+                title_bar = pygame.Rect(desc_panel.x + 18, desc_panel.y + 18, desc_panel.width - 36, 40)
+                pygame.draw.rect(screen, (40, 60, 80), title_bar, border_radius=12)
+                pygame.draw.rect(screen, UI_ACCENT, title_bar, 2, border_radius=12)
+                desc_title = self.font_hud_md.render("Description", True, UI_ACCENT)
+                screen.blit(desc_title, desc_title.get_rect(center=title_bar.center))
+
+                body_text = "Hacked high school system credentials provided by Alan Chen."
+                desc_body = self.font_hud_sm.render(body_text, True, UI_TEXT)
+                screen.blit(desc_body, desc_body.get_rect(center=(desc_panel.centerx, title_bar.bottom + 32)))
+
             # Return hint rendered above the item (see blocks above)
+
+    def draw_mainframe(self, screen: pygame.Surface, game):
+        # 1. Background blur / darkening overlay
+        overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+        overlay.fill((10, 15, 25, 210))
+        screen.blit(overlay, (0, 0))
+
+        cx, cy = SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2
+        screen_type = getattr(game, 'mainframe_screen', 'login')
+
+        if screen_type == "login":
+            # Main Login Window
+            panel = pygame.Rect(cx - 250, cy - 180, 500, 420)
+            pygame.draw.rect(screen, (20, 25, 35), panel, border_radius=16)
+            pygame.draw.rect(screen, (0, 180, 255), panel, 3, border_radius=16)
+
+            # Header
+            header = self.font_menu.render("Ravenside High School Mainframe", True, (0, 200, 255))
+            screen.blit(header, header.get_rect(center=(cx, panel.y + 40)))
+            pygame.draw.line(screen, (0, 180, 255), (panel.x + 30, panel.y + 75), (panel.right - 30, panel.y + 75), 2)
+
+            # Subtitle / Status
+            sub = self.font_hud_md.render("SECURE LOGIN REQUIRED", True, (180, 200, 220))
+            screen.blit(sub, sub.get_rect(center=(cx, panel.y + 105)))
+
+            # Username Field
+            u_rect = pygame.Rect(cx - 150, cy - 40, 300, 40)
+            u_active = getattr(game, 'mainframe_active_field', 'user') == 'user'
+            pygame.draw.rect(screen, (10, 15, 25) if u_active else (30, 35, 45), u_rect, border_radius=8)
+            pygame.draw.rect(screen, (0, 255, 255) if u_active else (100, 120, 140), u_rect, 2, border_radius=8)
+            u_label = self.font_hud_sm.render("USERNAME", True, (120, 140, 160))
+            screen.blit(u_label, (u_rect.x, u_rect.y - 22))
+            u_text = self.font_hud_md.render(getattr(game, 'mainframe_user_input', ''), True, WHITE)
+            screen.blit(u_text, (u_rect.x + 15, u_rect.y + 8))
+
+            # Password Field
+            p_rect = pygame.Rect(cx - 150, cy + 40, 300, 40)
+            p_active = getattr(game, 'mainframe_active_field', 'user') == 'pass'
+            pygame.draw.rect(screen, (10, 15, 25) if p_active else (30, 35, 45), p_rect, border_radius=8)
+            pygame.draw.rect(screen, (0, 255, 255) if p_active else (100, 120, 140), p_rect, 2, border_radius=8)
+            p_label = self.font_hud_sm.render("PASSWORD", True, (120, 140, 160))
+            screen.blit(p_label, (p_rect.x, p_rect.y - 22))
+            p_str = "*" * len(getattr(game, 'mainframe_pass_input', ''))
+            p_text = self.font_hud_md.render(p_str, True, WHITE)
+            screen.blit(p_text, (p_rect.x + 15, p_rect.y + 8))
+
+            # Error message
+            err = getattr(game, 'mainframe_error', '')
+            if err:
+                err_surf = self.font_hud_sm.render(err, True, (255, 80, 80))
+                screen.blit(err_surf, err_surf.get_rect(center=(cx, cy + 85)))
+
+            # Buttons: Login & Exit
+            login_btn = pygame.Rect(cx - 150, cy + 110, 140, 45)
+            pygame.draw.rect(screen, (0, 150, 220), login_btn, border_radius=8)
+            l_lbl = self.font_hud_md.render("Login", True, WHITE)
+            screen.blit(l_lbl, l_lbl.get_rect(center=login_btn.center))
+
+            exit_btn = pygame.Rect(cx + 10, cy + 110, 140, 45)
+            pygame.draw.rect(screen, (80, 90, 100), exit_btn, border_radius=8)
+            e_lbl = self.font_hud_md.render("Exit", True, WHITE)
+            screen.blit(e_lbl, e_lbl.get_rect(center=exit_btn.center))
+
+            # Auto-Fill Button
+            autofill_btn = pygame.Rect(cx - 150, cy + 170, 300, 35)
+            pygame.draw.rect(screen, (40, 60, 80), autofill_btn, border_radius=8)
+            pygame.draw.rect(screen, (0, 200, 255), autofill_btn, 1, border_radius=8)
+            af_lbl = self.font_hud_sm.render("[Auto-Fill Hacked Credentials]", True, (0, 220, 255))
+            screen.blit(af_lbl, af_lbl.get_rect(center=autofill_btn.center))
+
+            # Bottom Hint
+            hint = self.font_hint.render("Hint: Enter Hacked Credentials (User: admin_techlab | Pass: pWd_sMiLe_cLuB_99!)", True, (150, 170, 190))
+            screen.blit(hint, hint.get_rect(center=(cx, panel.bottom + 25)))
+
+        elif screen_type == "desktop":
+            # Simulated Windows Desktop Window
+            panel = pygame.Rect(cx - 400, cy - 280, 800, 560)
+            pygame.draw.rect(screen, (15, 40, 55), panel, border_radius=12)  # Desktop BG
+            pygame.draw.rect(screen, (100, 150, 200), panel, 4, border_radius=12)
+
+            # Taskbar at bottom
+            taskbar = pygame.Rect(panel.x, panel.bottom - 45, panel.width, 45)
+            pygame.draw.rect(screen, (10, 20, 30), taskbar, border_radius=12)
+            start_btn = pygame.Rect(taskbar.x + 15, taskbar.y + 8, 80, 30)
+            pygame.draw.rect(screen, (0, 120, 200), start_btn, border_radius=6)
+            s_lbl = self.font_hud_sm.render("START", True, WHITE)
+            screen.blit(s_lbl, s_lbl.get_rect(center=start_btn.center))
+            time_lbl = self.font_hud_sm.render("14:32 PM", True, (180, 200, 220))
+            screen.blit(time_lbl, (taskbar.right - 80, taskbar.y + 12))
+
+            # Header / Prompt
+            prompt = self.font_hud_md.render("MISSION OBJECTIVE: Open Mail and search the inbox for Eli's old email.", True, (0, 255, 200))
+            screen.blit(prompt, prompt.get_rect(center=(cx, panel.y + 25)))
+
+            # Desktop Icons: Mail, Files, Bin, Disconnect
+            icons = [
+                ("Mail (Unread)", pygame.Rect(cx - 240, cy - 150, 100, 100), (220, 60, 60)),
+                ("System Files", pygame.Rect(cx - 100, cy - 150, 100, 100), (200, 180, 50)),
+                ("Recycle Bin", pygame.Rect(cx + 40, cy - 150, 100, 100), (100, 120, 140)),
+                ("Disconnect", pygame.Rect(cx + 180, cy - 150, 100, 100), (180, 40, 40)),
+            ]
+            for name, rect, col in icons:
+                pygame.draw.rect(screen, col, pygame.Rect(rect.x + 20, rect.y + 15, 60, 50), border_radius=8)
+                lbl = self.font_hud_sm.render(name, True, WHITE)
+                screen.blit(lbl, lbl.get_rect(center=(rect.centerx, rect.bottom - 15)))
+
+        elif screen_type == "mail":
+            # Mail Client Window
+            panel = pygame.Rect(cx - 400, cy - 280, 800, 560)
+            pygame.draw.rect(screen, (240, 245, 250), panel, border_radius=12) # Light Mail BG
+            pygame.draw.rect(screen, (50, 70, 90), panel, 4, border_radius=12)
+
+            # Top Mail Navbar
+            navbar = pygame.Rect(panel.x, panel.y, panel.width, 50)
+            pygame.draw.rect(screen, (40, 60, 80), navbar, border_radius=12)
+            title = self.font_menu.render("Ravenside Mail Client - Inbox", True, WHITE)
+            screen.blit(title, (navbar.x + 100, navbar.y + 12))
+
+            # Back Button
+            back_btn = pygame.Rect(cx - 380, cy - 230, 80, 35)
+            pygame.draw.rect(screen, (100, 120, 140), back_btn, border_radius=6)
+            b_lbl = self.font_hud_sm.render("< Desktop", True, WHITE)
+            screen.blit(b_lbl, b_lbl.get_rect(center=back_btn.center))
+
+            # Disconnect Button
+            disc_btn = pygame.Rect(cx + 280, cy - 230, 100, 35)
+            pygame.draw.rect(screen, (180, 50, 50), disc_btn, border_radius=6)
+            d_lbl = self.font_hud_sm.render("Disconnect", True, WHITE)
+            screen.blit(d_lbl, d_lbl.get_rect(center=disc_btn.center))
+
+            # Left Sidebar
+            sidebar = pygame.Rect(panel.x, panel.y + 50, 180, panel.height - 50)
+            pygame.draw.rect(screen, (220, 225, 235), sidebar)
+            folders = ["Inbox (1)", "Sent", "Drafts", "Archive", "Spam"]
+            sy = sidebar.y + 20
+            for f in folders:
+                col = (0, 120, 200) if "Inbox" in f else (80, 90, 100)
+                lbl = self.font_hud_md.render(f, True, col)
+                screen.blit(lbl, (sidebar.x + 20, sy))
+                sy += 40
+
+            # Email List
+            list_x = panel.x + 200
+            list_y = panel.y + 70
+            emails = [
+                ("Principal Walsh", "Staff Meeting Agenda - Friday 3PM", False),
+                ("Coach Davis", "Basketball Tournament Roster Updates", False),
+                ("Eli", "Urgent: I saw them (Smile Club)", True),  # Target!
+                ("IT Support", "Password Expiry Notice - Action Required", False),
+            ]
+            for sender, subj, is_target in emails:
+                item_rect = pygame.Rect(list_x, list_y, 560, 50)
+                bg_col = (255, 255, 200) if is_target else (255, 255, 255)
+                pygame.draw.rect(screen, bg_col, item_rect, border_radius=6)
+                pygame.draw.rect(screen, (200, 210, 220), item_rect, 1, border_radius=6)
+                
+                s_lbl = self.font_hud_md.render(sender, True, (180, 40, 40) if is_target else BLACK)
+                subj_lbl = self.font_hud_sm.render(subj, True, (100, 20, 20) if is_target else (100, 100, 100))
+                screen.blit(s_lbl, (item_rect.x + 15, item_rect.y + 5))
+                screen.blit(subj_lbl, (item_rect.x + 15, item_rect.y + 26))
+                
+                if is_target:
+                    hint_badge = self.font_hint.render("<< CLICK TO READ", True, (200, 50, 50))
+                    screen.blit(hint_badge, (item_rect.right - 140, item_rect.y + 16))
+                list_y += 60
+
+            # Bottom objective prompt
+            prompt = self.font_hud_sm.render("MISSION OBJECTIVE: Find and click Eli's email in the inbox list above.", True, (50, 100, 150))
+            screen.blit(prompt, prompt.get_rect(center=(panel.x + 490, panel.bottom - 30)))
+
+        elif screen_type == "mail_view":
+            # Mail Client Window - View Email
+            panel = pygame.Rect(cx - 400, cy - 280, 800, 560)
+            pygame.draw.rect(screen, (240, 245, 250), panel, border_radius=12)
+            pygame.draw.rect(screen, (50, 70, 90), panel, 4, border_radius=12)
+
+            # Top Mail Navbar
+            navbar = pygame.Rect(panel.x, panel.y, panel.width, 50)
+            pygame.draw.rect(screen, (40, 60, 80), navbar, border_radius=12)
+            title = self.font_menu.render("Ravenside Mail Client - Message View", True, WHITE)
+            screen.blit(title, (navbar.x + 100, navbar.y + 12))
+
+            # Back Button
+            back_btn = pygame.Rect(cx - 380, cy - 230, 80, 35)
+            pygame.draw.rect(screen, (100, 120, 140), back_btn, border_radius=6)
+            b_lbl = self.font_hud_sm.render("< Inbox", True, WHITE)
+            screen.blit(b_lbl, b_lbl.get_rect(center=back_btn.center))
+
+            # Disconnect Button
+            disc_btn = pygame.Rect(cx + 280, cy - 230, 100, 35)
+            pygame.draw.rect(screen, (180, 50, 50), disc_btn, border_radius=6)
+            d_lbl = self.font_hud_sm.render("Disconnect", True, WHITE)
+            screen.blit(d_lbl, d_lbl.get_rect(center=disc_btn.center))
+
+            # Email Header Info
+            h_box = pygame.Rect(panel.x + 40, panel.y + 70, 720, 110)
+            pygame.draw.rect(screen, WHITE, h_box, border_radius=8)
+            pygame.draw.rect(screen, (200, 210, 220), h_box, 1, border_radius=8)
+
+            headers = [
+                "From: Eli <eli_student@ravenside.edu>",
+                "To: Marcus Green <m_green@ravenside.edu>",
+                "Subject: Urgent: I saw them (Smile Club)",
+                "Date: October 14",
+            ]
+            hy = h_box.y + 10
+            for h in headers:
+                col = (180, 40, 40) if "Subject" in h else BLACK
+                lbl = self.font_hud_sm.render(h, True, col)
+                screen.blit(lbl, (h_box.x + 15, hy))
+                hy += 24
+
+            # Email Body
+            body_box = pygame.Rect(panel.x + 40, panel.y + 195, 720, 240)
+            pygame.draw.rect(screen, WHITE, body_box, border_radius=8)
+            pygame.draw.rect(screen, (200, 210, 220), body_box, 1, border_radius=8)
+
+            body_text = (
+                "Marcus, I'm not crazy. I saw them last night in the basement. "
+                "The masks, the robes... they call themselves the Smile Club. "
+                "They are controlling everything in this school, even the faculty. "
+                "I'm telling you everything before they find me. Don't trust anyone."
+            )
+            # Render wrapped text
+            words = body_text.split()
+            lines = []
+            cur_line = ""
+            for w in words:
+                if self.font_hud_md.size(cur_line + w)[0] < body_box.width - 40:
+                    cur_line += w + " "
+                else:
+                    lines.append(cur_line)
+                    cur_line = w + " "
+            if cur_line: lines.append(cur_line)
+
+            ty = body_box.y + 20
+            for l in lines:
+                lbl = self.font_hud_md.render(l, True, (40, 40, 50))
+                screen.blit(lbl, (body_box.x + 20, ty))
+                ty += 32
+
+            # Close Email Button
+            close_btn = pygame.Rect(cx - 100, cy + 180, 200, 45)
+            pygame.draw.rect(screen, (0, 120, 200), close_btn, border_radius=8)
+            c_lbl = self.font_hud_md.render("Close Email", True, WHITE)
+            screen.blit(c_lbl, c_lbl.get_rect(center=close_btn.center))
+
+            # Bottom prompt
+            prompt = self.font_hud_sm.render("MISSION OBJECTIVE: Information acquired. Click Disconnect to exit the system.", True, (180, 40, 40))
+            screen.blit(prompt, prompt.get_rect(center=(cx, panel.bottom - 25)))
+
+        elif screen_type == "alarm":
+            # Big Red Alarm Window
+            panel = pygame.Rect(cx - 300, cy - 200, 600, 400)
+            pygame.draw.rect(screen, (30, 10, 10), panel, border_radius=16)
+            pygame.draw.rect(screen, (255, 50, 50), panel, 6, border_radius=16)
+
+            # Warning Header
+            w_font = pygame.font.Font(VT323_PATH, 50)
+            header = w_font.render("WARNING: SECURITY BREACH DETECTED!", True, (255, 80, 80))
+            screen.blit(header, header.get_rect(center=(cx, panel.y + 60)))
+
+            # Alarm lines
+            lines = [
+                "SYSTEM ALARM: THE SMILE CLUB HAS TRACED YOUR CONNECTION.",
+                "YOU HAVE BEEN DISCOVERED.",
+                "PREPARE FOR WHAT IS COMING.",
+            ]
+            ly = panel.y + 140
+            for l in lines:
+                lbl = self.font_hud_lg.render(l, True, WHITE)
+                screen.blit(lbl, lbl.get_rect(center=(cx, ly)))
+                ly += 45
+
+            # Acknowledge Button
+            ack_btn = pygame.Rect(cx - 150, cy + 120, 300, 50)
+            pygame.draw.rect(screen, (200, 40, 40), ack_btn, border_radius=8)
+            pygame.draw.rect(screen, WHITE, ack_btn, 2, border_radius=8)
+            a_lbl = self.font_hud_lg.render("Acknowledge & Escape", True, WHITE)
+            screen.blit(a_lbl, a_lbl.get_rect(center=ack_btn.center))

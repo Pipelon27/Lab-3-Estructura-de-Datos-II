@@ -1867,6 +1867,14 @@ class Phone:
             path_oscar = "assets/Imagenes realistas personajes/Oscar Jimenez.png"
             if os.path.exists(path_oscar):
                 self.avatars["npc_oscar"] = pygame.image.load(path_oscar).convert_alpha()
+
+            path_axel = "assets/Imagenes realistas personajes/Axel Knight.png"
+            if os.path.exists(path_axel):
+                self.avatars["npc_axel_knight"] = pygame.image.load(path_axel).convert_alpha()
+
+            path_ava = "assets/Imagenes realistas personajes/Ava Thompson.png"
+            if os.path.exists(path_ava):
+                self.avatars["npc_ava_thompson"] = pygame.image.load(path_ava).convert_alpha()
         except Exception:
             pass
 
