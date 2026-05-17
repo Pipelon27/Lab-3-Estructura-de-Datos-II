@@ -311,14 +311,11 @@ class UI:
                   player.stamina, player.max_stamina,
                   STAMINA_YELLOW, STAMINA_BG, "SP")
 
-        # ── XP bar ──
-        from settings import XP_PER_LEVEL
-        total_xp = player.xp + (player.level - 1) * XP_PER_LEVEL
-        MAX_LEVEL = 10
-        max_total_xp = MAX_LEVEL * XP_PER_LEVEL
+        # ── Level bar ──
+        MAX_LEVEL = 30
         self._bar(screen, bars_x, 56, 180, 10,
-                  total_xp, max_total_xp,
-                  XP_BLUE, XP_BG, f"Lv{player.level}")
+                  player.level, MAX_LEVEL,
+                  XP_BLUE, XP_BG, "Lv")
 
         # ── money (to the right of bars) ──
         money_x = bars_x + 200

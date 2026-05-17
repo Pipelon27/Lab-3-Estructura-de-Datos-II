@@ -629,13 +629,6 @@ class Game:
             self.mission_manager.activate_mission("mission_server_room")
             self._current_main_mission_text = "Mission 9: Ask Lucas Kim about basement servers and get Basement Key."
             self.ui.show_notification("SUCCESS: School mainframe data acquired! The Smile Club knows you're coming.", NOTIF_SUCCESS, 8.0)
-            self.player.level += 1
-            from settings import SKILL_POINT_PER_LEVEL
-            self.player.skill_points += SKILL_POINT_PER_LEVEL
-            self.player.money += 10
-            if hasattr(self.ui, 'trigger_level_up'):
-                self.ui.trigger_level_up(10)
-            self._last_known_level = self.player.level
 
     def _handle_mainframe_event(self, event):
         if event.type == pygame.KEYDOWN:
@@ -1991,6 +1984,22 @@ class Game:
 
         if not hasattr(self, '_last_known_level'):
             self._last_known_level = self.player.level
+
+        if not hasattr(self, '_last_mission_text'):
+            self._last_mission_text = getattr(self, '_current_main_mission_text', None)
+        elif getattr(self, '_current_main_mission_text', None) != self._last_mission_text:
+            old_text = self._last_mission_text
+            new_text = getattr(self, '_current_main_mission_text', None)
+            self._last_mission_text = new_text
+            if old_text is not None and new_text is not None:
+                self.player.level += 1
+                from settings import SKILL_POINT_PER_LEVEL
+                self.player.skill_points += SKILL_POINT_PER_LEVEL
+                self.player.money += 10
+                if hasattr(self.ui, 'trigger_level_up'):
+                    self.ui.trigger_level_up(10)
+                self._last_known_level = self.player.level
+
         if self.player.level > self._last_known_level:
             self._last_known_level = self.player.level
             if hasattr(self.ui, 'trigger_level_up'):
@@ -2434,13 +2443,6 @@ class Game:
             rewards = self.mission_manager.complete_mission(mid)
             if rewards:
                 self._apply_rewards(rewards)
-                self.player.level += 1
-                from settings import SKILL_POINT_PER_LEVEL
-                self.player.skill_points += SKILL_POINT_PER_LEVEL
-                self.player.money += 10
-                if hasattr(self.ui, 'trigger_level_up'):
-                    self.ui.trigger_level_up(10)
-                self._last_known_level = self.player.level
                 msg = self.mission_manager.get_motivational_message()
                 self.ui.show_notification(f"✅ Mission complete! {msg}", NOTIF_SUCCESS, 5.0)
                 # Auto-activate newly available missions
