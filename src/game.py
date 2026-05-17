@@ -98,6 +98,7 @@ class Game:
         self.active_wallet_item = None
         self.wallet_focus_item = None
         self.selected_yearbook_group = "Athletes"
+        self.yearbook_scroll_offset = 0
         self.pause_sel      = 0
 
         # Transition cooldown (prevents rapid re-triggering)
@@ -864,6 +865,15 @@ class Game:
                 elif self.state == GameState.WALLET:
                     if self.active_wallet_item:
                         if self.active_wallet_item == "yearbook":
+                            if event.button == 4: # Scroll Up
+                                self.yearbook_scroll_offset = max(0, self.yearbook_scroll_offset - 1)
+                                print(f"[Yearbook] Scroll UP. Offset: {self.yearbook_scroll_offset}")
+                                return
+                            elif event.button == 5: # Scroll Down
+                                self.yearbook_scroll_offset += 1
+                                print(f"[Yearbook] Scroll DOWN. Offset: {self.yearbook_scroll_offset}")
+                                return
+
                             cx, cy = SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2
                             main_panel = pygame.Rect(cx - 600, cy - 300, 1200, 600)
                             left_panel = pygame.Rect(main_panel.x + 20, main_panel.y + 80, 280, main_panel.height - 100)
@@ -873,7 +883,10 @@ class Game:
                                 clicked_idx = (y_click - start_y) // 40
                                 if 0 <= clicked_idx < 6:
                                     groups = ["Athletes", "Tech Club", "Populars", "Academics", "Rebels", "Outsiders"]
+                                    old_group = self.selected_yearbook_group
                                     self.selected_yearbook_group = groups[clicked_idx]
+                                    if self.selected_yearbook_group != old_group:
+                                        self.yearbook_scroll_offset = 0
                                     print(f"[Yearbook] Selected group: {self.selected_yearbook_group}")
                                 return
                             elif main_panel.collidepoint(event.pos):
@@ -1338,10 +1351,18 @@ class Game:
             cur_idx = groups.index(self.selected_yearbook_group) if self.selected_yearbook_group in groups else 0
             if event.key in (pygame.K_UP, pygame.K_w):
                 self.selected_yearbook_group = groups[(cur_idx - 1) % len(groups)]
+                self.yearbook_scroll_offset = 0
                 print(f"[Yearbook] Cycled group UP to: {self.selected_yearbook_group}")
             elif event.key in (pygame.K_DOWN, pygame.K_s):
                 self.selected_yearbook_group = groups[(cur_idx + 1) % len(groups)]
+                self.yearbook_scroll_offset = 0
                 print(f"[Yearbook] Cycled group DOWN to: {self.selected_yearbook_group}")
+            elif event.key == pygame.K_PAGEUP:
+                self.yearbook_scroll_offset = max(0, self.yearbook_scroll_offset - 1)
+                print(f"[Yearbook] Keyboard scrolled UP. Offset: {self.yearbook_scroll_offset}")
+            elif event.key == pygame.K_PAGEDOWN:
+                self.yearbook_scroll_offset += 1
+                print(f"[Yearbook] Keyboard scrolled DOWN. Offset: {self.yearbook_scroll_offset}")
             elif event.key in (pygame.K_ESCAPE, pygame.K_i):
                 self.active_wallet_item = None
 
@@ -3235,10 +3256,16 @@ class Game:
             if npc_list:
                 npc_groups[group_name] = npc_list
         
+        # Clamp scroll offset
+        selected_npcs = npc_groups.get(self.selected_yearbook_group, [])
+        max_scroll = max(0, len(selected_npcs) - 4)
+        self.yearbook_scroll_offset = max(0, min(self.yearbook_scroll_offset, max_scroll))
+        
         return {
             "reputation_data": reputation_data,
             "npc_groups": npc_groups,
             "selected_group": self.selected_yearbook_group,
+            "scroll_offset": self.yearbook_scroll_offset,
         }
 
     def _apply_rewards(self, rewards: dict):
