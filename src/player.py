@@ -74,6 +74,11 @@ class Player:
         self.max_stamina = PLAYER_MAX_STAMINA
         self.current_floor = 1
 
+        # Real-time Combat
+        self.is_attacking = False
+        self.attack_timer = 0.0
+        self.attack_cooldown = 0.0
+
         # XP / levelling
         self.xp            = 0
         self.level         = 1
@@ -198,6 +203,14 @@ class Player:
             self.stamina = min(self.max_stamina,
                                self.stamina + STAMINA_REGEN_RATE)
 
+        # Real-time combat update
+        if self.attack_timer > 0:
+            self.attack_timer -= dt
+            if self.attack_timer <= 0:
+                self.is_attacking = False
+        if self.attack_cooldown > 0:
+            self.attack_cooldown -= dt
+
         # Update dash trail
         new_trail = []
         for r, t in self._dash_trail:
@@ -242,6 +255,33 @@ class Player:
         self._dash_timer -= 1
         if self._dash_timer <= 0:
             self._dashing = False
+
+    def start_attack(self):
+        """Initiate an attack if enough stamina and off cooldown."""
+        if self.attack_cooldown <= 0 and self.stamina >= 10:
+            # Controller rumble feedback
+            controller = get_controller()
+            if controller.connected:
+                controller.rumble(0.2, 0.4, 100)
+            self.stamina -= 10
+            self.is_attacking = True
+            self.attack_timer = 0.2  # 0.2s active hitbox
+            self.attack_cooldown = 0.5
+
+    def get_attack_hitbox(self) -> pygame.Rect | None:
+        if not self.is_attacking:
+            return None
+        from settings import ATTACK_RANGE
+        hr = pygame.Rect(0, 0, ATTACK_RANGE, ATTACK_RANGE)
+        if self.direction == Direction.UP:
+            hr.midbottom = self.rect.midtop
+        elif self.direction == Direction.DOWN:
+            hr.midtop = self.rect.midbottom
+        elif self.direction == Direction.LEFT:
+            hr.midright = self.rect.midleft
+        elif self.direction == Direction.RIGHT:
+            hr.midleft = self.rect.midright
+        return hr
 
     def _collide(self, walls: list[pygame.Rect], dx: float, dy: float):
         """Push the player out of any wall it overlaps."""
@@ -390,6 +430,13 @@ class Player:
         name_surf = font.render(self.character.value.title(), True, WHITE)
         screen.blit(name_surf,
                     name_surf.get_rect(center=(draw_rect.centerx, draw_rect.top - 10)))
+
+        # Draw attack hitbox if attacking
+        if self.is_attacking:
+            hitbox = self.get_attack_hitbox()
+            if hitbox:
+                hr_draw = camera.apply_rect(hitbox)
+                pygame.draw.rect(screen, (255, 50, 50), hr_draw, 2, border_radius=4)
 
     # ── serialisation (for network) ───────────────────────────
 
