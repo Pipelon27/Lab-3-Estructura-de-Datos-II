@@ -35,7 +35,7 @@ class ScheduleManager:
         "academics_study":   ["f1_library", "f2_science_lab"],
         "academics_social":  ["f1_main_hall", "f2_corridor"],
         # Athletes (23 NPCs → 12 + 11)
-        "athletes_sports":   ["ci_court", "c_coliseum_court"],
+        "athletes_sports":   ["ci_court", "ci_hall"],
         "athletes_casual":   ["c_tennis", "pi_hall"],
         # Populars (23 NPCs → 12 + 11)
         "populars_social":   ["c_fountain", "rt_terrace"],
@@ -70,24 +70,19 @@ class ScheduleManager:
     DEFAULT_CAPACITY = 12
 
     # ── Time blocks (minutes from midnight) ─────────────────────
-    # (start, end, name, primary_zone_ratio)
-    # primary_zone_ratio = fraction of NPCs sent to their subgroup's
-    # preferred zones. The rest go to transit zones.
+    # Single time block so NPCs stay in their assigned room ALL DAY
     TIME_BLOCKS: list[tuple[int, int, str, float]] = [
-        (360,  420, "arrival",    0.0),   # 06:00-07:00
-        (420,  720, "classes",    0.7),   # 07:00-12:00
-        (720,  780, "recess",     0.0),   # 12:00-01:00  (handled by cafeteria system)
-        (780,  960, "activities", 0.8),   # 01:00-04:00
+        (0,  1440, "classes",    0.8),   # 00:00-24:00
     ]
 
     RECESS_ZONES: list[str] = ["f1_cafeteria", "c_fountain", "c_gardens"]
     TRANSIT_ZONES: list[str] = ["f1_main_hall", "f2_corridor", "f1_men_bath", "f1_women_bath"]
-    ARRIVAL_ZONES: list[str] = ["c_roundabout", "c_parking", "c_road"]
+    ARRIVAL_ZONES: list[str] = ["c_parking", "c_gardens", "c_fountain"]
 
     # Detention config
     DETENTION_ROOM = "f1_counselor"
-    DETENTION_START = 600   # 10:00 AM
-    DETENTION_END = 720     # 12:00 PM
+    DETENTION_START = 0
+    DETENTION_END = 0
     DETENTION_COUNT = (2, 4)  # min, max NPCs to detain
 
     def __init__(self):
@@ -96,6 +91,7 @@ class ScheduleManager:
         self._detention_active: bool = False
         self._detention_npcs: list[str] = []  # IDs of detained NPCs
         self._managed_npc_ids: set[str] = set()
+        self._allocation_map: dict[str, str] = {}
 
     # ──────────────────────────────────────────────────────────
     #  SUBGROUP ASSIGNMENT
@@ -165,23 +161,9 @@ class ScheduleManager:
             if room:
                 self._room_counts[room.id] = self._room_counts.get(room.id, 0) + 1
 
-    def _check_capacity(self, room_id: str) -> bool:
-        """Return True if the room can accept another NPC."""
-        cap = self.ROOM_CAPACITY.get(room_id, self.DEFAULT_CAPACITY)
-        current = self._room_counts.get(room_id, 0)
-        return current < cap
-
-    def _reserve_room(self, room_id: str) -> None:
-        """Increment the count for a room (pre-reservation)."""
-        self._room_counts[room_id] = self._room_counts.get(room_id, 0) + 1
-
-    # ──────────────────────────────────────────────────────────
-    #  MAIN UPDATE LOOP
-    # ──────────────────────────────────────────────────────────
-
     def update(self, time_minutes: float,
                npc_manager: NPCManager, school_map: SchoolMap,
-               player_floor: int, is_visible=None) -> None:
+               player_floor: int, is_visible=None, day_number: int = 1) -> None:
         """Called every frame from _update_class_schedule. Detects block changes.
         
         Args:
@@ -202,7 +184,7 @@ class ScheduleManager:
             self._recount_rooms(npc_manager, school_map)
             self._on_block_change(block_name, primary_ratio,
                                   npc_manager, school_map, player_floor,
-                                  is_visible=is_visible)
+                                  is_visible=is_visible, day_number=day_number)
 
         # Check detention timing
         if (self.DETENTION_START <= time_minutes < self.DETENTION_END
@@ -218,9 +200,103 @@ class ScheduleManager:
     # ──────────────────────────────────────────────────────────
 
     def _on_block_change(self, block_name: str, primary_ratio: float,
-                         npc_manager: NPCManager, school_map: SchoolMap,
-                         player_floor: int, is_visible=None) -> None:
+                          npc_manager: NPCManager, school_map: SchoolMap,
+                          player_floor: int, is_visible=None, day_number: int = 1) -> None:
         """Redistribute NPCs when the time block changes."""
+        
+        # Build balanced allocation map
+        permitted_rooms = [
+            "c_parking", "c_fountain", "c_gardens", "c_tennis",
+            "f1_infirmary", "f1_auditorium", "f1_main_hall", "f1_reception", "f1_library", "f1_cafeteria", "f1_counselor",
+            "f2_art_room", "f2_music_room", "f2_science_lab", "f2_corridor", "f2_classrooms", "f2_conference", "f2_admin",
+            "rt_terrace", "rt_benches",
+            "ci_court", "ci_hall"
+        ]
+        if day_number < 2:
+            permitted_rooms.append("f1_computer_lab")
+            
+        large_rooms = [
+            "f1_main_hall", "f1_cafeteria", "c_gardens", "c_fountain", "f2_corridor"
+        ]
+        
+        managed_npcs = [npc_manager.npcs.get(nid) for nid in self._managed_npc_ids if npc_manager.npcs.get(nid)]
+        # Use a stable random seed based on day number to ensure consistency throughout the day but variety between days
+        rnd = random.Random(day_number * 1000 + 42)
+        rnd.shuffle(managed_npcs)
+        
+        males = [n for n in managed_npcs if getattr(n, "gender", "") == "male"]
+        females = [n for n in managed_npcs if getattr(n, "gender", "") == "female"]
+        
+        allocated_ids = set()
+        self._allocation_map = {}
+        
+        # 1. Allocate bathrooms (exactly 4 of each gender)
+        for n in males[:4]:
+            self._allocation_map[n.id] = "f1_men_bath"
+            allocated_ids.add(n.id)
+        for n in females[:4]:
+            self._allocation_map[n.id] = "f1_women_bath"
+            allocated_ids.add(n.id)
+            
+        # 2. Filter remaining NPCs
+        remaining_npcs = [n for n in managed_npcs if n.id not in allocated_ids]
+        
+        # 3. Base allocation: exactly 3 NPCs in each permitted room
+        for room_id in permitted_rooms:
+            for _ in range(3):
+                if remaining_npcs:
+                    n = remaining_npcs.pop()
+                    self._allocation_map[n.id] = room_id
+                    allocated_ids.add(n.id)
+                    
+        # 4. Secondary allocation: add a 4th NPC to each permitted room
+        for room_id in permitted_rooms:
+            if remaining_npcs:
+                n = remaining_npcs.pop()
+                self._allocation_map[n.id] = room_id
+                allocated_ids.add(n.id)
+                
+        # 5. Overflow allocation: larger rooms get extra NPCs to look more populated
+        while remaining_npcs:
+            for room_id in large_rooms:
+                if remaining_npcs:
+                    n = remaining_npcs.pop()
+                    self._allocation_map[n.id] = room_id
+                    allocated_ids.add(n.id)
+                    
+        # Swap rooftop non-populars with populars outside to keep only populars on the rooftop
+        rooftop_rooms = {"rt_terrace", "rt_benches"}
+        from settings import SocialGroup
+        
+        # 1. Identify non-populars currently assigned to the rooftop
+        invalid_rooftop_npcs = []
+        for npc in managed_npcs:
+            assigned_room = self._allocation_map.get(npc.id)
+            if assigned_room in rooftop_rooms:
+                is_popular = (npc.group == SocialGroup.POPULARS if hasattr(SocialGroup, "POPULARS") else getattr(npc, "group", None) == "populars")
+                if not is_popular:
+                    invalid_rooftop_npcs.append(npc)
+                    
+        # 2. Identify populars currently assigned outside the rooftop (excluding bathroom attendants/gender rooms)
+        populars_outside = []
+        for npc in managed_npcs:
+            assigned_room = self._allocation_map.get(npc.id)
+            if assigned_room and assigned_room not in rooftop_rooms and assigned_room not in {"f1_men_bath", "f1_women_bath"}:
+                is_popular = (npc.group == SocialGroup.POPULARS if hasattr(SocialGroup, "POPULARS") else getattr(npc, "group", None) == "populars")
+                if is_popular:
+                    populars_outside.append(npc)
+                    
+        # 3. Swap their rooms in self._allocation_map
+        rnd.shuffle(populars_outside)
+        for bad_npc in invalid_rooftop_npcs:
+            if populars_outside:
+                good_npc = populars_outside.pop()
+                room_a = self._allocation_map[bad_npc.id]
+                room_b = self._allocation_map[good_npc.id]
+                self._allocation_map[bad_npc.id] = room_b
+                self._allocation_map[good_npc.id] = room_a
+                
+        # Proceed with moving all NPCs to their balanced targets
         count = 0
         for npc_id in self._managed_npc_ids:
             npc = npc_manager.npcs.get(npc_id)
@@ -241,36 +317,7 @@ class ScheduleManager:
     def _pick_target_room(self, npc, block_name: str,
                           primary_ratio: float) -> str | None:
         """Choose a target room for an NPC based on the time block."""
-        if block_name == "arrival":
-            return random.choice(self.ARRIVAL_ZONES)
-
-        if block_name == "recess":
-            # During recess, most NPCs are moved by the cafeteria system.
-            # Just give them a zone to wander toward.
-            room = random.choice(self.RECESS_ZONES)
-            if self._check_capacity(room):
-                self._reserve_room(room)
-                return room
-            # Fallback to transit zone
-            return random.choice(self.TRANSIT_ZONES)
-
-        # "classes" or "activities"
-        subgroup = getattr(npc, "subgroup", "")
-        preferred = self.SUBGROUP_ZONES.get(subgroup, [])
-
-        if random.random() < primary_ratio and preferred:
-            # Send to preferred zone
-            random.shuffle(preferred)
-            for room in preferred:
-                if self._check_capacity(room):
-                    self._reserve_room(room)
-                    return room
-            # All preferred full — fall through to transit
-
-        # Transit zone
-        transit = random.choice(self.TRANSIT_ZONES)
-        self._reserve_room(transit)
-        return transit
+        return self._allocation_map.get(npc.id, "f1_main_hall")
 
     # ──────────────────────────────────────────────────────────
     #  HYBRID MOVEMENT
@@ -316,15 +363,10 @@ class ScheduleManager:
                 npc.target_pos = (final_x, final_y)
                 npc.target_queue = []
             else:
-                # Need to cross floors: walk to stairs, then switch floor via waypoints
-                route = build_multi_floor_route(npc.current_floor, target_floor)
-                if route:
-                    npc.target_pos = route[0] if not isinstance(route[0], str) else (npc.rect.centerx, npc.rect.centery)
-                    npc.target_queue = route[1:] + [(final_x, final_y)]
-                else:
-                    # No route found — walk to a neutral position (don't teleport visible NPC)
-                    npc.target_pos = (final_x, final_y)
-                    npc.target_queue = []
+                # Need to cross floors: user requested NO NPCs in stairs.
+                # So we just teleport them immediately instead of walking to the stairs and bunching up.
+                self._teleport_npc(npc, target_floor, final_x, final_y)
+                return
         else:
             # ── TELEPORT: player cannot see this NPC ──
             self._teleport_npc(npc, target_floor, final_x, final_y)

@@ -32,7 +32,7 @@ from settings import (
 from src.phone      import Phone
 from src.map        import SchoolMap
 from src.player     import Aiden, Lena
-from src.npc        import NPCManager, NPC
+from src.npc        import NPCManager, NPC, is_generic_wanderer
 from src.camera     import Camera
 from src.inventory  import Inventory
 from src.mission    import MissionManager, EventQueue
@@ -48,6 +48,7 @@ from src.basketball import BasketballGame
 from src.social_reputation import ReputationManager
 from src.social_dialogue import SocialDialogueManager
 from src.social_ui import SocialInteractionUI
+from src.rooftop_party import RooftopParty
 from src.controller import get_controller, init_controller, update_controller, XBOX_A
 from src.schedule_manager import ScheduleManager
 
@@ -113,6 +114,10 @@ class Game:
         self._oscar_win_dialogue_index: int = 0
         self._oscar_win_dialogue_completed: bool = False
         self._oscar_win_dialogue_lines: list[tuple[str, str]] = []
+        self._marcus_win_dialogue_active: bool = False
+        self._marcus_win_dialogue_index: int = 0
+        self._marcus_win_dialogue_completed: bool = False
+        self._marcus_win_dialogue_lines: list[tuple[str, str]] = []
 
         # Day-cycle
         self.day_number     = 1
@@ -181,11 +186,11 @@ class Game:
         # ── Parked car (parking lot) ──
         self._parked_car_rect = pygame.Rect(900, 2400, 300, 105)
         self._extra_parked_cars = [
-            (pygame.Rect(350, 2600, 200, 90), (180, 50, 50), 180),    # Red, faces LEFT
-            (pygame.Rect(700, 2100, 200, 90), (50, 100, 180), 0),     # Blue, faces RIGHT
-            (pygame.Rect(600, 2750, 200, 90), (50, 180, 80), 180),    # Green, faces LEFT
-            (pygame.Rect(350, 2150, 200, 90), (150, 150, 160), 0),    # Silver, faces RIGHT
-            (pygame.Rect(1000, 2600, 200, 90), (45, 45, 50), 180),    # Soft black, faces LEFT
+            (pygame.Rect(350, 2600, 200, 90), 'ME_Singles_Vehicles_32x32_Car_Left_4.png', 180),    # Red, faces LEFT
+            (pygame.Rect(700, 2100, 200, 90), 'ME_Singles_Vehicles_32x32_Car_Right_1.png', 0),     # Blue, faces RIGHT
+            (pygame.Rect(600, 2750, 200, 90), 'ME_Singles_Vehicles_32x32_Car_Left_2.png', 180),    # Green, faces LEFT
+            (pygame.Rect(350, 2150, 200, 90), 'ME_Singles_Vehicles_32x32_Car_Right_6.png', 0),     # Silver/Grey, faces RIGHT
+            (pygame.Rect(1000, 2600, 200, 90), 'ME_Singles_Vehicles_32x32_Car_Left_5.png', 180),   # Black, faces LEFT
         ]
         self._car_panel_active: bool = False  # "End day?" confirmation panel
         self._car_panel_input_delay: float = 0.0  # delay before accepting input
@@ -350,16 +355,15 @@ class Game:
             noah_carter.show_name = True
 
         # ── Push random NPCs out of staircase rooms during cinematic ──
-        stair_ids = {"f1_stairs_2f", "f1_basement_stairs",
-                     "f2_stairs_1f", "f2_stairs_rooftop", "bs_stairs_1f"}
+        stair_ids = {"f1_stairs_2f", "f1_basement_stairs", "f2_stairs_1f", "f2_roof_stairs", "b_stairs_up", "rt_stairs_down"}
         for npc in self.npc_manager.npcs.values():
-            if npc.id.startswith("npc_rnd_"):
+            if is_generic_wanderer(npc.id):
                 fl = self.school_map.get_floor(npc.current_floor)
                 if fl:
                     room = fl.get_room_at(npc.rect.centerx, npc.rect.centery)
                     if room and room.id in stair_ids:
                         # Move to centre of the floor's main corridor
-                        npc.rect.center = (1600, 1000)
+                        npc.rect.center = (1600, 1000) if npc.current_floor != 4 else (1600, 500)
 
         # Ensure Noah's spawn area is clear
         self._clear_noah_area(radius=160)
@@ -387,6 +391,9 @@ class Game:
         self.pingpong = PingPongGame()
         # Basketball minigame
         self.basketball = BasketballGame()
+        
+        # Rooftop Party (Day 3 event)
+        self.rooftop_party = RooftopParty(self.screen)
         
         # ── NEW SOCIAL SYSTEMS ────────────────────────────────
         self.social_reputation_manager = ReputationManager()
@@ -428,7 +435,9 @@ class Game:
         axel.ai_enabled = False
         axel.ignore_schedule = True
         axel.show_name = True
-        axel.rect.center = (1010, 202)
+        from settings import Direction
+        axel.direction = Direction.RIGHT
+        axel.rect.center = (1058, 224)  # Literally in the entrance of the stairs
 
     def _is_npc_on_camera(self, npc) -> bool:
         """Return True if the NPC is on the same floor as the player AND within the camera viewport.
@@ -697,10 +706,7 @@ class Game:
                 obj.completed = True
                 obj.progress = obj.required
             self.mission_manager.completed_ids.add("mission_high_school_mainframe")
-        self.mission_manager.unlock_mission("mission_server_room")
-        self.mission_manager.activate_mission("mission_server_room")
-        self._current_main_mission_text = "Mission 9: Ask Lucas Kim about basement servers and get Basement Key."
-        self.ui.show_notification("SUCCESS: School mainframe data acquired! The Smile Club knows you're coming.", NOTIF_SUCCESS, 8.0)
+        self._complete_day2_story()
 
     def _handle_mainframe_event(self, event):
         if event.type == pygame.KEYDOWN:
@@ -816,6 +822,12 @@ class Game:
                     self._advance_oscar_win_dialogue()
                 elif event.type == pygame.MOUSEBUTTONDOWN:
                     self._advance_oscar_win_dialogue()
+                continue
+            if getattr(self, "_marcus_win_dialogue_active", False):
+                if event.type == pygame.KEYDOWN and event.key in (pygame.K_SPACE, pygame.K_RETURN):
+                    self._advance_marcus_win_dialogue()
+                elif event.type == pygame.MOUSEBUTTONDOWN:
+                    self._advance_marcus_win_dialogue()
                 continue
             if getattr(self, 'phone', None) and self.phone.is_visible:
                 if self.phone.handle_input(event):
@@ -1015,6 +1027,10 @@ class Game:
             self._handle_controller_wallet(controller)
         elif self.state == GameState.MAP:
             self._handle_controller_map(controller)
+        elif self.state == GameState.SOCIAL_INTERACTION:
+            self.social_dialogue_manager.handle_controller(controller)
+        elif self.state == GameState.BASKETBALL:
+            self.basketball.handle_controller(controller)
 
 
     def _toggle_pause(self):
@@ -1388,8 +1404,8 @@ class Game:
                 self._car_panel_cooldown = 1.0  # prevent re-trigger
             return
 
-        # If E is pressed and an NPC is nearby, open dialogue;
-        if event.key == pygame.K_e:
+        # If E, ENTER, or SPACE is pressed:
+        if event.key in (pygame.K_e, pygame.K_RETURN, KEY_INTERACT):
             # Priority 1: Computer Prompt (Mainframe Login)
             if getattr(self, '_computer_prompt_active', False):
                 self._start_mainframe_login()
@@ -1404,8 +1420,12 @@ class Game:
             if npc and npc.health > 0:
                 self._try_interact()
                 return
-        # SPACE (KEY_INTERACT) and dash aliases trigger dash
-        elif event.key in (KEY_INTERACT, KEY_DASH_ALT, KEY_DASH_ALT2):
+
+            # If KEY_INTERACT (SPACE) was pressed but no interaction happened, trigger dash
+            if event.key == KEY_INTERACT:
+                self.player.start_dash()
+
+        elif event.key in (KEY_DASH_ALT, KEY_DASH_ALT2):
             self.player.start_dash()
         elif event.key == KEY_INVENTORY:
             # Inventory removed - open wallet instead
@@ -1467,9 +1487,10 @@ class Game:
             ("mission_tech_club_rep", 2, "Day 2: Earn Alan's Trust", "Mission 6: Gain 70 Tech Club reputation, then return to Alan Chen."),
             ("mission_return_tech_lab", 2, "Day 2: Return to Ava Thompson", "Mission 7: Deliver the hacked credentials to Ava Thompson."),
             ("mission_high_school_mainframe", 2, "Day 2: High School Mainframe", "Mission 8: Switch to Lena, go to the computer marked with X in the Tech Lab and extract information."),
-            ("mission_helping_mia", 3, "Day 3: Helping Mia", "Day 3 - Mission 1: Talk to Mia Nakamura and confront Ava Patel."),
-            ("mission_server_room", 4, "Day 4: Server Room Access", "Day 4 - Mission 1: Ask Lucas Kim about basement servers and get the key."),
-            ("mission_final_showdown", 5, "Day 5: Final Showdown", "Day 5 - Mission 1: Enter Basement, disable Smile Club server, confront Director Walsh.")
+            ("mission_server_room", 3, "Day 3: Talk to Marcus Green", "Mission 9: Talk to Marcus Green in the Athletic Coliseum."),
+            ("mission_rooftop_party", 3, "Day 3: Rooftop Party", "Mission 10: Go to the Rooftop party and hang out with the populars."),
+            ("mission_helping_mia", 3, "Day 3: Helping Mia", "Side Mission: Talk to Mia Nakamura and confront Ava Patel."),
+            ("mission_final_showdown", 4, "Day 4: Final Showdown", "Mission 11: Enter Basement, disable Smile Club server, confront Director Walsh.")
         ]
 
     def _get_current_mission_index(self) -> int:
@@ -1587,7 +1608,7 @@ class Game:
         if target_id == "mission_final_showdown":
             self.inventory.add_item("Basement Key", ItemCategory.KEY, "Opens the door to the school basement")
         from src.inventory import ItemCategory
-        if target_id in ("mission_return_tech_lab", "mission_high_school_mainframe", "mission_helping_mia", "mission_server_room", "mission_final_showdown"):
+        if target_id in ("mission_return_tech_lab", "mission_high_school_mainframe", "mission_helping_mia", "mission_server_room", "mission_rooftop_party", "mission_final_showdown"):
             if not self.inventory.has_item("Hacked Credentials"):
                 self.inventory.add_item("Hacked Credentials", ItemCategory.NOTE, "Hacked high school system credentials provided by Alan Chen.")
         if target_id == "mission_high_school_mainframe":
@@ -2256,6 +2277,11 @@ class Game:
                 self.pingpong.finished = False
                 self.pingpong.reset()
                 self.state = GameState.PLAYING
+                try:
+                    if pygame.mixer.get_init():
+                        pygame.mixer.music.stop()
+                except Exception:
+                    pass
                 self.ui.show_notification("Settings not yet available in-game.", NOTIF_INFO)
             # When a match result arrives, show end-screen and apply reputation changes
             elif result is not None and not getattr(self.pingpong, 'waiting_for_dismiss', False):
@@ -2274,12 +2300,23 @@ class Game:
                 self.pingpong.waiting_for_dismiss = True
 
         elif self.state == GameState.BASKETBALL:
+            # Fix camera to the center of the court (476 + 424, 258 + 347)
+            class _CourtTarget:
+                def __init__(self):
+                    self.rect = pygame.Rect(0, 0, 0, 0)
+                    self.rect.centerx = 900
+                    self.rect.centery = 605
+            self.camera.update(_CourtTarget())
+            
             result = self.basketball.update(dt)
             if getattr(self.basketball, 'finished', False):
                 self.basketball.finished = False
+                player_won = self.basketball.player_score > self.basketball.opp_score
+                if hasattr(self.basketball, 'floor') and self.basketball.floor:
+                    self.basketball.floor.hide_hoops = False
                 self.basketball.reset()
                 self.state = GameState.PLAYING
-                if self.basketball.player_score > self.basketball.opp_score:
+                if player_won:
                     self.reputation.reputation_score = min(100, self.reputation.reputation_score + 20)
                     self.player.level += 1
                     from settings import SKILL_POINT_PER_LEVEL
@@ -2288,6 +2325,7 @@ class Game:
                     if hasattr(self.ui, 'trigger_level_up'):
                         self.ui.trigger_level_up()
                     self._last_known_level = self.player.level
+                    self._begin_marcus_win_dialogue()
                 else:
                     self.reputation.reputation_score = max(0, self.reputation.reputation_score - 10)
             # When player dismisses the end screen, finish the minigame and return to playing
@@ -2330,6 +2368,11 @@ class Game:
             self.pingpong.finished = False
             self.pingpong.reset()
             self.state = GameState.PLAYING
+            try:
+                if pygame.mixer.get_init():
+                    pygame.mixer.music.stop()
+            except Exception:
+                pass
             self._pending_pingpong_result = None
             if pingpong_result == "win":
                 self._begin_oscar_win_dialogue()
@@ -2359,6 +2402,9 @@ class Game:
         # Update clock with fast-forward dt
         self._tick_time(current_dt)
         self._update_class_schedule()
+        
+        # Update rooftop party for Day 3 event
+        self.rooftop_party.update(dt, self.day_number)
         
         # Transition cooldown
         if self._transition_cooldown > 0:
@@ -2415,6 +2461,10 @@ class Game:
             walls.append(self._parked_car_rect)
             for rect, _, _ in self._extra_parked_cars:
                 walls.append(rect)
+        
+        # Rooftop party collisions
+        if self.current_floor == FLOOR_ROOFTOP and self.day_number >= 3:
+            walls.extend(self.rooftop_party.get_collisions())
                     
         # Apply floor-specific speed boost (50% faster in main building) and faster trail decay
         in_main_building = self.current_floor in (FLOOR_1F, FLOOR_2F)
@@ -2505,13 +2555,21 @@ class Game:
             if abs(pdx) >= abs(pdy):
                 if pdx >= 0:
                     _npc.rect.x += push_amt
+                    if walls and any(_npc.rect.colliderect(w) for w in walls):
+                        _npc.rect.x -= push_amt
                 else:
                     _npc.rect.x -= push_amt
+                    if walls and any(_npc.rect.colliderect(w) for w in walls):
+                        _npc.rect.x += push_amt
             else:
                 if pdy >= 0:
                     _npc.rect.y += push_amt
+                    if walls and any(_npc.rect.colliderect(w) for w in walls):
+                        _npc.rect.y -= push_amt
                 else:
                     _npc.rect.y -= push_amt
+                    if walls and any(_npc.rect.colliderect(w) for w in walls):
+                        _npc.rect.y += push_amt
 
             # Keep NPC in bounds
             if floor:
@@ -2576,10 +2634,21 @@ class Game:
             for door in floor.doors:
                 if door.locked:
                     npc_walls.append(door.rect)
+            
+            # Physically block all stair rooms so generic NPCs can't wander into them
+            stair_room_ids = {
+                "f1_stairs_2f", "f1_basement_stairs", 
+                "f2_stairs_1f", "f2_roof_stairs", 
+                "b_stairs_up", "rt_stairs_down"
+            }
+            for rid in stair_room_ids:
+                r = floor.rooms.get(rid)
+                if r:
+                    npc_walls.append(r.rect)
         
         # Staircase and building-entry restriction for generic NPCs
         restricted = [
-            "f1_stairs_2f", "f1_basement_stairs", "f2_stairs_1f", "f2_stairs_rooftop", "bs_stairs_1f"
+            "f1_stairs_2f", "f1_basement_stairs", "f2_stairs_1f", "f2_roof_stairs", "b_stairs_up", "rt_stairs_down"
         ]
         if self.current_floor == FLOOR_CAMPUS:
             restricted += ["c_building", "c_tennis", "c_coliseum", "c_b_hall", "c_b_lab", "c_b_lib"]
@@ -2591,7 +2660,7 @@ class Game:
             # Host or Solo: run full NPC AI
             self.npc_manager.update_on_floor(
                 current_dt, self.current_floor, floor, npc_walls,
-                classrooms_restricted=(self.current_floor == FLOOR_CAMPUS),
+                classrooms_restricted=True,
                 restricted_rooms=restricted,
                 is_visible=self._is_npc_on_camera
             )
@@ -2617,17 +2686,33 @@ class Game:
                             if abs(dx) >= abs(dy):
                                 if dx >= 0:
                                     b.rect.x += 1
+                                    if any(b.rect.colliderect(w) for w in floor1_ref.walls):
+                                        b.rect.x -= 1
                                     a.rect.x -= 1
+                                    if any(a.rect.colliderect(w) for w in floor1_ref.walls):
+                                        a.rect.x += 1
                                 else:
                                     b.rect.x -= 1
+                                    if any(b.rect.colliderect(w) for w in floor1_ref.walls):
+                                        b.rect.x += 1
                                     a.rect.x += 1
+                                    if any(a.rect.colliderect(w) for w in floor1_ref.walls):
+                                        a.rect.x -= 1
                             else:
                                 if dy >= 0:
                                     b.rect.y += 1
+                                    if any(b.rect.colliderect(w) for w in floor1_ref.walls):
+                                        b.rect.y -= 1
                                     a.rect.y -= 1
+                                    if any(a.rect.colliderect(w) for w in floor1_ref.walls):
+                                        a.rect.y += 1
                                 else:
                                     b.rect.y -= 1
+                                    if any(b.rect.colliderect(w) for w in floor1_ref.walls):
+                                        b.rect.y += 1
                                     a.rect.y += 1
+                                    if any(a.rect.colliderect(w) for w in floor1_ref.walls):
+                                        a.rect.y -= 1
 
         # Day timer (use current_dt for faster phase transitions)
         self.day_timer += current_dt
@@ -2653,6 +2738,8 @@ class Game:
                 # Auto-activate newly available missions
                 for m in self.mission_manager.get_available():
                     self.mission_manager.activate_mission(m.id)
+                    if m.id == "mission_final_showdown":
+                        self._current_main_mission_text = "Mission 11: Enter the Basement, disable the Smile Club server, and confront Director Walsh."
 
         # Update markers for key NPCs
         self._update_minimap_markers()
@@ -2703,47 +2790,22 @@ class Game:
         current = self.time_of_day_minutes
         self._last_time_minutes = current
 
-        # --- Staggered entry/exit for NPCs ---
-        # 09:30 AM (570 mins) - Move random 1F NPCs to cafeteria (Break Time starts)
-        if previous < 570 <= current:
-            self.ui.trigger_announcement("BREAK TIME!", "Class dismissed - Cafeteria is now open")
-            get_controller().rumble(0.7, 0.7, 500)
-            self._move_random_npcs_to_cafeteria()
-
-        # 11:00 AM (660 mins) - Break Time is Over notification & leaving
-        if previous < 660 <= current:
-            self.ui.show_notification("Break Time is Over! Head back to class", NOTIF_WARNING, 4.0)
-            get_controller().rumble(0.5, 0.5, 400)
-            self._move_npcs_out_of_cafeteria()
-
-        # 01:30 PM (810 mins) - Return to cafeteria for lunch
-        if previous < 810 <= current:
-            self.ui.trigger_announcement("LUNCH TIME!", "Today's lunch is: Hamburger with French fries")
-            get_controller().rumble(0.7, 0.7, 500)
-            self._move_random_npcs_to_cafeteria()
-
-        # 03:00 PM (900 mins) - Lunch Time is Over notification & leaving
-        if previous < 900 <= current:
-            self.ui.show_notification("Lunch Time is Over! Head back to class", NOTIF_WARNING, 4.0)
-            get_controller().rumble(0.5, 0.5, 400)
-            self._move_npcs_out_of_cafeteria()
-
-        # 4:00 PM (960 mins) — Freeze clock, notify player, start NPC departure
+        # 4:00 PM (960 mins) — Freeze clock, notify player, NO NPC DEPARTURE
         if current >= 960:
             self.time_of_day_minutes = 960  # Freeze at exactly 4:00 PM
             if not self._school_day_ended:
                 self._school_day_ended = True
-                self.ui.trigger_announcement("SCHOOL'S OUT!", "Head to the bus to go home")
-                self.ui.show_notification("\U0001f6d1 School's out! Head to the bus to go home.", NOTIF_INFO, 8.0)
+                self.ui.trigger_announcement("SCHOOL'S OUT!", "Classes are over for the day.")
+                self.ui.show_notification("School's out! (NPCs will stay in their assigned rooms)", NOTIF_INFO, 8.0)
                 get_controller().rumble(0.7, 0.7, 500)
-                self._trigger_npc_departure()
             return
 
         # Update ScheduleManager for NPC routines
         if hasattr(self, 'schedule_manager'):
             self.schedule_manager.update(
                 current, self.npc_manager, self.school_map, self.current_floor,
-                is_visible=self._is_npc_on_camera
+                is_visible=self._is_npc_on_camera,
+                day_number=self.day_number
             )
         if self.day_number >= 2:
             self._place_ava_for_story()
@@ -2841,7 +2903,7 @@ class Game:
         radius_sq = radius * radius
         npcs = self.npc_manager.get_npcs_on_floor(noah.current_floor)
         for npc in npcs:
-            if npc is noah or not npc.id.startswith("npc_rnd_"):
+            if npc is noah or not is_generic_wanderer(npc.id):
                 continue
             dx = npc.rect.centerx - noah.rect.centerx
             dy = npc.rect.centery - noah.rect.centery
@@ -3015,7 +3077,7 @@ class Game:
         key_npcs = {
             "npc_gordon":      ("El Gastroo",  (200, 100, 50)),
             "npc_dylan":       ("Dylan Brooks",   (200, 50, 50)),
-            "npc_marcus":      ("Marcus Rivera",  (50, 100, 200)),
+            "npc_marcus_green":("Marcus Green",   (50, 100, 200)),
             "npc_director":    ("Director Walsh", (150, 50, 200)),
             "npc_noah_carter": ("Noah Carter",    (50, 180, 120)),
             "npc_ava_thompson": ("Ava Thompson",  (255, 180, 80)),
@@ -3215,8 +3277,6 @@ class Game:
             else:
                 msg = f"📅 {day_name} — {phase_label}"
                 self.ui.show_notification(msg, NOTIF_INFO)
-            self.npc_manager.update_schedules(self.current_phase, self.school_map, is_visible=self._is_npc_on_camera)
-            self._spread_first_floor_npcs()
             if random.random() < 0.3:
                 self._random_event()
         else:
@@ -3423,10 +3483,14 @@ class Game:
                 self.ui.show_notification("Ava Thompson looks at you: 'You don't have the credentials yet. Go talk to Alan Chen.'", NOTIF_ERROR)
         if "rooftop_check" in result:
             pop_rep = self.reputation.get("populars")
-            overall_rep = self.reputation.reputation_score
-            if pop_rep >= 60 or overall_rep >= 60:
+            if pop_rep >= 60:
                 self._rooftop_unlocked = True
                 self.ui.show_notification("Axel Knight nods. Rooftop access unlocked!", NOTIF_SUCCESS)
+                axel = self.npc_manager.get_npc_by_id("npc_axel_knight")
+                if axel:
+                    axel.ai_enabled = True
+                    axel.target_pos = (1066, 180)  # Move up to step aside
+                    axel.stop_at_target = True
             else:
                 self.ui.show_notification(f"Axel sneers: 'You need 60 Popular reputation (Current: {pop_rep}). Get lost!'", NOTIF_ERROR)
         if result.get("day1_complete"):
@@ -3444,9 +3508,31 @@ class Game:
             opponent = self.npc_manager.get_npc_by_id("npc_oscar")
             self.pingpong.start(self.player, opponent)
             self.state = GameState.PINGPONG
+            try:
+                if pygame.mixer.get_init():
+                    pygame.mixer.music.load("sound/ping pong music.mp3")
+                    pygame.mixer.music.set_volume(0.25)
+                    pygame.mixer.music.play(-1)
+            except Exception:
+                pass
         if "start_basketball" in result and result["start_basketball"]:
-            opponent = self.npc_manager.get_npc_by_id("npc_marcus")
-            self.basketball.start(self.player, opponent)
+            opponent = self.npc_manager.get_npc_by_id("npc_marcus_green")
+            
+            # Clear other NPCs from the court
+            try:
+                floor = self.school_map.get_floor(self.current_floor)
+                if floor and hasattr(floor, "basketball_court"):
+                    bc = floor.basketball_court
+                    for npc in self.npc_manager.get_npcs_on_floor(self.current_floor):
+                        if npc != opponent and npc.rect.colliderect(bc):
+                            # Teleport out of the court safely (to the left of it)
+                            npc.rect.right = bc.left - 20
+                            npc.target_pos = None
+                            npc.target_queue = []
+            except Exception:
+                pass
+
+            self.basketball.start(self.player, opponent, floor)
             self.state = GameState.BASKETBALL
 
     # ── network ───────────────────────────────────────────────
@@ -3518,14 +3604,14 @@ class Game:
             GameState.DIALOGUE:          lambda: (self._draw_world(), self.dialogue_system.draw(self.screen)),
             GameState.SOCIAL_INTERACTION: lambda: (self._draw_world(), self.social_ui.draw(self.screen)),
             GameState.PINGPONG:          lambda: self.pingpong.draw(self.screen),
-            GameState.BASKETBALL:        lambda: self.basketball.draw(self.screen),
+            GameState.BASKETBALL:        lambda: (self._draw_world(), self.basketball.draw(self.screen, self.camera)),
             GameState.TRADING:           lambda: (self._draw_world(), self.trade_system.draw(self.screen)),
             GameState.PAUSED:            lambda: (
-                self.basketball.draw(self.screen) if getattr(self, 'previous_state', None) == GameState.BASKETBALL else self._draw_world(),
+                (self._draw_world(), self.basketball.draw(self.screen, self.camera)) if getattr(self, 'previous_state', None) == GameState.BASKETBALL else self._draw_world(),
                 self.ui.draw_pause_menu(self.screen, getattr(self, 'pause_sel', 0), self.pause_options)
             ),
             GameState.MISSION_SELECT:    lambda: (
-                self.basketball.draw(self.screen) if getattr(self, 'previous_state', None) == GameState.BASKETBALL else self._draw_world(),
+                (self._draw_world(), self.basketball.draw(self.screen, self.camera)) if getattr(self, 'previous_state', None) == GameState.BASKETBALL else self._draw_world(),
                 self.ui.draw_mission_select_menu(
                     self.screen,
                     getattr(self, 'mission_select_sel', 0),
@@ -3606,6 +3692,8 @@ class Game:
 
         if getattr(self, "_oscar_win_dialogue_active", False):
             self._draw_oscar_win_dialogue()
+        if getattr(self, "_marcus_win_dialogue_active", False):
+            self._draw_marcus_win_dialogue()
 
         # ── Fullscreen overlays (drawn on top of everything) ──
         if self._day_transition_active:
@@ -3639,18 +3727,34 @@ class Game:
         floor = self.school_map.get_floor(self.current_floor)
         if floor:
             npcs = self.npc_manager.get_npcs_on_floor(self.current_floor)
-            floor.draw(target_surf, self.camera, self.player, npcs)
+            floor.draw(target_surf, self.camera, self.player, npcs, draw_furniture=False)
 
         # Draw parked car on campus
         if self.current_floor == FLOOR_CAMPUS:
             self._draw_parked_car(target_surf)
             self._draw_extra_parked_cars(target_surf)
 
+        # Draw rooftop party elements (Day 3 event)
+        if self.day_number >= 3:
+            self.rooftop_party.draw_on_rooftop(target_surf, self.camera, self.current_floor)
+
         if floor and hasattr(floor, 'draw_foreground'):
             floor.draw_foreground(target_surf, self.camera, self.player)
 
+        # ── Y-SORTED RENDER LOOP (Furniture, NPCs, Player) ──
+        drawables = []
+        if floor:
+            for furn in floor.furniture:
+                drawables.append({
+                    "type": "furn",
+                    "obj": furn,
+                    "bottom": furn["rect"].bottom
+                })
+
         for npc in self.npc_manager.get_npcs_on_floor(self.current_floor):
             if self._is_npc_on_camera(npc):
+                if self.state == GameState.BASKETBALL and hasattr(self.basketball, "opponent") and npc == self.basketball.opponent:
+                    continue
                 npc.draw(target_surf, self.camera)
 
         # Draw interaction prompt for nearest NPC in range
@@ -3660,7 +3764,8 @@ class Game:
                 nearest_npc.draw_interaction_prompt(target_surf, self.camera)
 
         if not (self._car_departure_active and self._car_depart_phase == "drive_away"):
-            self.player.draw(target_surf, self.camera)
+            if self.state != GameState.BASKETBALL:
+                self.player.draw(target_surf, self.camera)
             if getattr(self, "remote_player", None):
                 # Ghosting bug fix: only draw if on same floor
                 if self.remote_player.current_floor == self.current_floor:
@@ -4033,6 +4138,39 @@ class Game:
         self.mission_manager.activate_mission("mission_library_secrets")
         self._add_oscar_contact()
         self.ui.show_notification("New mission available!", NOTIF_INFO)
+
+    def _begin_marcus_win_dialogue(self):
+        if getattr(self, "_marcus_win_dialogue_completed", False):
+            return
+        player_name = self.player.character.value.capitalize()
+        self._marcus_win_dialogue_lines = [
+            ("Marcus Green", "Wow! You play incredible! I haven't seen skills like that in a long time."),
+            (player_name, "Good game. Now, what about the email Eli sent you about the Smile Club?"),
+            ("Marcus Green", "Look, man... I don't really know much about what you're talking about. Eli sends weird stuff."),
+            ("Marcus Green", "But you know what? I really like your style. You're cool."),
+            ("Marcus Green", "There's a big party today up on the Rooftop with the populars. You should definitely come!"),
+            (player_name, "A rooftop party? Sounds interesting. I'll be there."),
+            ("Marcus Green", "Awesome! Enjoy the party up on the Rooftop!"),
+        ]
+        self._marcus_win_dialogue_index = 0
+        self._marcus_win_dialogue_active = True
+        if hasattr(self.player, "stop_audio"):
+            self.player.stop_audio()
+
+    def _advance_marcus_win_dialogue(self):
+        if not getattr(self, "_marcus_win_dialogue_active", False):
+            return
+        self._marcus_win_dialogue_index += 1
+        if self._marcus_win_dialogue_index >= len(self._marcus_win_dialogue_lines):
+            self._finish_marcus_win_dialogue()
+
+    def _finish_marcus_win_dialogue(self):
+        self._marcus_win_dialogue_active = False
+        self._marcus_win_dialogue_completed = True
+        self._current_main_mission_text = "Mission 10: Go to the Rooftop party and hang out with the populars."
+        self.mission_manager.unlock_mission("mission_rooftop_party")
+        self.mission_manager.activate_mission("mission_rooftop_party")
+        self.ui.show_notification("New mission available!", NOTIF_INFO)
         
         # Trigger Level Up after conversation finishes
         self.player.level += 1
@@ -4064,6 +4202,14 @@ class Game:
         message = "Day 1 all missions completed, go take the School Bus to go home."
         self._current_main_mission_text = message
         self.ui.trigger_announcement("DAY 1 COMPLETE", message)
+        self.ui.show_notification(message, NOTIF_SUCCESS, 8.0)
+
+    def _complete_day2_story(self):
+        self._day2_story_complete = True
+        self.ui.show_notification("Ava Thompson: 'With this information, I will follow up on who is behind the Smile Club. In the meantime, dedicate yourself to gaining reputation.'", NOTIF_INFO, 10.0)
+        message = "Day 2 all missions completed, go take the School Bus to go home."
+        self._current_main_mission_text = message
+        self.ui.trigger_announcement("DAY 2 COMPLETE", message)
         self.ui.show_notification(message, NOTIF_SUCCESS, 8.0)
 
     def _start_noah_guide(self):
@@ -4275,6 +4421,7 @@ class Game:
         avatar_ids = {
             "Noah Carter": "npc_noah_carter",
             "Oscar Jimenez": "npc_oscar",
+            "Marcus Green": "npc_marcus_green",
             "Aiden": "npc_aiden",
             "Lena": "npc_lena",
             "Aiden Parker": "npc_aiden",
@@ -4317,6 +4464,19 @@ class Game:
             return
         idx = min(self._oscar_win_dialogue_index, len(self._oscar_win_dialogue_lines) - 1)
         speaker, text = self._oscar_win_dialogue_lines[idx]
+        dim = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+        dim.fill((0, 0, 0, 65))
+        self.screen.blit(dim, (0, 0))
+        self._draw_cinematic_dialogue(text, speaker)
+        font_hint = pygame.font.Font(VT323_PATH, 16)
+        hint = font_hint.render("Press SPACE to continue", True, (160, 160, 160))
+        self.screen.blit(hint, hint.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT - 30)))
+
+    def _draw_marcus_win_dialogue(self):
+        if not self._marcus_win_dialogue_lines:
+            return
+        idx = min(self._marcus_win_dialogue_index, len(self._marcus_win_dialogue_lines) - 1)
+        speaker, text = self._marcus_win_dialogue_lines[idx]
         dim = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
         dim.fill((0, 0, 0, 65))
         self.screen.blit(dim, (0, 0))
@@ -4402,11 +4562,14 @@ class Game:
         self._advance_phase() # Triggers notifications
         
         # Re-init NPCs for the new day positions
-        self.npc_manager.update_schedules(self.current_phase, self.school_map, is_visible=self._is_npc_on_camera)
-        self._spread_first_floor_npcs()
         self._place_ava_for_story()
         if self.day_number == 2:
             self._current_main_mission_text = "Mission 4: Go to Tech Lab to meet Ava Thompson."
+        elif self.day_number == 3:
+            self.mission_manager.unlock_mission("mission_server_room")
+            self.mission_manager.activate_mission("mission_server_room")
+            self.mission_manager._refresh_availability()
+            self._current_main_mission_text = "Mission 9: Talk to Marcus Green in the Athletic Coliseum."
         if hasattr(self, 'schedule_manager'):
             self.schedule_manager.reset_day()
         
@@ -4532,17 +4695,30 @@ class Game:
 
     def _draw_extra_parked_cars(self, surface=None):
         surface = surface or self.screen
-        """Draw additional cars parked in the lot."""
+        """Draw additional cars parked in the lot using new sprites."""
         if self.current_floor != 0:
             return
-        for rect, color, angle in self._extra_parked_cars:
-            car_surf = self._build_regular_car_surface(color)
-            if angle == 180:
-                car_surf = pygame.transform.flip(car_surf, True, False)
-            elif angle != 0:
-                car_surf = pygame.transform.rotate(car_surf, angle)
+            
+        if not hasattr(self, '_extra_car_sprites'):
+            self._extra_car_sprites = {}
+            
+        for rect, sprite_name, angle in self._extra_parked_cars:
+            if sprite_name not in self._extra_car_sprites:
+                import os
+                path = os.path.join("data", "tiles", sprite_name)
+                try:
+                    img = pygame.image.load(path).convert_alpha()
+                    # Scale the sprite to perfectly fit the collision rectangle
+                    img = pygame.transform.scale(img, (rect.width, rect.height))
+                    self._extra_car_sprites[sprite_name] = img
+                except Exception as e:
+                    print(f"Failed to load car sprite {sprite_name}: {e}")
+                    self._extra_car_sprites[sprite_name] = self._build_regular_car_surface((100, 100, 100))
+                    
+            car_surf = self._extra_car_sprites[sprite_name]
             cr = self.camera.apply_rect(rect)
-            surface.blit(car_surf, (cr.x, cr.y - 10))
+            # The sprites already face left or right natively, no flipping needed!
+            surface.blit(car_surf, (cr.x, cr.y))
 
     def _draw_car_panel(self):
         """Draw the 'End the day?' confirmation panel overlay."""

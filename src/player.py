@@ -504,6 +504,12 @@ class Aiden(Player):
         self.animations["walk_left"]  = [get_frame(c, 2) for c in range(12, 18)]
         self.animations["walk_down"]  = [get_frame(c, 2) for c in range(18, 24)]
 
+        # Row 12 (8th from bottom) (Shoot): Right (0-5), Up (6-11), Left (12-17), Down (18-23)
+        self.animations["shoot_right"] = [get_frame(c, 12) for c in range(0, 6)]
+        self.animations["shoot_up"]    = [get_frame(c, 12) for c in range(6, 12)]
+        self.animations["shoot_left"]  = [get_frame(c, 12) for c in range(12, 18)]
+        self.animations["shoot_down"]  = [get_frame(c, 12) for c in range(18, 24)]
+
         # Set default image
         self.image = self.animations["idle_down"][0]
 

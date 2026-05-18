@@ -4,7 +4,7 @@
       "id": "dlg_marcus_aiden",
       "tree": {
         "id": "m_root",
-        "speaker": "Marcus Rivera",
+        "speaker": "Marcus Green",
         "text": "Hey, you're the new kid right? Name's Marcus. Welcome to Ravenside High!",
         "consequences": {},
         "is_player_choice": false,
@@ -18,7 +18,7 @@
             "children": [
               {
                 "id": "m_c1r",
-                "speaker": "Marcus Rivera",
+                "speaker": "Marcus Green",
                 "text": "It's... mostly fine. But watch out for the Smile Club. They run things around here — and not in a good way.",
                 "consequences": {"reputation_changes": {"athletes": 5}, "xp": 10},
                 "is_player_choice": false,
@@ -35,7 +35,7 @@
             "children": [
               {
                 "id": "m_c2r",
-                "speaker": "Marcus Rivera",
+                "speaker": "Marcus Green",
                 "text": "Director Walsh is the principal. But Dylan Brooks? He acts like he owns the halls. And lately... people are afraid of him.",
                 "consequences": {"xp": 15, "reputation_changes": {"athletes": 3}},
                 "is_player_choice": false,
@@ -52,7 +52,7 @@
             "children": [
               {
                 "id": "m_c3r",
-                "speaker": "Marcus Rivera",
+                "speaker": "Marcus Green",
                 "text": "Alright then... It's down the main hall. Can't miss it.",
                 "consequences": {},
                 "is_player_choice": false,
@@ -63,14 +63,14 @@
           {
             "id": "m_c4",
             "speaker": "Player",
-            "text": "Wanna play some 1v1 basketball?",
+            "text": "I know something about the Smile Club. I saw the email Eli sent you informing you about them.",
             "consequences": {"start_basketball": true},
             "is_player_choice": true,
             "children": [
               {
                 "id": "m_c4r",
-                "speaker": "Marcus Rivera",
-                "text": "You're on! First to 5 wins.",
+                "speaker": "Marcus Green",
+                "text": "You want answers about that? First, I challenge you to a 1v1 basketball match. If you win, I'll tell you more. First to 5 wins!",
                 "consequences": {},
                 "is_player_choice": false,
                 "children": []
@@ -84,7 +84,7 @@
       "id": "dlg_marcus_lena",
       "tree": {
         "id": "m2_root",
-        "speaker": "Marcus Rivera",
+        "speaker": "Marcus Green",
         "text": "Oh hey — you must be Aiden's sister. I'm Marcus. He's already making a name for himself on the field.",
         "consequences": {},
         "is_player_choice": false,
@@ -98,7 +98,7 @@
             "children": [
               {
                 "id": "m2_c1r",
-                "speaker": "Marcus Rivera",
+                "speaker": "Marcus Green",
                 "text": "Network? I'm more of a ball-and-field guy. But Sophie Chen in the tech club — she'd know everything about that.",
                 "consequences": {"mission_unlock": "mission_strange_rumours", "xp": 10},
                 "is_player_choice": false,
@@ -115,7 +115,7 @@
             "children": [
               {
                 "id": "m2_c2r",
-                "speaker": "Marcus Rivera",
+                "speaker": "Marcus Green",
                 "text": "Keep your head down, make the right friends, and don't attract the wrong attention. Especially from Dylan's crew.",
                 "consequences": {"reputation_changes": {"athletes": 5}, "xp": 5},
                 "is_player_choice": false,
@@ -132,7 +132,7 @@
             "children": [
               {
                 "id": "m2_c3r",
-                "speaker": "Marcus Rivera",
+                "speaker": "Marcus Green",
                 "text": "You're on! Let's see if you're as good as your brother.",
                 "consequences": {},
                 "is_player_choice": false,

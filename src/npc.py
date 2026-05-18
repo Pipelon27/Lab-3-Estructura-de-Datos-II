@@ -21,8 +21,23 @@ from settings import (
     GROUP_COLORS, ZONE_NAMES,
     MEDIUM_GRAY, WHITE, UI_TEXT_DIM, BLACK,
     Character, SocialGroup, DayPhase, Direction,
-    FLOOR_1F,
+    FLOOR_1F, FLOOR_2F,
     DATA_DIR, VT323_PATH)
+
+
+# ══════════════════════════════════════════════════════════════
+#  HELPERS & CONSTANTS
+# ══════════════════════════════════════════════════════════════
+
+def is_generic_wanderer(npc_id: str) -> bool:
+    special = {
+        "npc_gordon", "npc_oscar", "npc_director",
+        "npc_oscar_obs1", "npc_oscar_obs2", "npc_oscar_obs3", "npc_oscar_obs4",
+        "npc_bath_m_attendant", "npc_bath_f_attendant",
+        "npc_noah_carter", "npc_axel_knight", "npc_ava_thompson",
+        "npc_alan_chen", "npc_lena", "npc_aiden"
+    }
+    return not npc_id.startswith("npc_class_") and npc_id not in special
 
 
 # ══════════════════════════════════════════════════════════════
@@ -285,6 +300,12 @@ class NPC:
         self.animations["walk_up"]    = [get_frame(c, 2) for c in range(6, 12)]
         self.animations["walk_left"]  = [get_frame(c, 2) for c in range(12, 18)]
         self.animations["walk_down"]  = [get_frame(c, 2) for c in range(18, 24)]
+
+        # Row 12 (8th from bottom) (Shoot): Right (0-5), Up (6-11), Left (12-17), Down (18-23)
+        self.animations["shoot_right"] = [get_frame(c, 12) for c in range(0, 6)]
+        self.animations["shoot_up"]    = [get_frame(c, 12) for c in range(6, 12)]
+        self.animations["shoot_left"]  = [get_frame(c, 12) for c in range(12, 18)]
+        self.animations["shoot_down"]  = [get_frame(c, 12) for c in range(18, 24)]
 
         # Set default image
         self.image = self.animations["idle_down"][0]
@@ -698,7 +719,7 @@ class NPCManager:
     def _create_default_npcs(self):
         """Fallback NPCs when JSON is missing."""
         defaults = [
-            ("npc_marcus",  "Marcus Rivera", SocialGroup.ATHLETES,
+            ("npc_marcus",  "Marcus Green", SocialGroup.ATHLETES,
              "Friendly team captain", "Secretly pressured by Smile Club",
              {"arrival": 0, "class_1": 0, "break_1": 1, "lunch": 3,
               "activities": 1, "departure": 0, "night": 5},
@@ -883,17 +904,22 @@ class NPCManager:
                 npc._floor_h = floor.height
             
             # 1. Door avoidance for generic NPCs to keep exits clear
-            if npc.id.startswith("npc_rnd_") and npc.target_pos is None:
+            if is_generic_wanderer(npc.id) and npc.target_pos is None:
                 # Door locations on 2F
                 doors = [(1080, 496), (1080, 1146), (1080, 1566), (1560, 1900), (2120, 200), (2120, 640)]
                 for dx, dy in doors:
                     dist_sq = (npc.rect.centerx - dx)**2 + (npc.rect.centery - dy)**2
                     if dist_sq < 60**2: # Within 60 pixels
                         # Gentle push away
+                        px = npc.rect.x
+                        py = npc.rect.y
                         if npc.rect.centerx < dx: npc.rect.x -= 2
                         else: npc.rect.x += 2
                         if npc.rect.centery < dy: npc.rect.y -= 2
                         else: npc.rect.y += 2
+                        if walls and any(npc.rect.colliderect(w) for w in walls):
+                            npc.rect.x = px
+                            npc.rect.y = py
 
             # 2. Build wall list including static walls + other NPCs (avoid self)
             npc_is_visible = is_visible(npc) if is_visible else True
@@ -915,19 +941,34 @@ class NPCManager:
                 
                 npc.update(dt, combined_walls)
                 
-            # Classroom restriction for generic wanderers
-            if classrooms_restricted and restricted_rooms and npc.id.startswith("npc_rnd_"):
+            # Classroom/Staircase restriction for generic wanderers
+            if restricted_rooms and is_generic_wanderer(npc.id):
                 room = floor.get_room_at(npc.rect.centerx, npc.rect.centery)
                 if room and room.id in restricted_rooms:
-                    # If already inside, move to corridor; otherwise block entry
-                    if room.rect.collidepoint(previous_rect.center):
-                        # Teleport to a safe corridor spot on 2F
-                        if room.id == "f2_classrooms":
-                            npc.rect.centery = 1900 # Central corridor above classrooms
-                        else:
-                            npc.rect.centerx = 1080 # Central corridor right of art/music/science
+                    # If in stairs, immediately eject to corridor center of that floor
+                    if room.is_staircase or "stairs" in room.id:
+                        npc.rect.center = (1600, 1000) if floor_id != 4 else (1600, 500)
+                        npc.target_pos = None
+                        npc.target_queue = []
                     else:
-                        npc.rect.update(previous_rect)
+                        # If already inside another restricted room, push to corridor; otherwise block entry
+                        if room.rect.collidepoint(previous_rect.center):
+                            if room.id == "f2_classrooms":
+                                npc.rect.centery = 1900
+                            else:
+                                npc.rect.centerx = 1080
+                        else:
+                            npc.rect.update(previous_rect)
+
+            # Prevent NPCs from spawning/stuck in the empty/void spaces on Floor 2
+            if floor_id == FLOOR_2F and is_generic_wanderer(npc.id):
+                # Bottom-left void: x < 1050 and y > 1950
+                # Bottom-right void: x > 2150 and y > 1720
+                if (npc.rect.centerx < 1050 and npc.rect.centery > 1950) or \
+                   (npc.rect.centerx > 2150 and npc.rect.centery > 1720):
+                    npc.rect.center = (1600, 1000)
+                    npc.target_pos = None
+                    npc.target_queue = []
 
             if floor and floor.id == FLOOR_1F:
                 room = floor.get_room_at(npc.rect.centerx, npc.rect.centery)

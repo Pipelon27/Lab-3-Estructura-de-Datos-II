@@ -6,7 +6,7 @@
       "description": "It's your first day at Ravenside High. Explore the school, find the cafeteria, and get to know some of your classmates.",
       "objectives": [
         {"type": "go_to_zone", "target": "3", "description": "Visit the Cafeteria", "required": 1},
-        {"type": "talk_to", "target": "npc_marcus", "description": "Talk to Marcus Rivera", "required": 1}
+        {"type": "talk_to", "target": "npc_marcus_green", "description": "Talk to Marcus Green", "required": 1}
       ],
       "prerequisites": [],
       "rewards": {"xp": 50, "reputation": {"athletes": 5}},
@@ -110,16 +110,29 @@
     {
       "id": "mission_server_room",
       "title": "Server Room Access",
-      "description": "You need to find a way into the Basement. Lucas Kim might know how to get in.",
+      "description": "Ava Thompson told you to gain reputation and find out who is behind the Smile Club. Go talk to Marcus Green in the Athletic Coliseum.",
       "objectives": [
-        {"type": "talk_to", "target": "npc_lucas", "description": "Ask Lucas about the basement servers", "required": 1},
-        {"type": "collect_item", "target": "Basement Key", "description": "Obtain the Basement Key", "required": 1}
+        {"type": "talk_to", "target": "npc_marcus_green", "description": "Talk to Marcus Green in the Athletic Coliseum", "required": 1}
       ],
       "prerequisites": ["mission_high_school_mainframe"],
       "rewards": {
         "xp": 100,
         "unlock_zone": 6,
         "items": [{"name": "Basement Key", "category": "key", "description": "Opens the door to the school basement"}]
+      },
+      "status": "locked"
+    },
+    {
+      "id": "mission_rooftop_party",
+      "title": "Rooftop Party",
+      "description": "Marcus Green invited you to the party on the Rooftop because he liked your basketball skills. Go up to the Rooftop and hang out with the populars.",
+      "objectives": [
+        {"type": "go_to_zone", "target": "5", "description": "Go to the Rooftop party", "required": 1}
+      ],
+      "prerequisites": ["mission_server_room"],
+      "rewards": {
+        "xp": 100,
+        "reputation": {"populars": 15, "athletes": 10}
       },
       "status": "locked"
     },
@@ -132,7 +145,7 @@
         {"type": "hack_target", "target": "smile_server", "description": "Disable the Smile Club server", "required": 1},
         {"type": "talk_to", "target": "npc_director", "description": "Confront Director Walsh", "required": 1}
       ],
-      "prerequisites": ["mission_server_room"],
+      "prerequisites": ["mission_rooftop_party"],
       "rewards": {"xp": 200},
       "status": "locked"
     }

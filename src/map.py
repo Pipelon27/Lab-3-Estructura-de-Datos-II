@@ -324,7 +324,7 @@ class Floor:
         print(f"Sprite {sprite_name} not found in assets or data/tiles")
         return None
 
-    def draw(self, screen, camera, player=None, npcs=None):
+    def draw(self, screen, camera, player=None, npcs=None, draw_furniture=True):
         sw, sh = screen.get_width(), screen.get_height()
         bg_rect = pygame.Rect(0, 0, self.width, self.height)
         bg = camera.apply_rect(bg_rect)
@@ -522,78 +522,9 @@ class Floor:
                 screen_pos = camera.apply_pos(blit_x, blit_y)
                 screen.blit(rotated_surf, screen_pos)
 
-        for furn in self.furniture:
-            fr = camera.apply_rect(furn["rect"])
-            if fr.right < 0 or fr.left > sw or fr.bottom < 0 or fr.top > sh:
-                continue
-            ftype = furn.get("type")
-            if ftype == "bookshelf":
-                self._draw_bookshelf(screen, fr)
-            elif ftype == "round_table":
-                pygame.draw.circle(screen, furn["color"], fr.center, fr.width // 2)
-                if furn.get("outline"):
-                    pygame.draw.circle(screen, furn["outline"], fr.center, fr.width // 2, 2)
-            elif ftype == "lamp":
-                # Base
-                pygame.draw.circle(screen, (80, 80, 80), fr.center, fr.width // 3)
-                # Shade
-                pygame.draw.circle(screen, furn["color"], fr.center, fr.width // 2)
-                # Glow
-                glow_surf = pygame.Surface((fr.width * 2, fr.height * 2), pygame.SRCALPHA)
-                pygame.draw.circle(glow_surf, (255, 255, 200, 40), (fr.width, fr.height), fr.width)
-                screen.blit(glow_surf, (fr.centerx - fr.width, fr.centery - fr.height))
-            elif ftype == "plant":
-                self._draw_plant(screen, fr, furn["color"])
-            elif ftype == "bench":
-                self._draw_bench(screen, fr)
-            elif ftype == "buffet_tray":
-                # Silver outer tray
-                pygame.draw.rect(screen, (190, 190, 200), fr, border_radius=4)
-                pygame.draw.rect(screen, (150, 150, 160), fr, 2, border_radius=4)
-                # Inner food area
-                inner = fr.inflate(-8, -8)
-                if inner.width > 0 and inner.height > 0:
-                    pygame.draw.rect(screen, furn["color"], inner, border_radius=2)
-            elif ftype == "toilet":
-                self._draw_toilet(screen, fr, furn.get("facing", "down"))
-            elif ftype == "computer":
-                self._draw_computer(screen, fr, furn.get("facing", "up"))
-            elif ftype == "lab_bench":
-                self._draw_lab_bench(screen, fr)
-            elif ftype == "piano":
-                self._draw_piano(screen, fr)
-            elif ftype == "drum_set":
-                self._draw_drum_set(screen, fr)
-            elif ftype == "guitar":
-                self._draw_guitar(screen, fr)
-            elif ftype == "easel":
-                self._draw_easel(screen, fr)
-            elif ftype == "locker":
-                self._draw_locker(screen, fr)
-            elif ftype == "office_desk":
-                self._draw_office_desk(screen, fr, furn.get("facing", "down"))
-            elif ftype == "office_chair":
-                self._draw_office_chair(screen, fr)
-            elif ftype == "hospital_bed":
-                self._draw_hospital_bed(screen, fr, furn.get("facing", "down"))
-            elif ftype == "stage":
-                self._draw_stage(screen, fr)
-            elif ftype == "auditorium_seat":
-                self._draw_auditorium_seat(screen, fr)
-            elif ftype == "executive_desk":
-                self._draw_executive_desk(screen, fr)
-            elif ftype == "sofa_chair":
-                self._draw_sofa_chair(screen, fr)
-            elif ftype == "umbrella_table":
-                self._draw_umbrella_table(screen, fr)
-            elif ftype == "chalkboard":
-                self._draw_chalkboard(screen, fr, furn.get("facing", "up"))
-            elif ftype == "sink":
-                self._draw_sink(screen, fr, furn.get("facing", "down"))
-            else:
-                pygame.draw.rect(screen, furn["color"], fr)
-                if furn.get("outline"):
-                    pygame.draw.rect(screen, furn["outline"], fr, 2)
+        if draw_furniture:
+            for furn in self.furniture:
+                self.draw_single_furn(screen, camera, furn)
 
         # ── Two-pass wall rendering ──────────────────────────────
         # Pass 1: shadows + 3-D extrusions (bottom/right faces)
@@ -852,45 +783,43 @@ class Floor:
                 arc_rect = camera.apply_rect(pygame.Rect(cx - radius, cy - radius, radius * 2, radius * 2))
                 pygame.draw.arc(screen, (220, 220, 220), arc_rect, -math.pi / 2, 0, 4)
             
-            if hasattr(self, "basketball_court"):
-                import math
-                bc = self.basketball_court
-                r = camera.apply_rect(bc)
-                if r.right > 0 and r.left < sw:
-                    # Lines are white
-                    lc = (240, 240, 240)
-                    # Outer boundary
-                    pygame.draw.rect(screen, lc, r, 3)
-                    # Mid-court line
-                    pygame.draw.line(screen, lc, (r.centerx, r.top), (r.centerx, r.bottom), 3)
-                    # Center circle
-                    pygame.draw.circle(screen, lc, r.center, 70, 3)
-                    
-                    # Arcs/Lines for each half
-                    key_w = 220
-                    key_h = 300
-                    tp_rad = 380
-                    
-                    for side in [-1, 1]:
-                        # Key area (rectangle)
-                        if side == -1:
-                            kx = r.left
-                        else:
-                            kx = r.right - key_w
+        # Draw coliseum basketball court (pre-rendered tile based from assets/Baloncesto.png)
+        if self.id == 5 and hasattr(self, "basketball_court"):
+            bc = self.basketball_court
+            cam_ox = int(camera.offset.x)
+            cam_oy = int(camera.offset.y)
+            court_x = bc.x - cam_ox
+            court_y = bc.y - cam_oy
+            
+            # Check visibility (size is 848x694)
+            if -848 < court_x < sw and -694 < court_y < sh:
+                # Initialize resources
+                if "baloncesto" not in self._tile_cache:
+                    try:
+                        self._tile_cache["baloncesto"] = pygame.image.load("assets/Baloncesto.png").convert_alpha()
+                    except Exception:
+                        self._tile_cache["baloncesto"] = None
                         
-                        ky = r.centery - key_h // 2
-                        key_rect = pygame.Rect(kx, ky, key_w, key_h)
-                        pygame.draw.rect(screen, lc, key_rect, 3)
+                if not hasattr(self, "_court_surface"):
+                    sheet = self._tile_cache.get("baloncesto")
+                    if sheet:
+                        # 1. Crop and scale Horizontal Court: cols = 108..531 (width 424), rows = 3..349 (height 347)
+                        court_orig = sheet.subsurface(pygame.Rect(108, 3, 424, 347))
+                        self._court_surface = pygame.transform.scale(court_orig, (848, 694))
                         
-                        # Three point line (large arc)
-                        tp_center = (r.left if side == -1 else r.right, r.centery)
-                        tp_rect = pygame.Rect(tp_center[0] - tp_rad, tp_center[1] - tp_rad, tp_rad * 2, tp_rad * 2)
-                        if side == -1:
-                            # Left side arc
-                            pygame.draw.arc(screen, lc, tp_rect, -math.pi/2, math.pi/2, 3)
-                        else:
-                            # Right side arc
-                            pygame.draw.arc(screen, lc, tp_rect, math.pi/2, 3*math.pi/2, 3)
+                        # 2. Left Hoop: Hoop 2 (cols = 4..91, rows = 163..289, height = 127, width = 88)
+                        # This hoop has orange on the right (facing right, goes on left side)
+                        left_hoop_orig = sheet.subsurface(pygame.Rect(4, 163, 88, 127))
+                        self._left_hoop_surface = pygame.transform.scale(left_hoop_orig, (132, 190))
+                        
+                        # 3. Right Hoop: Hoop 1 (cols = 4..91, rows = 3..129, height = 127, width = 88)
+                        # This hoop has orange on the left (facing left, goes on right side)
+                        right_hoop_orig = sheet.subsurface(pygame.Rect(4, 3, 88, 127))
+                        self._right_hoop_surface = pygame.transform.scale(right_hoop_orig, (132, 190))
+                        
+                # Blit everything centered on the wood floor color!
+                if hasattr(self, "_court_surface") and self._court_surface:
+                    screen.blit(self._court_surface, (court_x, court_y))
 
         # Transitions drawing - only for interior floors (to show the exit)
         if self.id != 0:
@@ -904,6 +833,80 @@ class Floor:
                 if tr.label and r.width > 20:
                     lbl = font_sm.render(tr.label, True, WHITE)
                     screen.blit(lbl, (r.x + 2, r.y - 16))
+
+    def draw_single_furn(self, screen, camera, furn):
+        sw, sh = screen.get_width(), screen.get_height()
+        fr = camera.apply_rect(furn["rect"])
+        if fr.right < 0 or fr.left > sw or fr.bottom < 0 or fr.top > sh:
+            return
+        ftype = furn.get("type")
+        if ftype == "bookshelf":
+            self._draw_bookshelf(screen, fr)
+        elif ftype == "round_table":
+            pygame.draw.circle(screen, furn["color"], fr.center, fr.width // 2)
+            if furn.get("outline"):
+                pygame.draw.circle(screen, furn["outline"], fr.center, fr.width // 2, 2)
+        elif ftype == "lamp":
+            # Base
+            pygame.draw.circle(screen, (80, 80, 80), fr.center, fr.width // 3)
+            # Shade
+            pygame.draw.circle(screen, furn["color"], fr.center, fr.width // 2)
+            # Glow
+            glow_surf = pygame.Surface((fr.width * 2, fr.height * 2), pygame.SRCALPHA)
+            pygame.draw.circle(glow_surf, (255, 255, 200, 40), (fr.width, fr.height), fr.width)
+            screen.blit(glow_surf, (fr.centerx - fr.width, fr.centery - fr.height))
+        elif ftype == "plant":
+            self._draw_plant(screen, fr, furn["color"])
+        elif ftype == "bench":
+            self._draw_bench(screen, fr)
+        elif ftype == "buffet_tray":
+            # Silver outer tray
+            pygame.draw.rect(screen, (190, 190, 200), fr, border_radius=4)
+            pygame.draw.rect(screen, (150, 150, 160), fr, 2, border_radius=4)
+            # Inner food area
+            inner = fr.inflate(-8, -8)
+            if inner.width > 0 and inner.height > 0:
+                pygame.draw.rect(screen, furn["color"], inner, border_radius=2)
+        elif ftype == "toilet":
+            self._draw_toilet(screen, fr, furn.get("facing", "down"))
+        elif ftype == "computer":
+            self._draw_computer(screen, fr, furn.get("facing", "up"))
+        elif ftype == "lab_bench":
+            self._draw_lab_bench(screen, fr)
+        elif ftype == "piano":
+            self._draw_piano(screen, fr)
+        elif ftype == "drum_set":
+            self._draw_drum_set(screen, fr)
+        elif ftype == "guitar":
+            self._draw_guitar(screen, fr)
+        elif ftype == "easel":
+            self._draw_easel(screen, fr)
+        elif ftype == "locker":
+            self._draw_locker(screen, fr)
+        elif ftype == "office_desk":
+            self._draw_office_desk(screen, fr, furn.get("facing", "down"))
+        elif ftype == "office_chair":
+            self._draw_office_chair(screen, fr)
+        elif ftype == "hospital_bed":
+            self._draw_hospital_bed(screen, fr, furn.get("facing", "down"))
+        elif ftype == "stage":
+            self._draw_stage(screen, fr)
+        elif ftype == "auditorium_seat":
+            self._draw_auditorium_seat(screen, fr)
+        elif ftype == "executive_desk":
+            self._draw_executive_desk(screen, fr)
+        elif ftype == "sofa_chair":
+            self._draw_sofa_chair(screen, fr)
+        elif ftype == "umbrella_table":
+            self._draw_umbrella_table(screen, fr)
+        elif ftype == "chalkboard":
+            self._draw_chalkboard(screen, fr, furn.get("facing", "up"))
+        elif ftype == "sink":
+            self._draw_sink(screen, fr, furn.get("facing", "down"))
+        else:
+            pygame.draw.rect(screen, furn["color"], fr)
+            if furn.get("outline"):
+                pygame.draw.rect(screen, furn["outline"], fr, 2)
 
     def _draw_basement_lighting(self, screen, camera, player):
         import math, time, random
@@ -1792,12 +1795,28 @@ class Floor:
         """Top-down potted plant with ceramic pot and lush leaves."""
         if rect.width <= 4 or rect.height <= 4:
             return
-        # Pot
-        pygame.draw.circle(screen, (139, 69, 19), rect.center, rect.width // 3)
-        # Leaves
-        pygame.draw.circle(screen, color, (rect.centerx - 4, rect.centery - 4), rect.width // 2)
-        pygame.draw.circle(screen, (34, 139, 34), (rect.centerx + 4, rect.centery + 4), rect.width // 2)
-        pygame.draw.circle(screen, color, (rect.centerx, rect.centery), rect.width // 2)
+        if "maceta" not in self._tile_cache:
+            try:
+                img = pygame.image.load("assets/UI/maceta.png").convert_alpha()
+                self._tile_cache["maceta"] = img
+            except Exception:
+                self._tile_cache["maceta"] = None
+
+        maceta_img = self._tile_cache.get("maceta")
+        if maceta_img:
+            disp_w = int(rect.width * 2.8)
+            disp_h = int(rect.height * 2.8)
+            scaled_img = pygame.transform.smoothscale(maceta_img, (disp_w, disp_h))
+            blit_x = rect.centerx - disp_w // 2
+            blit_y = rect.bottom - disp_h
+            screen.blit(scaled_img, (blit_x, blit_y))
+        else:
+            # Pot
+            pygame.draw.circle(screen, (139, 69, 19), rect.center, rect.width // 3)
+            # Leaves
+            pygame.draw.circle(screen, color, (rect.centerx - 4, rect.centery - 4), rect.width // 2)
+            pygame.draw.circle(screen, (34, 139, 34), (rect.centerx + 4, rect.centery + 4), rect.width // 2)
+            pygame.draw.circle(screen, color, (rect.centerx, rect.centery), rect.width // 2)
 
     def _draw_chalkboard(self, screen: pygame.Surface, rect: pygame.Rect, facing: str = "up"):
         """Portable green chalkboard with wooden frame and two wheels.
@@ -2301,6 +2320,20 @@ class Floor:
                             pygame.draw.circle(screen, (40, 120, 40),
                                                (sx - int(draw_rad * 0.2), sy - int(draw_rad * 0.2)),
                                                int(draw_rad * 0.7))
+        elif self.id == 5 and hasattr(self, "basketball_court"):
+            bc = self.basketball_court
+            cam_ox = int(camera.offset.x)
+            cam_oy = int(camera.offset.y)
+            court_x = bc.x - cam_ox
+            court_y = bc.y - cam_oy
+            
+            # Check visibility (size is 848x694)
+            if -848 < court_x < sw and -694 < court_y < sh and not getattr(self, "hide_hoops", False):
+                # Symmetrically place hoops at 1.5x on the top layer so characters pass underneath!
+                if hasattr(self, "_left_hoop_surface") and self._left_hoop_surface:
+                    screen.blit(self._left_hoop_surface, (court_x + 40, court_y + 252))
+                if hasattr(self, "_right_hoop_surface") and self._right_hoop_surface:
+                    screen.blit(self._right_hoop_surface, (court_x + 941, court_y + 252))
 
     def __repr__(self):
         return f"Floor({self.id}, '{self.name}', rooms={len(self.rooms)})"
@@ -2438,7 +2471,8 @@ class SchoolMap:
                         1700, 2050, 600, 350, (42, 58, 62)))
         f.add_room(Room("c_gardens", "English Gardens",
                         "Manicured gardens with hedge maze",
-                        100, 150, 1200, 1000, (32, 58, 32)))
+                        100, 150, 1200, 1000, (32, 58, 32),
+                        tile_path="data/tiles/ME_Singles_Terrains_and_Fences_32x32_Grass_Water_3_9.png"))
         f.add_room(Room("c_tennis", "Ping Pong Court",
                         "One court for recreation",
                         3100, 2100, 780, 750, (40, 52, 44),
@@ -2531,11 +2565,14 @@ class SchoolMap:
         # Interior columns for Ping Pong to prevent walking through the whole building
         f.walls.append(pygame.Rect(tx + 100, ty + 100, 40, 40))
         f.walls.append(pygame.Rect(tx + tw - 140, ty + 100, 40, 40))
-        # Garden hedges
-        f.walls.extend([
-            _hw(300, 500, 500), _hw(550, 800, 550),
-            _vw(750, 250, 450), _vw(450, 650, 350),
-        ])
+        # Garden hedges removed per user request; replaced with benches and planters
+        for bx in (300, 550, 800, 1050):
+            _add_furn(f, pygame.Rect(bx, 450, 120, 40), "bench")
+            _add_furn(f, pygame.Rect(bx, 750, 120, 40), "bench")
+        for px in (240, 490, 740, 990, 1220):
+            _add_furn(f, pygame.Rect(px, 452, 36, 36), "plant", color=(40, 160, 60))
+            _add_furn(f, pygame.Rect(px, 752, 36, 36), "plant", color=(40, 160, 60))
+
         
         # Ping pong table in the middle of Ping Pong Courts
         # Court bounds: x=3100, y=2100, w=780, h=750
@@ -2637,42 +2674,55 @@ class SchoolMap:
         # Fountain in front of Main Building entrance
         f.garden_decorations.append(('sprite', 2000, 1100, fountain_3_3))
         
+        # New bush sprites to alternate
+        bush_sprites = [
+            'ME_Singles_Garden_32x32_Bush_1.png',
+            'ME_Singles_Garden_32x32_Bush_2.png',
+            'ME_Singles_Garden_32x32_Bush_8.png',
+            'ME_Singles_Garden_32x32_Bush_12.png',
+        ]
+        bush_idx = 0
+        def next_bush():
+            nonlocal bush_idx
+            b = bush_sprites[bush_idx]
+            bush_idx = (bush_idx + 1) % len(bush_sprites)
+            return b
+
         # Roundabout bushes decoration (neat rows on each side)
         for side_x in [1420, 2580]: # Left and Right edges
             for by in range(2520, 2850, 45):
-                rad = 18
-                f.garden_decorations.append(('bush', side_x, by, rad))
+                f.garden_decorations.append(('sprite', side_x, by, next_bush()))
         
         # Benches (removed - brown rects deleted)
         
         # Parking Lot bushes (strictly outside the perimeter)
         # Top edge (above the parking lot)
         for px in range(20, 1180, 50):
-            f.garden_decorations.append(('bush', px, 2100 - 25, 18))
+            f.garden_decorations.append(('sprite', px, 2100 - 25, next_bush()))
         # Right edge (to the right of the parking lot)
         for py in range(2100, 2850, 50):
-            f.garden_decorations.append(('bush', 1200 + 25, py, 18))
+            f.garden_decorations.append(('sprite', 1200 + 25, py, next_bush()))
 
         # Main Building perimeters
         for bx in range(1400, 2600, 60): # Top
-            f.garden_decorations.append(('bush', bx, 1100 - 25, 20))
+            f.garden_decorations.append(('sprite', bx, 1100 - 25, next_bush()))
         for by in range(1100, 1950, 60): # Sides
-            f.garden_decorations.append(('bush', 1400 - 25, by, 20))
-            f.garden_decorations.append(('bush', 2600 + 25, by, 20))
+            f.garden_decorations.append(('sprite', 1400 - 25, by, next_bush()))
+            f.garden_decorations.append(('sprite', 2600 + 25, by, next_bush()))
 
         # Athletic Coliseum perimeters
         for cx in range(2800, 3880, 70): # Top
-            f.garden_decorations.append(('bush', cx, 150 - 30, 22))
+            f.garden_decorations.append(('sprite', cx, 150 - 30, next_bush()))
         for cy in range(150, 1050, 70): # Sides
-            f.garden_decorations.append(('bush', 2800 - 30, cy, 22))
-            f.garden_decorations.append(('bush', 3880 + 30, cy, 22))
+            f.garden_decorations.append(('sprite', 2800 - 30, cy, next_bush()))
+            f.garden_decorations.append(('sprite', 3880 + 30, cy, next_bush()))
 
         # Ping Pong Court perimeters
         for tx in range(3100, 3880, 60): # Top
-            f.garden_decorations.append(('bush', tx, 2100 - 25, 20))
+            f.garden_decorations.append(('sprite', tx, 2100 - 25, next_bush()))
         for ty in range(2100, 2750, 60): # Sides
-            f.garden_decorations.append(('bush', 3100 - 25, ty, 20))
-            f.garden_decorations.append(('bush', 3880 + 25, ty, 20))
+            f.garden_decorations.append(('sprite', 3100 - 25, ty, next_bush()))
+            f.garden_decorations.append(('sprite', 3880 + 25, ty, next_bush()))
 
         # Portal: building entrance → 1F reception
         f.transitions.append(FloorTransition(
@@ -3460,32 +3510,28 @@ class SchoolMap:
                         "Main indoor basketball arena",
                         220, 180, 1360, 850, (176, 110, 66)))
 
-        f.walls.extend([
-            _hw(0, 0, 1800), _hw(0, 1300 - WT, 1800),
-            _vw(0, 0, 1300), _vw(1800 - WT, 0, 1300),
-        ])
-
-        # Court enclosure with a center gate at the bottom, top corridor gap, and side corridors.
+        # Define gate coordinates for the bottom exit transition
         gate_w = 3 * DW
         gate_x = 220 + (1360 - gate_w) // 2
-        f.walls.extend(_hwall_gaps(180, 220, 220 + 1360, [(gate_x, gate_w)]))
-        # Left wall with gap for corridor
-        f.walls.extend(_vwall_gaps(220, 180, 180 + 850, [(180 + 350, 150)]))
-        # Right wall with gap for corridor
-        f.walls.extend(_vwall_gaps(220 + 1360 - WT, 180, 180 + 850, [(180 + 350, 150)]))
-        f.walls.extend(_hwall_gaps(180 + 850 - WT, 220, 220 + 1360, [(gate_x, gate_w)]))
+
+        # Outer perimeter walls with a gap at the bottom for the exit transition
+        f.walls.extend([
+            _hw(0, 0, 1800),
+            _vw(0, 0, 1300), _vw(1800 - WT, 0, 1300),
+        ])
+        f.walls.extend(_hwall_gaps(1300 - WT, 0, 1800, [(gate_x, gate_w)]))
+
+        # Indoor court lines (pre-rendered horizontal court from Baloncesto.png)
+        f.basketball_court = pygame.Rect(476, 258, 848, 694)
+
+        # Add hoop base walls (only the base of the hoop blocks the player!)
+        # Left hoop: centered collision rect at (519, 676, 32, 24)
+        f.walls.append(pygame.Rect(519, 676, 32, 24))
         
-        # Entrance Hallway walls (purple wall requested by user)
-        f.walls.append(_vw(gate_x - WT, 180 + 850, 1300 - (180 + 850)))
-        f.walls.append(_vw(gate_x + gate_w, 180 + 850, 1300 - (180 + 850)))
-        # Block the rest of the bottom area except the hallway
-        f.walls.append(pygame.Rect(0, 180 + 850, gate_x - WT, 1300 - (180 + 850)))
-        f.walls.append(pygame.Rect(gate_x + gate_w + WT, 180 + 850, 1800 - (gate_x + gate_w + WT), 1300 - (180 + 850)))
+        # Right hoop: centered collision rect at (1513, 676, 32, 24)
+        f.walls.append(pygame.Rect(1513, 676, 32, 24))
 
-        # Indoor court lines.
-        f.basketball_court = pygame.Rect(220 + WT, 180 + WT, 1360 - 2 * WT, 850 - 2 * WT)
-
-        # Exit back to campus at the very bottom of the hallway (purple cross requested by user).
+        # Exit back to campus at the bottom gap
         f.transitions.append(FloorTransition(
             (gate_x, 1300 - 40, gate_w, 40),
             FLOOR_CAMPUS, 3340, 1130,

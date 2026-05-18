@@ -766,8 +766,8 @@ class PingPongGame:
             elif self.player_y > court.bottom:
                 self.player_y = max(court.bottom + 12, min(court.bottom + rim, self.player_y))
                 self.player_x = max(court.left - rim, min(court.right + rim, self.player_x))
-        # player and opponent square sprite rects (no invisible paddles)
-        player_rect = pygame.Rect(int(self.player_x - self.sprite_size // 2), int(self.player_y - self.sprite_size // 2), self.sprite_size, self.sprite_size)
+        # player and opponent full body rects matching 80x160 visual sprite
+        player_rect = pygame.Rect(int(self.player_x - self._sprite_disp_w // 2), int(self.player_y - self._sprite_disp_h // 2), self._sprite_disp_w, self._sprite_disp_h)
         # Start with only one ball, then progressively add more over time.
         allowed_extra = min(8, int(self.match_elapsed // 8.0))
         if self.spawn_timer <= 0 and (len(self.extra_balls) + len(self.spawn_queue)) < allowed_extra:
@@ -857,7 +857,7 @@ class PingPongGame:
             self.opp_y += move
         # clamp opponent sprite center inside court vertical span
         self.opp_y = max(court.top + half_h, min(court.bottom - half_h, self.opp_y))
-        opp_rect = pygame.Rect(int(court.right + 12), int(self.opp_y - half_h), self.sprite_size, self.sprite_size)
+        opp_rect = pygame.Rect(int(court.right + 12), int(self.opp_y - self._sprite_disp_h // 2), self._sprite_disp_w, self._sprite_disp_h)
 
         # collisions for main ball
         if self.ball.colliderect(player_rect) and self.ball_vel[0] < 0:
