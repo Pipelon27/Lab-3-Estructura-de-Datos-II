@@ -714,7 +714,7 @@ class UI:
         screen.blit(overlay, (0, 0))
 
         # Main Panel
-        pw, ph = 960, 580
+        pw, ph = 960, 640
         px = (SCREEN_WIDTH - pw) // 2
         py = (SCREEN_HEIGHT - ph) // 2
         panel = pygame.Surface((pw, ph), pygame.SRCALPHA)
@@ -731,8 +731,8 @@ class UI:
         screen.blit(sub_surf, sub_surf.get_rect(center=(SCREEN_WIDTH // 2, py + 80)))
 
         # List missions
-        start_y = py + 120
-        line_h = 50
+        start_y = py + 110
+        line_h = 42
         for i, m_info in enumerate(mission_list):
             m_id = m_info[0]
             m_title = m_info[2]

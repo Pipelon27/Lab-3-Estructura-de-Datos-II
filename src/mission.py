@@ -264,7 +264,7 @@ class MissionManager:
             "Explore the school and meet some students.",
             objectives=[
                 MissionObjective("go_to_zone", "3", "Visit the Cafeteria"),
-                MissionObjective("talk_to", "npc_marcus", "Talk to Marcus Rivera"),
+                MissionObjective("talk_to", "npc_marcus_green", "Talk to Marcus Green"),
             ],
             rewards={"xp": 50},
         )

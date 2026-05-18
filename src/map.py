@@ -3460,32 +3460,21 @@ class SchoolMap:
                         "Main indoor basketball arena",
                         220, 180, 1360, 850, (176, 110, 66)))
 
-        f.walls.extend([
-            _hw(0, 0, 1800), _hw(0, 1300 - WT, 1800),
-            _vw(0, 0, 1300), _vw(1800 - WT, 0, 1300),
-        ])
-
-        # Court enclosure with a center gate at the bottom, top corridor gap, and side corridors.
+        # Define gate coordinates for the bottom exit transition
         gate_w = 3 * DW
         gate_x = 220 + (1360 - gate_w) // 2
-        f.walls.extend(_hwall_gaps(180, 220, 220 + 1360, [(gate_x, gate_w)]))
-        # Left wall with gap for corridor
-        f.walls.extend(_vwall_gaps(220, 180, 180 + 850, [(180 + 350, 150)]))
-        # Right wall with gap for corridor
-        f.walls.extend(_vwall_gaps(220 + 1360 - WT, 180, 180 + 850, [(180 + 350, 150)]))
-        f.walls.extend(_hwall_gaps(180 + 850 - WT, 220, 220 + 1360, [(gate_x, gate_w)]))
-        
-        # Entrance Hallway walls (purple wall requested by user)
-        f.walls.append(_vw(gate_x - WT, 180 + 850, 1300 - (180 + 850)))
-        f.walls.append(_vw(gate_x + gate_w, 180 + 850, 1300 - (180 + 850)))
-        # Block the rest of the bottom area except the hallway
-        f.walls.append(pygame.Rect(0, 180 + 850, gate_x - WT, 1300 - (180 + 850)))
-        f.walls.append(pygame.Rect(gate_x + gate_w + WT, 180 + 850, 1800 - (gate_x + gate_w + WT), 1300 - (180 + 850)))
 
-        # Indoor court lines.
+        # Outer perimeter walls with a gap at the bottom for the exit transition
+        f.walls.extend([
+            _hw(0, 0, 1800),
+            _vw(0, 0, 1300), _vw(1800 - WT, 0, 1300),
+        ])
+        f.walls.extend(_hwall_gaps(1300 - WT, 0, 1800, [(gate_x, gate_w)]))
+
+        # Indoor court lines (purely visual)
         f.basketball_court = pygame.Rect(220 + WT, 180 + WT, 1360 - 2 * WT, 850 - 2 * WT)
 
-        # Exit back to campus at the very bottom of the hallway (purple cross requested by user).
+        # Exit back to campus at the bottom gap
         f.transitions.append(FloorTransition(
             (gate_x, 1300 - 40, gate_w, 40),
             FLOOR_CAMPUS, 3340, 1130,
