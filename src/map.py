@@ -282,6 +282,48 @@ class Floor:
                 return r
         return None
 
+    def _load_sprite(self, sprite_name):
+        """Load a sprite by name from data/tiles or assets folders."""
+        import os
+        
+        # Try data/tiles first
+        data_tiles_path = os.path.join(
+            os.path.dirname(os.path.dirname(__file__)),
+            "data", "tiles", sprite_name
+        )
+        if os.path.isfile(data_tiles_path):
+            try:
+                return pygame.image.load(data_tiles_path).convert_alpha()
+            except Exception as e:
+                print(f"Failed to load sprite {sprite_name} from {data_tiles_path}: {e}")
+        
+        # Try assets folders
+        asset_base = os.path.join(
+            os.path.dirname(os.path.dirname(__file__)),
+            "assets", "BehindTheSmile_Assets", "BehindTheSmile_Assets"
+        )
+        
+        # Try common folder
+        common_path = os.path.join(asset_base, "common", f"{sprite_name}")
+        if os.path.isfile(common_path):
+            try:
+                return pygame.image.load(common_path).convert_alpha()
+            except Exception as e:
+                print(f"Failed to load sprite {sprite_name} from {common_path}: {e}")
+        
+        # Try other common locations
+        for folder in ["campus", "floor1", "floor2", "basement"]:
+            folder_path = os.path.join(asset_base, folder, f"{sprite_name}")
+            if os.path.isfile(folder_path):
+                try:
+                    return pygame.image.load(folder_path).convert_alpha()
+                except Exception as e:
+                    print(f"Failed to load sprite {sprite_name} from {folder_path}: {e}")
+        
+        # Sprite not found - return None (rendering code will skip it)
+        print(f"Sprite {sprite_name} not found in assets or data/tiles")
+        return None
+
     def draw(self, screen, camera, player=None, npcs=None):
         sw, sh = screen.get_width(), screen.get_height()
         bg_rect = pygame.Rect(0, 0, self.width, self.height)
@@ -741,8 +783,28 @@ class Floor:
                     pygame.draw.circle(screen, WHITE, (right_key.left, right_key.centery), int(key_h//2), 3)
 
             if hasattr(self, 'garden_decorations'):
+                # Initialize sprite cache if not present
+                if not hasattr(self, '_sprite_cache'):
+                    self._sprite_cache = {}
+                
                 for item in self.garden_decorations:
-                    if item[0] == 'tree':
+                    if item[0] == 'sprite':
+                        _, sx_world, sy_world, sprite_name = item
+                        sx, sy = camera.apply_pos(sx_world, sy_world)
+                        
+                        # Try to load sprite if not cached
+                        if sprite_name not in self._sprite_cache:
+                            sprite_surf = self._load_sprite(sprite_name)
+                            self._sprite_cache[sprite_name] = sprite_surf
+                        
+                        sprite_surf = self._sprite_cache[sprite_name]
+                        if sprite_surf is not None:
+                            # Draw sprite centered at world position
+                            sprite_rect = sprite_surf.get_rect(center=(sx, sy))
+                            if -60 < sprite_rect.centerx < sw + 60 and -60 < sprite_rect.centery < sh + 60:
+                                screen.blit(sprite_surf, sprite_rect)
+                    
+                    elif item[0] == 'tree':
                         _, tx, ty, rad = item
                         sx, sy = camera.apply_pos(tx, ty)
                         draw_rad = rad * 2
@@ -2501,38 +2563,86 @@ class SchoolMap:
         import random
         rng = random.Random(42)
         f.garden_decorations = []
-        for _ in range(50):
+        
+        # Tree sprite
+        tree_sprite = 'ME_Singles_City_Props_32x32_Tree_12.png'
+        # Fountain sprites
+        fountain_2_3 = 'ME_Singles_Garden_32x32_Fountain_2_3.png'
+        fountain_3_3 = 'ME_Singles_Garden_32x32_Fountain_3_3.png'
+        # Flower sprites (rotate through available options)
+        flower_sprites = [
+            'ME_Singles_Villas_32x32_Villa_Yard_Flowers_5.png',
+            'ME_Singles_Villas_32x32_Villa_Yard_Flowers_6.png',
+            'ME_Singles_Villas_32x32_Villa_Yard_Flowers_7.png',
+            'ME_Singles_Villas_32x32_Villa_Yard_Flowers_8.png',
+            'ME_Singles_Villas_32x32_Villa_Yard_Flowers_9 copy 2.png',
+        ]
+        # Trunk/prop sprites (yard_props_17, 18, 19)
+        prop_sprites = [
+            'ME_Singles_Villas_32x32_Villa_Yard_Props_17.png',
+            'ME_Singles_Villas_32x32_Villa_Yard_Props_18.png',
+            'ME_Singles_Villas_32x32_Villa_Yard_Props_19.png',
+        ]
+        
+        # Trees - reduced by 70% (15 remaining from 50)
+        for _ in range(15):
             for _ in range(10):
                 tx = rng.randint(150, 1250)
                 ty = rng.randint(200, 1100)
                 rad = rng.randint(20, 35)
                 treect = pygame.Rect(tx - rad//2, ty - rad//2, rad, rad)
                 if not any(treect.colliderect(w) for w in f.walls):
-                    f.garden_decorations.append(('tree', tx, ty, rad))
+                    f.garden_decorations.append(('sprite', tx, ty, tree_sprite))
                     f.walls.append(pygame.Rect(tx - 10, ty - 10, 20, 20))
                     break
-        for _ in range(120):
-            fx = rng.randint(150, 1250)
-            fy = rng.randint(200, 1100)
-            color = rng.choice([(255, 100, 100), (255, 200, 100), (150, 150, 255), (255, 200, 200), (255, 255, 255)])
-            f.garden_decorations.append(('flower', fx, fy, color))
-
-        # Benches
-        for _ in range(10):
-            for _ in range(10):
-                bx = rng.randint(150, 1250)
-                by = rng.randint(200, 1100)
-                rect = pygame.Rect(bx, by, 60, 25)
-                if not any(rect.colliderect(w) for w in f.walls):
-                    f.furniture.append({"rect": rect, "color": (120, 80, 40), "outline": (80, 50, 20)})
-                    f.walls.append(rect)
-                    break
+        
+        # Flower groups - reduced by 70% (12 remaining), uniformly distributed
+        # Garden area: x: 150-1250, y: 200-1100
+        cols = 4
+        rows = 3
+        x_step = (1250 - 150) / cols
+        y_step = (1100 - 200) / rows
+        
+        for row in range(rows):
+            for col in range(cols):
+                fx = int(150 + col * x_step + x_step / 2)
+                fy = int(200 + row * y_step + y_step / 2)
+                # Add slight random offset for natural look
+                fx += rng.randint(-20, 20)
+                fy += rng.randint(-20, 20)
+                flower = rng.choice(flower_sprites)
+                f.garden_decorations.append(('sprite', fx, fy, flower))
+        
+        # Trunks/props - reduced by 70% (3 remaining), uniformly distributed
+        prop_cols = 3
+        prop_rows = 1
+        prop_x_step = (1250 - 150) / prop_cols
+        prop_y_step = (1100 - 200) / prop_rows
+        
+        for row in range(prop_rows):
+            for col in range(prop_cols):
+                px = int(150 + col * prop_x_step + prop_x_step / 2)
+                py = int(200 + row * prop_y_step + prop_y_step / 2)
+                # Add slight random offset for natural look
+                px += rng.randint(-15, 15)
+                py += rng.randint(-15, 15)
+                prop = rng.choice(prop_sprites)
+                f.garden_decorations.append(('sprite', px, py, prop))
+                f.walls.append(pygame.Rect(px - 10, py - 10, 20, 20))
+        
+        # Fountain in center of English Garden
+        f.garden_decorations.append(('sprite', 700, 650, fountain_2_3))
+        
+        # Fountain in front of Main Building entrance
+        f.garden_decorations.append(('sprite', 2000, 1100, fountain_3_3))
         
         # Roundabout bushes decoration (neat rows on each side)
         for side_x in [1420, 2580]: # Left and Right edges
             for by in range(2520, 2850, 45):
                 rad = 18
                 f.garden_decorations.append(('bush', side_x, by, rad))
+        
+        # Benches (removed - brown rects deleted)
         
         # Parking Lot bushes (strictly outside the perimeter)
         # Top edge (above the parking lot)
