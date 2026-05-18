@@ -1397,7 +1397,7 @@ class Game:
                 return  # ignore input during delay
             if event.key == pygame.K_e:
                 self._car_panel_active = False
-                if self._day1_story_complete or self.time_of_day_minutes >= 16 * 60:
+                if self._day1_story_complete or getattr(self, '_day2_story_complete', False) or getattr(self, '_day3_story_complete', False) or self.time_of_day_minutes >= 16 * 60:
                     self._start_car_departure()
                 else:
                     self._car_panel_cooldown = 1.0
@@ -1493,7 +1493,7 @@ class Game:
             ("mission_return_tech_lab", 2, "Day 2: Return to Ava Thompson", "Mission 7: Deliver the hacked credentials to Ava Thompson."),
             ("mission_high_school_mainframe", 2, "Day 2: High School Mainframe", "Mission 8: Switch to Lena, go to the computer marked with X in the Tech Lab and extract information."),
             ("mission_server_room", 3, "Day 3: Talk to Marcus Green", "Mission 9: Talk to Marcus Green in the Athletic Coliseum."),
-            ("mission_rooftop_party", 3, "Day 3: Rooftop Party", "Mission 10: Go to the Rooftop party and hang out with the populars."),
+            ("mission_rooftop_party", 4, "Day 4: Rooftop Party", "Mission 10: Go to the Rooftop party and hang out with the populars."),
             ("mission_helping_mia", 3, "Day 3: Helping Mia", "Side Mission: Talk to Mia Nakamura and confront Ava Patel."),
             ("mission_final_showdown", 4, "Day 4: Final Showdown", "Mission 11: Enter Basement, disable Smile Club server, confront Director Walsh.")
         ]
@@ -3788,21 +3788,45 @@ class Game:
             if self._is_npc_on_camera(npc):
                 if self.state == GameState.BASKETBALL and hasattr(self.basketball, "opponent") and npc == self.basketball.opponent:
                     continue
-                npc.draw(target_surf, self.camera)
+                drawables.append({
+                    "type": "npc",
+                    "obj": npc,
+                    "bottom": npc.rect.bottom
+                })
+
+        if not (self._car_departure_active and self._car_depart_phase == "drive_away"):
+            if self.state != GameState.BASKETBALL:
+                drawables.append({
+                    "type": "player",
+                    "obj": self.player,
+                    "bottom": self.player.rect.bottom
+                })
+            if getattr(self, "remote_player", None):
+                # Ghosting bug fix: only draw if on same floor
+                if self.remote_player.current_floor == self.current_floor:
+                    drawables.append({
+                        "type": "remote_player",
+                        "obj": self.remote_player,
+                        "bottom": self.remote_player.rect.bottom
+                    })
+
+        drawables.sort(key=lambda d: d["bottom"])
+
+        for item in drawables:
+            if item["type"] == "furn":
+                floor.draw_single_furn(target_surf, self.camera, item["obj"])
+            elif item["type"] == "npc":
+                item["obj"].draw(target_surf, self.camera)
+            elif item["type"] == "player":
+                item["obj"].draw(target_surf, self.camera)
+            elif item["type"] == "remote_player":
+                item["obj"].draw(target_surf, self.camera)
 
         # Draw interaction prompt for nearest NPC in range
         if self.state == GameState.PLAYING:
             nearest_npc = self._nearest_npc(NPC_INTERACTION_RANGE)
             if nearest_npc:
                 nearest_npc.draw_interaction_prompt(target_surf, self.camera)
-
-        if not (self._car_departure_active and self._car_depart_phase == "drive_away"):
-            if self.state != GameState.BASKETBALL:
-                self.player.draw(target_surf, self.camera)
-            if getattr(self, "remote_player", None):
-                # Ghosting bug fix: only draw if on same floor
-                if self.remote_player.current_floor == self.current_floor:
-                    self.remote_player.draw(target_surf, self.camera)
 
         if self.current_floor == FLOOR_1F:
             m_obj = self.mission_manager.missions.get("mission_high_school_mainframe")
@@ -4181,9 +4205,9 @@ class Game:
             (player_name, "Good game. Now, what about the email Eli sent you about the Smile Club?"),
             ("Marcus Green", "Look, man... I don't really know much about what you're talking about. Eli sends weird stuff."),
             ("Marcus Green", "But you know what? I really like your style. You're cool."),
-            ("Marcus Green", "There's a big party today up on the Rooftop with the populars. You should definitely come!"),
-            (player_name, "A rooftop party? Sounds interesting. I'll be there."),
-            ("Marcus Green", "Awesome! Enjoy the party up on the Rooftop!"),
+            ("Marcus Green", "There's a big party tomorrow up on the Rooftop with the populars. You should definitely come!"),
+            (player_name, "A rooftop party tomorrow? Sounds interesting. I'll be there."),
+            ("Marcus Green", "Awesome! Enjoy the party tomorrow up on the Rooftop!"),
         ]
         self._marcus_win_dialogue_index = 0
         self._marcus_win_dialogue_active = True
@@ -4200,10 +4224,14 @@ class Game:
     def _finish_marcus_win_dialogue(self):
         self._marcus_win_dialogue_active = False
         self._marcus_win_dialogue_completed = True
-        self._current_main_mission_text = "Mission 10: Go to the Rooftop party and hang out with the populars."
-        self.mission_manager.unlock_mission("mission_rooftop_party")
-        self.mission_manager.activate_mission("mission_rooftop_party")
-        self.ui.show_notification("New mission available!", NOTIF_INFO)
+        
+        m_obj = self.mission_manager.missions.get("mission_server_room")
+        if m_obj:
+            m_obj.status = MissionStatus.COMPLETED
+            for obj in m_obj.objectives:
+                obj.completed = True
+                obj.progress = obj.required
+            self.mission_manager.completed_ids.add("mission_server_room")
         
         # Trigger Level Up after conversation finishes
         self.player.level += 1
@@ -4213,6 +4241,8 @@ class Game:
         if hasattr(self.ui, 'trigger_level_up'):
             self.ui.trigger_level_up(10)
         self._last_known_level = self.player.level
+
+        self._complete_day3_story()
 
     def _add_oscar_contact(self):
         from src.phone import TextMessage
@@ -4243,6 +4273,13 @@ class Game:
         message = "Day 2 all missions completed, go take the School Bus to go home."
         self._current_main_mission_text = message
         self.ui.trigger_announcement("DAY 2 COMPLETE", message)
+        self.ui.show_notification(message, NOTIF_SUCCESS, 8.0)
+
+    def _complete_day3_story(self):
+        self._day3_story_complete = True
+        message = "Day 3 all missions completed, go take the School Bus to go home."
+        self._current_main_mission_text = message
+        self.ui.trigger_announcement("DAY 3 COMPLETE", message)
         self.ui.show_notification(message, NOTIF_SUCCESS, 8.0)
 
     def _start_noah_guide(self):
@@ -4603,6 +4640,11 @@ class Game:
             self.mission_manager.activate_mission("mission_server_room")
             self.mission_manager._refresh_availability()
             self._current_main_mission_text = "Mission 9: Talk to Marcus Green in the Athletic Coliseum."
+        elif self.day_number == 4:
+            self.mission_manager.unlock_mission("mission_rooftop_party")
+            self.mission_manager.activate_mission("mission_rooftop_party")
+            self.mission_manager._refresh_availability()
+            self._current_main_mission_text = "Mission 10: Go to the Rooftop party and hang out with the populars."
         if hasattr(self, 'schedule_manager'):
             self.schedule_manager.reset_day()
         
