@@ -512,12 +512,24 @@ class WorldMap:
                 ch = max(12, int(24 * z))
                 cx = sx - cw // 2
                 cy = sy - ch // 2
-                bus_yellow = (250, 160, 30)
-                # Bus body (longer and yellow)
-                pygame.draw.rect(screen, bus_yellow, (cx, cy, cw, ch), border_radius=2)
-                # Roof / Top detail (bus is a bit flat but let's draw some black stripes)
-                pygame.draw.rect(screen, (20, 20, 20), (cx + 2, cy + ch * 0.2, cw - 4, 2))
-                pygame.draw.rect(screen, (20, 20, 20), (cx + 2, cy + ch * 0.8, cw - 4, 2))
+                # Try to load and display the bus sprite
+                import os
+                sprite_path = os.path.join(
+                    os.path.dirname(os.path.dirname(__file__)),
+                    "data", "tiles", "ME_Singles_Vehicles_32x32_Bus_Left_1.png"
+                )
+                try:
+                    if not hasattr(self, '_bus_sprite_cache'):
+                        self._bus_sprite_cache = pygame.image.load(sprite_path).convert_alpha()
+                    bus_sprite = self._bus_sprite_cache
+                    scaled_sprite = pygame.transform.scale(bus_sprite, (cw, ch))
+                    screen.blit(scaled_sprite, (cx, cy))
+                except Exception:
+                    # Fallback: draw yellow bus if sprite not found
+                    bus_yellow = (250, 160, 30)
+                    pygame.draw.rect(screen, bus_yellow, (cx, cy, cw, ch), border_radius=2)
+                    pygame.draw.rect(screen, (20, 20, 20), (cx + 2, cy + ch * 0.2, cw - 4, 2))
+                    pygame.draw.rect(screen, (20, 20, 20), (cx + 2, cy + ch * 0.8, cw - 4, 2))
                 # Windows (black rect down the middle)
                 pygame.draw.rect(screen, (40, 60, 80), (cx + 4, cy + ch * 0.4, cw - 8, ch * 0.2))
                 # Wheels

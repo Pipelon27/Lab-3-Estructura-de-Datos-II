@@ -4471,31 +4471,26 @@ class Game:
                 self._begin_day_transition()
 
     def _build_car_surface(self) -> pygame.Surface:
-        """Create a school bus sprite surface (300x135, transparent bg)."""
-        w, h = 300, 135
-        surf = pygame.Surface((w, h), pygame.SRCALPHA)
-        bus_yellow = (250, 160, 30)
-        # Body
-        pygame.draw.rect(surf, bus_yellow, (0, 30, w, 75), border_radius=9)
-        # Roof (higher than car)
-        pygame.draw.rect(surf, bus_yellow, (0, 0, w, 38), border_radius=6)
-        # Windows
-        pygame.draw.rect(surf, (80, 130, 180), (15, 8, 45, 27), border_radius=3)
-        pygame.draw.rect(surf, (80, 130, 180), (75, 8, 45, 27), border_radius=3)
-        pygame.draw.rect(surf, (80, 130, 180), (135, 8, 45, 27), border_radius=3)
-        pygame.draw.rect(surf, (80, 130, 180), (195, 8, 45, 27), border_radius=3)
-        # Windshield (right side)
-        pygame.draw.rect(surf, (80, 130, 180), (255, 8, 30, 27), border_radius=3)
-        # Wheels
-        pygame.draw.circle(surf, (25, 25, 25), (60, 105), 21)
-        pygame.draw.circle(surf, (25, 25, 25), (w - 60, 105), 21)
-        # Headlights (right side = front)
-        pygame.draw.rect(surf, (255, 220, 80), (w - 9, 68, 9, 18), border_radius=3)
-        # Tail lights (left side)
-        pygame.draw.rect(surf, (220, 40, 40), (0, 68, 9, 18), border_radius=3)
-        # Black stripe
-        pygame.draw.rect(surf, (20, 20, 20), (0, 60, w, 6))
-        return surf
+        """Load the school bus sprite from data/tiles."""
+        import os
+        sprite_path = os.path.join(
+            os.path.dirname(os.path.dirname(__file__)),
+            "data", "tiles", "ME_Singles_Vehicles_32x32_Bus_Left_1.png"
+        )
+        try:
+            bus_sprite = pygame.image.load(sprite_path).convert_alpha()
+            # Scale to appropriate size (300x135 for consistency with parking lot)
+            scaled_bus = pygame.transform.scale(bus_sprite, (300, 135))
+            return scaled_bus
+        except Exception as e:
+            print(f"Failed to load bus sprite from {sprite_path}: {e}")
+            # Fallback: return a yellow placeholder if sprite not found
+            w, h = 300, 135
+            surf = pygame.Surface((w, h), pygame.SRCALPHA)
+            bus_yellow = (250, 160, 30)
+            pygame.draw.rect(surf, bus_yellow, (0, 30, w, 75), border_radius=9)
+            pygame.draw.rect(surf, bus_yellow, (0, 0, w, 38), border_radius=6)
+            return surf
 
     def _draw_parked_car(self, surface=None):
         surface = surface or self.screen
