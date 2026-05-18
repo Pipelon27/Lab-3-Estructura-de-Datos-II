@@ -2273,6 +2273,11 @@ class Game:
                 self.pingpong.finished = False
                 self.pingpong.reset()
                 self.state = GameState.PLAYING
+                try:
+                    if pygame.mixer.get_init():
+                        pygame.mixer.music.stop()
+                except Exception:
+                    pass
                 self.ui.show_notification("Settings not yet available in-game.", NOTIF_INFO)
             # When a match result arrives, show end-screen and apply reputation changes
             elif result is not None and not getattr(self.pingpong, 'waiting_for_dismiss', False):
@@ -2349,6 +2354,11 @@ class Game:
             self.pingpong.finished = False
             self.pingpong.reset()
             self.state = GameState.PLAYING
+            try:
+                if pygame.mixer.get_init():
+                    pygame.mixer.music.stop()
+            except Exception:
+                pass
             self._pending_pingpong_result = None
             if pingpong_result == "win":
                 self._begin_oscar_win_dialogue()
@@ -3481,6 +3491,13 @@ class Game:
             opponent = self.npc_manager.get_npc_by_id("npc_oscar")
             self.pingpong.start(self.player, opponent)
             self.state = GameState.PINGPONG
+            try:
+                if pygame.mixer.get_init():
+                    pygame.mixer.music.load("sound/ping pong music.mp3")
+                    pygame.mixer.music.set_volume(0.25)
+                    pygame.mixer.music.play(-1)
+            except Exception:
+                pass
         if "start_basketball" in result and result["start_basketball"]:
             opponent = self.npc_manager.get_npc_by_id("npc_marcus_green")
             self.basketball.start(self.player, opponent)
