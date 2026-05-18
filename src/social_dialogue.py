@@ -539,7 +539,7 @@ class SocialDialogueManager:
                 self.state = InteractionState.CLOSING
 
         if self.state == InteractionState.CLOSING:
-            if self._active_npc:
+            if self._active_npc and SOCIAL_COOLDOWN > 0.0:
                 self._cooldown_timer[self._active_npc.id] = SOCIAL_COOLDOWN
             self.force_close()
 
@@ -547,7 +547,7 @@ class SocialDialogueManager:
 
     def _begin_close(self):
         """Start the closing sequence with cooldown."""
-        if self._active_npc:
+        if self._active_npc and SOCIAL_COOLDOWN > 0.0:
             self._cooldown_timer[self._active_npc.id] = SOCIAL_COOLDOWN
         self.force_close()
 

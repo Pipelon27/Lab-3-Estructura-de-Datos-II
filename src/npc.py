@@ -380,8 +380,16 @@ class NPC:
             return
         from settings import NPC_SOCIAL_RANGE, UI_ACCENT, UI_TEXT
         
+        from src.controller import get_controller
+        controller = get_controller()
+        is_controller = controller.connected and getattr(controller, "last_input_method", "keyboard") == "controller"
+        
         # Check if we should draw (will be called conditionally from game loop)
-        prompt_text = "[E] Skills" if self.id == "npc_gordon" else "[E] Talk"
+        if is_controller:
+            prompt_text = "[A] Skills" if self.id == "npc_gordon" else "[A] Talk"
+        else:
+            prompt_text = "[E] Skills" if self.id == "npc_gordon" else "[E] Talk"
+            
         font = pygame.font.Font(VT323_PATH, 12)
         text_surf = font.render(prompt_text, True, UI_ACCENT)
         
