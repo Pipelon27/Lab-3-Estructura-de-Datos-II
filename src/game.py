@@ -48,6 +48,7 @@ from src.basketball import BasketballGame
 from src.social_reputation import ReputationManager
 from src.social_dialogue import SocialDialogueManager
 from src.social_ui import SocialInteractionUI
+from src.rooftop_party import RooftopParty
 from src.controller import get_controller, init_controller, update_controller, XBOX_A
 from src.schedule_manager import ScheduleManager
 
@@ -386,6 +387,9 @@ class Game:
         self.pingpong = PingPongGame()
         # Basketball minigame
         self.basketball = BasketballGame()
+        
+        # Rooftop Party (Day 3 event)
+        self.rooftop_party = RooftopParty(self.screen)
         
         # ── NEW SOCIAL SYSTEMS ────────────────────────────────
         self.social_reputation_manager = ReputationManager()
@@ -2361,6 +2365,9 @@ class Game:
         self._tick_time(current_dt)
         self._update_class_schedule()
         
+        # Update rooftop party for Day 3 event
+        self.rooftop_party.update(dt, self.day_number)
+        
         # Transition cooldown
         if self._transition_cooldown > 0:
             self._transition_cooldown -= dt
@@ -3659,6 +3666,10 @@ class Game:
         if self.current_floor == FLOOR_CAMPUS:
             self._draw_parked_car(target_surf)
             self._draw_extra_parked_cars(target_surf)
+
+        # Draw rooftop party elements (Day 3 event)
+        if self.day_number >= 3:
+            self.rooftop_party.draw_on_rooftop(target_surf, self.camera, self.current_floor)
 
         if floor and hasattr(floor, 'draw_foreground'):
             floor.draw_foreground(target_surf, self.camera, self.player)
