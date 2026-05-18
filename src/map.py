@@ -852,45 +852,43 @@ class Floor:
                 arc_rect = camera.apply_rect(pygame.Rect(cx - radius, cy - radius, radius * 2, radius * 2))
                 pygame.draw.arc(screen, (220, 220, 220), arc_rect, -math.pi / 2, 0, 4)
             
-            if hasattr(self, "basketball_court"):
-                import math
-                bc = self.basketball_court
-                r = camera.apply_rect(bc)
-                if r.right > 0 and r.left < sw:
-                    # Lines are white
-                    lc = (240, 240, 240)
-                    # Outer boundary
-                    pygame.draw.rect(screen, lc, r, 3)
-                    # Mid-court line
-                    pygame.draw.line(screen, lc, (r.centerx, r.top), (r.centerx, r.bottom), 3)
-                    # Center circle
-                    pygame.draw.circle(screen, lc, r.center, 70, 3)
-                    
-                    # Arcs/Lines for each half
-                    key_w = 220
-                    key_h = 300
-                    tp_rad = 380
-                    
-                    for side in [-1, 1]:
-                        # Key area (rectangle)
-                        if side == -1:
-                            kx = r.left
-                        else:
-                            kx = r.right - key_w
+        # Draw coliseum basketball court (pre-rendered tile based from assets/Baloncesto.png)
+        if self.id == 5 and hasattr(self, "basketball_court"):
+            bc = self.basketball_court
+            cam_ox = int(camera.offset.x)
+            cam_oy = int(camera.offset.y)
+            court_x = bc.x - cam_ox
+            court_y = bc.y - cam_oy
+            
+            # Check visibility (size is 848x694)
+            if -848 < court_x < sw and -694 < court_y < sh:
+                # Initialize resources
+                if "baloncesto" not in self._tile_cache:
+                    try:
+                        self._tile_cache["baloncesto"] = pygame.image.load("assets/Baloncesto.png").convert_alpha()
+                    except Exception:
+                        self._tile_cache["baloncesto"] = None
                         
-                        ky = r.centery - key_h // 2
-                        key_rect = pygame.Rect(kx, ky, key_w, key_h)
-                        pygame.draw.rect(screen, lc, key_rect, 3)
+                if not hasattr(self, "_court_surface"):
+                    sheet = self._tile_cache.get("baloncesto")
+                    if sheet:
+                        # 1. Crop and scale Horizontal Court: cols = 108..531 (width 424), rows = 3..349 (height 347)
+                        court_orig = sheet.subsurface(pygame.Rect(108, 3, 424, 347))
+                        self._court_surface = pygame.transform.scale(court_orig, (848, 694))
                         
-                        # Three point line (large arc)
-                        tp_center = (r.left if side == -1 else r.right, r.centery)
-                        tp_rect = pygame.Rect(tp_center[0] - tp_rad, tp_center[1] - tp_rad, tp_rad * 2, tp_rad * 2)
-                        if side == -1:
-                            # Left side arc
-                            pygame.draw.arc(screen, lc, tp_rect, -math.pi/2, math.pi/2, 3)
-                        else:
-                            # Right side arc
-                            pygame.draw.arc(screen, lc, tp_rect, math.pi/2, 3*math.pi/2, 3)
+                        # 2. Left Hoop: Hoop 2 (cols = 4..91, rows = 163..289, height = 127, width = 88)
+                        # This hoop has orange on the right (facing right, goes on left side)
+                        left_hoop_orig = sheet.subsurface(pygame.Rect(4, 163, 88, 127))
+                        self._left_hoop_surface = pygame.transform.scale(left_hoop_orig, (132, 190))
+                        
+                        # 3. Right Hoop: Hoop 1 (cols = 4..91, rows = 3..129, height = 127, width = 88)
+                        # This hoop has orange on the left (facing left, goes on right side)
+                        right_hoop_orig = sheet.subsurface(pygame.Rect(4, 3, 88, 127))
+                        self._right_hoop_surface = pygame.transform.scale(right_hoop_orig, (132, 190))
+                        
+                # Blit everything centered on the wood floor color!
+                if hasattr(self, "_court_surface") and self._court_surface:
+                    screen.blit(self._court_surface, (court_x, court_y))
 
         # Transitions drawing - only for interior floors (to show the exit)
         if self.id != 0:
@@ -2301,6 +2299,20 @@ class Floor:
                             pygame.draw.circle(screen, (40, 120, 40),
                                                (sx - int(draw_rad * 0.2), sy - int(draw_rad * 0.2)),
                                                int(draw_rad * 0.7))
+        elif self.id == 5 and hasattr(self, "basketball_court"):
+            bc = self.basketball_court
+            cam_ox = int(camera.offset.x)
+            cam_oy = int(camera.offset.y)
+            court_x = bc.x - cam_ox
+            court_y = bc.y - cam_oy
+            
+            # Check visibility (size is 848x694)
+            if -848 < court_x < sw and -694 < court_y < sh:
+                # Symmetrically place hoops at 1.5x on the top layer so characters pass underneath!
+                if hasattr(self, "_left_hoop_surface") and self._left_hoop_surface:
+                    screen.blit(self._left_hoop_surface, (court_x - 45, court_y + 252))
+                if hasattr(self, "_right_hoop_surface") and self._right_hoop_surface:
+                    screen.blit(self._right_hoop_surface, (court_x + 761, court_y + 252))
 
     def __repr__(self):
         return f"Floor({self.id}, '{self.name}', rooms={len(self.rooms)})"
@@ -3469,8 +3481,15 @@ class SchoolMap:
         ])
         f.walls.extend(_hwall_gaps(1300 - WT, 0, 1800, [(gate_x, gate_w)]))
 
-        # Indoor court lines (purely visual)
-        f.basketball_court = pygame.Rect(220 + WT, 180 + WT, 1360 - 2 * WT, 850 - 2 * WT)
+        # Indoor court lines (pre-rendered horizontal court from Baloncesto.png)
+        f.basketball_court = pygame.Rect(476, 258, 848, 694)
+
+        # Add hoop base walls (only the base of the hoop blocks the player!)
+        # Left hoop: centered collision rect at (434, 676, 32, 24)
+        f.walls.append(pygame.Rect(434, 676, 32, 24))
+        
+        # Right hoop: centered collision rect at (1333, 676, 32, 24)
+        f.walls.append(pygame.Rect(1333, 676, 32, 24))
 
         # Exit back to campus at the bottom gap
         f.transitions.append(FloorTransition(

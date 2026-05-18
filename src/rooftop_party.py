@@ -106,6 +106,24 @@ class RooftopParty:
             self._draw_sprite_at_world_pos(surface, camera, "spotlight_base", spx, spy)
             self._draw_sprite_at_world_pos(surface, camera, "spotlight_light_head", spx, spy - 20)
     
+    def get_collisions(self) -> list[pygame.Rect]:
+        """Return invisible collision boxes for all party sprites to block the player."""
+        if not self.is_active:
+            return []
+        
+        return [
+            pygame.Rect(1784, 560, 32, 32),  # DJ
+            pygame.Rect(1584, 560, 32, 32),  # Left Laser
+            pygame.Rect(1984, 560, 32, 32),  # Right Laser
+            pygame.Rect(1784, 610, 32, 32),  # Stage Laser
+            pygame.Rect(1684, 590, 32, 32),  # Singer 1
+            pygame.Rect(1884, 590, 32, 32),  # Singer 2
+            pygame.Rect(1240, 550, 32, 32),  # Spotlight TL
+            pygame.Rect(2328, 550, 32, 32),  # Spotlight TR
+            pygame.Rect(1240, 1630, 32, 32), # Spotlight BL
+            pygame.Rect(2328, 1630, 32, 32), # Spotlight BR
+        ]
+
     def _draw_sprite_at_world_pos(self, surface: pygame.Surface, camera, sprite_key: str, world_x: int, world_y: int):
         """Draw a sprite at world coordinates, applying camera offset."""
         if sprite_key not in self.sprites:
@@ -117,9 +135,9 @@ class RooftopParty:
         screen_x = world_x - camera.offset.x
         screen_y = world_y - camera.offset.y
         
-        # Only draw if on screen
-        if -50 <= screen_x <= SCREEN_WIDTH + 50 and -50 <= screen_y <= SCREEN_HEIGHT + 50:
-            surface.blit(sprite, (screen_x, screen_y))
+        # Pygame's blit handles off-screen clipping natively.
+        # Manual clipping based on SCREEN_WIDTH caused sprites to disappear early when the camera zoomed out.
+        surface.blit(sprite, (screen_x, screen_y))
     
     def is_party_active_on_floor(self, current_floor: int, day_number: int) -> bool:
         """Check if party is active on a given floor."""
