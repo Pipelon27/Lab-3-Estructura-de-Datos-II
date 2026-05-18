@@ -550,7 +550,7 @@ class Game:
         if self.sibling_npc.current_floor == FLOOR_CAMPUS:
             if room.id == "c_tennis" and not self._is_pingpong_unlocked():
                 room_invalid = True
-            elif room.id in ("c_coliseum", "c_coliseum_court") and not self._is_pingpong_unlocked():
+            elif room.id in ("c_coliseum", "c_coliseum_court") and not self._is_coliseum_unlocked():
                 room_invalid = True
             elif room.id in ("c_b_lab", "c_b_lib", "c_b_hall"):
                 if room.id == "c_b_lab" and not self._is_tech_lab_unlocked(): room_invalid = True
@@ -1769,6 +1769,21 @@ class Game:
             return True
         return False
 
+    def _is_coliseum_unlocked(self) -> bool:
+        if getattr(self, "_coliseum_unlocked", False):
+            return True
+        txt = getattr(self, "_current_main_mission_text", "")
+        if not txt:
+            return False
+        if "Mission 9:" in txt or "Mission 10:" in txt or "Mission 11:" in txt or "Side Mission:" in txt or self.day_number >= 3:
+            self._coliseum_unlocked = True
+            return True
+        m = self.mission_manager.missions.get("mission_server_room")
+        if m and m.status in (MissionStatus.AVAILABLE, MissionStatus.ACTIVE, MissionStatus.COMPLETED):
+            self._coliseum_unlocked = True
+            return True
+        return False
+
     def _try_building_entry_confirm(self) -> bool:
         target = self._entry_prompt_target
         if not target:
@@ -1776,6 +1791,12 @@ class Game:
             
         if target["id"] == "ping_pong_court":
             if not self._is_pingpong_unlocked():
+                self.ui.show_notification("This location cannot be accessed until the corresponding mission is unlocked.", NOTIF_ERROR)
+                self._entry_prompt_cooldown = 0.6
+                self._entry_prompt_target = None
+                return False
+        if target["id"] == "athletic_coliseum":
+            if not self._is_coliseum_unlocked():
                 self.ui.show_notification("This location cannot be accessed until the corresponding mission is unlocked.", NOTIF_ERROR)
                 self._entry_prompt_cooldown = 0.6
                 self._entry_prompt_target = None
@@ -1977,6 +1998,10 @@ class Game:
             if not self._is_pingpong_unlocked():
                 self.ui.show_notification("This location cannot be accessed until the corresponding mission is unlocked.", NOTIF_ERROR)
                 return False
+        if floor_id == FLOOR_COLISEUM_INTERIOR:
+            if not self._is_coliseum_unlocked():
+                self.ui.show_notification("This location cannot be accessed until the corresponding mission is unlocked.", NOTIF_ERROR)
+                return False
         if floor_id == FLOOR_ROOFTOP and not getattr(self, '_rooftop_unlocked', False):
             if getattr(self, '_rooftop_block_timer', 0) <= 0:
                 self.ui.show_notification("You must talk to Axel Knight to access the rooftop.", NOTIF_ERROR)
@@ -2001,6 +2026,9 @@ class Game:
                 self._go_to_floor(FLOOR_PINGPONG_INTERIOR, 650, 900)
                 return True
             if room.id == "c_coliseum":
+                if not self._is_coliseum_unlocked():
+                    self.ui.show_notification("This location cannot be accessed until the corresponding mission is unlocked.", NOTIF_ERROR)
+                    return False
                 self._go_to_floor(FLOOR_COLISEUM_INTERIOR, 900, 980)
                 return True
         if room:
@@ -4647,31 +4675,26 @@ class Game:
                 self._begin_day_transition()
 
     def _build_car_surface(self) -> pygame.Surface:
-        """Create a school bus sprite surface (300x135, transparent bg)."""
-        w, h = 300, 135
-        surf = pygame.Surface((w, h), pygame.SRCALPHA)
-        bus_yellow = (250, 160, 30)
-        # Body
-        pygame.draw.rect(surf, bus_yellow, (0, 30, w, 75), border_radius=9)
-        # Roof (higher than car)
-        pygame.draw.rect(surf, bus_yellow, (0, 0, w, 38), border_radius=6)
-        # Windows
-        pygame.draw.rect(surf, (80, 130, 180), (15, 8, 45, 27), border_radius=3)
-        pygame.draw.rect(surf, (80, 130, 180), (75, 8, 45, 27), border_radius=3)
-        pygame.draw.rect(surf, (80, 130, 180), (135, 8, 45, 27), border_radius=3)
-        pygame.draw.rect(surf, (80, 130, 180), (195, 8, 45, 27), border_radius=3)
-        # Windshield (right side)
-        pygame.draw.rect(surf, (80, 130, 180), (255, 8, 30, 27), border_radius=3)
-        # Wheels
-        pygame.draw.circle(surf, (25, 25, 25), (60, 105), 21)
-        pygame.draw.circle(surf, (25, 25, 25), (w - 60, 105), 21)
-        # Headlights (right side = front)
-        pygame.draw.rect(surf, (255, 220, 80), (w - 9, 68, 9, 18), border_radius=3)
-        # Tail lights (left side)
-        pygame.draw.rect(surf, (220, 40, 40), (0, 68, 9, 18), border_radius=3)
-        # Black stripe
-        pygame.draw.rect(surf, (20, 20, 20), (0, 60, w, 6))
-        return surf
+        """Load the school bus sprite from data/tiles."""
+        import os
+        sprite_path = os.path.join(
+            os.path.dirname(os.path.dirname(__file__)),
+            "data", "tiles", "ME_Singles_Vehicles_32x32_Bus_Left_1.png"
+        )
+        try:
+            bus_sprite = pygame.image.load(sprite_path).convert_alpha()
+            # Scale to appropriate size (300x135 for consistency with parking lot)
+            scaled_bus = pygame.transform.scale(bus_sprite, (300, 135))
+            return scaled_bus
+        except Exception as e:
+            print(f"Failed to load bus sprite from {sprite_path}: {e}")
+            # Fallback: return a yellow placeholder if sprite not found
+            w, h = 300, 135
+            surf = pygame.Surface((w, h), pygame.SRCALPHA)
+            bus_yellow = (250, 160, 30)
+            pygame.draw.rect(surf, bus_yellow, (0, 30, w, 75), border_radius=9)
+            pygame.draw.rect(surf, bus_yellow, (0, 0, w, 38), border_radius=6)
+            return surf
 
     def _draw_parked_car(self, surface=None):
         surface = surface or self.screen
