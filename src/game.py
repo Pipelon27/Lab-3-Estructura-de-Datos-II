@@ -999,6 +999,11 @@ class Game:
 
         # ── state-specific controller input ──
         if self.state == GameState.INTRO_CINEMATIC:
+            # Dedicated skip button: Y button, Back button, or B button skips cinematic directly!
+            if controller.is_skill_tree_pressed() or controller.is_map_pressed() or controller.is_cancel_pressed():
+                self._skip_cinematic()
+                return
+
             # D-pad toggles focus on Skip button
             menu_h = controller.get_menu_direction_horizontal()
             menu_v = controller.get_menu_direction()
@@ -1105,9 +1110,9 @@ class Game:
                 self._car_panel_cooldown = 1.0
             return
 
-        # D-pad up: open phone directly
+        # D-pad up or LB: open phone directly
         menu_v = controller.get_menu_direction()
-        if menu_v == -1:  # up
+        if menu_v == -1 or controller.is_block_pressed():
             self.phone.toggle_phone()
             self._hud_focus = None
             return
@@ -1147,7 +1152,7 @@ class Game:
             self._ff_controller_active = False
 
         if not handled_confirm and self._hud_focus not in ("ff", "wallet", "phone"):
-            # A = Interact or Dash when no HUD focus
+            # A = Interact only (dashing removed to resolve duplicate/overlapping dash controls)
             if controller.is_interact_pressed():
                 if getattr(self, '_computer_prompt_active', False):
                     self._start_mainframe_login()
@@ -1157,8 +1162,6 @@ class Game:
                     self._try_interact()
                 elif self._try_building_entry_confirm():
                     pass
-                else:
-                    self.player.start_dash()
 
             # RT dash is handled in player.update() via controller.rt_value
             # But we can also trigger dash on press for responsiveness
@@ -1448,6 +1451,8 @@ class Game:
         """Handle keyboard input during the intro cinematic."""
         if event.key in (pygame.K_SPACE, pygame.K_RETURN):
             self._advance_cinematic_dialogue()
+        elif event.key == pygame.K_q:  # Q key skips cinematic directly
+            self._skip_cinematic()
 
     def _keys_paused(self, event: pygame.event.Event):
         option_count = len(self.pause_options)
