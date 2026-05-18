@@ -1790,12 +1790,28 @@ class Floor:
         """Top-down potted plant with ceramic pot and lush leaves."""
         if rect.width <= 4 or rect.height <= 4:
             return
-        # Pot
-        pygame.draw.circle(screen, (139, 69, 19), rect.center, rect.width // 3)
-        # Leaves
-        pygame.draw.circle(screen, color, (rect.centerx - 4, rect.centery - 4), rect.width // 2)
-        pygame.draw.circle(screen, (34, 139, 34), (rect.centerx + 4, rect.centery + 4), rect.width // 2)
-        pygame.draw.circle(screen, color, (rect.centerx, rect.centery), rect.width // 2)
+        if "maceta" not in self._tile_cache:
+            try:
+                img = pygame.image.load("assets/UI/maceta.png").convert_alpha()
+                self._tile_cache["maceta"] = img
+            except Exception:
+                self._tile_cache["maceta"] = None
+
+        maceta_img = self._tile_cache.get("maceta")
+        if maceta_img:
+            disp_w = int(rect.width * 2.8)
+            disp_h = int(rect.height * 2.8)
+            scaled_img = pygame.transform.smoothscale(maceta_img, (disp_w, disp_h))
+            blit_x = rect.centerx - disp_w // 2
+            blit_y = rect.bottom - disp_h
+            screen.blit(scaled_img, (blit_x, blit_y))
+        else:
+            # Pot
+            pygame.draw.circle(screen, (139, 69, 19), rect.center, rect.width // 3)
+            # Leaves
+            pygame.draw.circle(screen, color, (rect.centerx - 4, rect.centery - 4), rect.width // 2)
+            pygame.draw.circle(screen, (34, 139, 34), (rect.centerx + 4, rect.centery + 4), rect.width // 2)
+            pygame.draw.circle(screen, color, (rect.centerx, rect.centery), rect.width // 2)
 
     def _draw_chalkboard(self, screen: pygame.Surface, rect: pygame.Rect, facing: str = "up"):
         """Portable green chalkboard with wooden frame and two wheels.
@@ -2544,7 +2560,13 @@ class SchoolMap:
         # Interior columns for Ping Pong to prevent walking through the whole building
         f.walls.append(pygame.Rect(tx + 100, ty + 100, 40, 40))
         f.walls.append(pygame.Rect(tx + tw - 140, ty + 100, 40, 40))
-        # Garden hedges removed per user request
+        # Garden hedges removed per user request; replaced with benches and planters
+        for bx in (300, 550, 800, 1050):
+            _add_furn(f, pygame.Rect(bx, 450, 120, 40), "bench")
+            _add_furn(f, pygame.Rect(bx, 750, 120, 40), "bench")
+        for px in (240, 490, 740, 990, 1220):
+            _add_furn(f, pygame.Rect(px, 452, 36, 36), "plant", color=(40, 160, 60))
+            _add_furn(f, pygame.Rect(px, 752, 36, 36), "plant", color=(40, 160, 60))
 
         
         # Ping pong table in the middle of Ping Pong Courts
