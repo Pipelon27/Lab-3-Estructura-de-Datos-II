@@ -4408,7 +4408,9 @@ class Game:
         # ── Prompt to advance ──
         if self._cine_phase in ("dialogue", "final_dialogue"):
             font_hint = pygame.font.Font(VT323_PATH, 16)
-            hint = font_hint.render("Press SPACE to continue", True, (160, 160, 160))
+            is_controller = bool(self.controller and self.controller.connected and getattr(self.controller, "last_input_method", "keyboard") == "controller")
+            msg = "Press A to continue" if is_controller else "Press SPACE to continue"
+            hint = font_hint.render(msg, True, (160, 160, 160))
             self.screen.blit(hint, hint.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT - 30)))
 
         # ── Skip button (top-right corner) ──
@@ -4510,7 +4512,9 @@ class Game:
         self.screen.blit(dim, (0, 0))
         self._draw_cinematic_dialogue(text, speaker)
         font_hint = pygame.font.Font(VT323_PATH, 16)
-        hint = font_hint.render("Press SPACE to continue", True, (160, 160, 160))
+        is_controller = bool(self.controller and self.controller.connected and getattr(self.controller, "last_input_method", "keyboard") == "controller")
+        msg = "Press A to continue" if is_controller else "Press SPACE to continue"
+        hint = font_hint.render(msg, True, (160, 160, 160))
         self.screen.blit(hint, hint.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT - 30)))
 
     def _draw_marcus_win_dialogue(self):
@@ -4523,7 +4527,9 @@ class Game:
         self.screen.blit(dim, (0, 0))
         self._draw_cinematic_dialogue(text, speaker)
         font_hint = pygame.font.Font(VT323_PATH, 16)
-        hint = font_hint.render("Press SPACE to continue", True, (160, 160, 160))
+        is_controller = bool(self.controller and self.controller.connected and getattr(self.controller, "last_input_method", "keyboard") == "controller")
+        msg = "Press A to continue" if is_controller else "Press SPACE to continue"
+        hint = font_hint.render(msg, True, (160, 160, 160))
         self.screen.blit(hint, hint.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT - 30)))
 
     def _draw_cinematic_wrapped_text(self, text: str, font, colour, x: int, y: int, max_w: int):
