@@ -194,7 +194,56 @@ class BasketballGame:
                     self.shooting = False
 
     def handle_controller(self, controller):
-        pass
+        if self.paused:
+            if controller.is_confirm_pressed() or controller.is_cancel_pressed():
+                self.paused = False
+            return
+            
+        if self.show_menu:
+            if controller.is_confirm_pressed() or controller.is_pause_pressed():
+                self.show_menu = False
+                self.active = True
+            return
+            
+        if self.waiting_for_dismiss:
+            if controller.is_confirm_pressed() or controller.is_cancel_pressed():
+                self.waiting_for_dismiss = False
+                self.finished = True
+                if self.opponent:
+                    self.opponent.ai_enabled = True # Restore NPC AI
+            return
+
+        if self.active and not self.show_menu and not self.waiting_for_dismiss:
+            # Jump with A button
+            if controller.is_confirm_pressed():
+                if self.player_z == 0:
+                    self.player_vz = self.jump_speed
+
+            # Shoot with X button (Hold to build power, Release to shoot)
+            if controller.is_button_pressed(2): # XBOX_X is button index 2
+                if self.ball_held_by == 'player':
+                    self.shooting = True
+                    self.shoot_bar = 0.0
+                    self.shoot_dir = 1
+            elif controller.is_button_released(2): # XBOX_X released
+                if self.shooting and self.ball_held_by == 'player':
+                    self.player_shoot_anim = 0.0
+                    self.player_pending_shot = self.shoot_bar
+                    self.shooting = False
+
+            # Block/Steal with B button
+            if controller.is_button_pressed(1): # XBOX_B is button index 1
+                if self.ball_held_by != 'player' and self.player_z == 0:
+                    self.blocking = True
+                    self.block_timer = 0.3
+                    # Steal check
+                    if self.ball_held_by == 'opp' and self.opp_shooting:
+                        dist = math.hypot(self.player.rect.centerx - self.opponent.rect.centerx, 
+                                          self.player.rect.centery - self.opponent.rect.centery)
+                        if dist < 60:
+                            self.opp_shooting = False
+                            self.ball_held_by = 'player'
+                            self.possession = 'player'
 
     def _shoot_ball(self, shooter, power_bar):
         self.last_shot_team = shooter
@@ -667,9 +716,21 @@ class BasketballGame:
             pygame.draw.rect(screen, color, (bar_x, bar_y, fill_w, bar_h))
             pygame.draw.rect(screen, WHITE, (bar_x + int(bar_w * 0.8) - 2, bar_y - 2, 4, bar_h + 4))
 
+        # Check if a controller is connected to show dynamic button prompts
+        controller_connected = False
+        try:
+            from src.controller import get_controller
+            controller_connected = get_controller().connected
+        except:
+            pass
+
         if self.show_menu:
-            menu_text = self._font.render("Press SPACE to start Basketball!", True, WHITE)
-            controls_text = self._font.render("WASD to move | Left Click hold to shoot | Right Click to block | Space to Jump", True, (200, 200, 200))
+            if controller_connected:
+                menu_text = self._font.render("Press A or START to start Basketball!", True, WHITE)
+                controls_text = self._font.render("Left Stick to Move | Hold/Release X to Shoot | B to Block | A to Jump", True, (200, 200, 200))
+            else:
+                menu_text = self._font.render("Press SPACE to start Basketball!", True, WHITE)
+                controls_text = self._font.render("WASD to move | Left Click hold to shoot | Right Click to block | Space to Jump", True, (200, 200, 200))
             
             bg_rect = menu_text.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 20)).inflate(40, 20)
             pygame.draw.rect(screen, (0, 0, 0, 200), bg_rect)
@@ -680,7 +741,8 @@ class BasketballGame:
             screen.blit(controls_text, controls_text.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 30)))
 
         if self.waiting_for_dismiss:
-            end_text = self._font.render(self.end_message + " (Press SPACE)", True, WHITE)
+            btn_prompt = "A Button" if controller_connected else "SPACE"
+            end_text = self._font.render(self.end_message + f" (Press {btn_prompt})", True, WHITE)
             e_rect = end_text.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2))
             pygame.draw.rect(screen, (0, 0, 0, 200), e_rect.inflate(20, 10))
             screen.blit(end_text, e_rect)

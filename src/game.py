@@ -1027,6 +1027,10 @@ class Game:
             self._handle_controller_wallet(controller)
         elif self.state == GameState.MAP:
             self._handle_controller_map(controller)
+        elif self.state == GameState.SOCIAL_INTERACTION:
+            self.social_dialogue_manager.handle_controller(controller)
+        elif self.state == GameState.BASKETBALL:
+            self.basketball.handle_controller(controller)
 
 
     def _toggle_pause(self):
