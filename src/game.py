@@ -32,7 +32,7 @@ from settings import (
 from src.phone      import Phone
 from src.map        import SchoolMap
 from src.player     import Aiden, Lena
-from src.npc        import NPCManager, NPC
+from src.npc        import NPCManager, NPC, is_generic_wanderer
 from src.camera     import Camera
 from src.inventory  import Inventory
 from src.mission    import MissionManager, EventQueue
@@ -351,16 +351,15 @@ class Game:
             noah_carter.show_name = True
 
         # ── Push random NPCs out of staircase rooms during cinematic ──
-        stair_ids = {"f1_stairs_2f", "f1_basement_stairs",
-                     "f2_stairs_1f", "f2_stairs_rooftop", "bs_stairs_1f"}
+        stair_ids = {"f1_stairs_2f", "f1_basement_stairs", "f2_stairs_1f", "f2_roof_stairs", "b_stairs_up", "rt_stairs_down"}
         for npc in self.npc_manager.npcs.values():
-            if npc.id.startswith("npc_rnd_"):
+            if is_generic_wanderer(npc.id):
                 fl = self.school_map.get_floor(npc.current_floor)
                 if fl:
                     room = fl.get_room_at(npc.rect.centerx, npc.rect.centery)
                     if room and room.id in stair_ids:
                         # Move to centre of the floor's main corridor
-                        npc.rect.center = (1600, 1000)
+                        npc.rect.center = (1600, 1000) if npc.current_floor != 4 else (1600, 500)
 
         # Ensure Noah's spawn area is clear
         self._clear_noah_area(radius=160)
@@ -432,7 +431,9 @@ class Game:
         axel.ai_enabled = False
         axel.ignore_schedule = True
         axel.show_name = True
-        axel.rect.center = (1010, 202)
+        from settings import Direction
+        axel.direction = Direction.RIGHT
+        axel.rect.center = (1058, 224)  # Literally in the entrance of the stairs
 
     def _is_npc_on_camera(self, npc) -> bool:
         """Return True if the NPC is on the same floor as the player AND within the camera viewport.
@@ -2512,13 +2513,21 @@ class Game:
             if abs(pdx) >= abs(pdy):
                 if pdx >= 0:
                     _npc.rect.x += push_amt
+                    if walls and any(_npc.rect.colliderect(w) for w in walls):
+                        _npc.rect.x -= push_amt
                 else:
                     _npc.rect.x -= push_amt
+                    if walls and any(_npc.rect.colliderect(w) for w in walls):
+                        _npc.rect.x += push_amt
             else:
                 if pdy >= 0:
                     _npc.rect.y += push_amt
+                    if walls and any(_npc.rect.colliderect(w) for w in walls):
+                        _npc.rect.y -= push_amt
                 else:
                     _npc.rect.y -= push_amt
+                    if walls and any(_npc.rect.colliderect(w) for w in walls):
+                        _npc.rect.y += push_amt
 
             # Keep NPC in bounds
             if floor:
@@ -2583,10 +2592,21 @@ class Game:
             for door in floor.doors:
                 if door.locked:
                     npc_walls.append(door.rect)
+            
+            # Physically block all stair rooms so generic NPCs can't wander into them
+            stair_room_ids = {
+                "f1_stairs_2f", "f1_basement_stairs", 
+                "f2_stairs_1f", "f2_roof_stairs", 
+                "b_stairs_up", "rt_stairs_down"
+            }
+            for rid in stair_room_ids:
+                r = floor.rooms.get(rid)
+                if r:
+                    npc_walls.append(r.rect)
         
         # Staircase and building-entry restriction for generic NPCs
         restricted = [
-            "f1_stairs_2f", "f1_basement_stairs", "f2_stairs_1f", "f2_stairs_rooftop", "bs_stairs_1f"
+            "f1_stairs_2f", "f1_basement_stairs", "f2_stairs_1f", "f2_roof_stairs", "b_stairs_up", "rt_stairs_down"
         ]
         if self.current_floor == FLOOR_CAMPUS:
             restricted += ["c_building", "c_tennis", "c_coliseum", "c_b_hall", "c_b_lab", "c_b_lib"]
@@ -2598,7 +2618,7 @@ class Game:
             # Host or Solo: run full NPC AI
             self.npc_manager.update_on_floor(
                 current_dt, self.current_floor, floor, npc_walls,
-                classrooms_restricted=(self.current_floor == FLOOR_CAMPUS),
+                classrooms_restricted=True,
                 restricted_rooms=restricted,
                 is_visible=self._is_npc_on_camera
             )
@@ -2624,17 +2644,33 @@ class Game:
                             if abs(dx) >= abs(dy):
                                 if dx >= 0:
                                     b.rect.x += 1
+                                    if any(b.rect.colliderect(w) for w in floor1_ref.walls):
+                                        b.rect.x -= 1
                                     a.rect.x -= 1
+                                    if any(a.rect.colliderect(w) for w in floor1_ref.walls):
+                                        a.rect.x += 1
                                 else:
                                     b.rect.x -= 1
+                                    if any(b.rect.colliderect(w) for w in floor1_ref.walls):
+                                        b.rect.x += 1
                                     a.rect.x += 1
+                                    if any(a.rect.colliderect(w) for w in floor1_ref.walls):
+                                        a.rect.x -= 1
                             else:
                                 if dy >= 0:
                                     b.rect.y += 1
+                                    if any(b.rect.colliderect(w) for w in floor1_ref.walls):
+                                        b.rect.y -= 1
                                     a.rect.y -= 1
+                                    if any(a.rect.colliderect(w) for w in floor1_ref.walls):
+                                        a.rect.y += 1
                                 else:
                                     b.rect.y -= 1
+                                    if any(b.rect.colliderect(w) for w in floor1_ref.walls):
+                                        b.rect.y += 1
                                     a.rect.y += 1
+                                    if any(a.rect.colliderect(w) for w in floor1_ref.walls):
+                                        a.rect.y -= 1
 
         # Day timer (use current_dt for faster phase transitions)
         self.day_timer += current_dt
@@ -2710,47 +2746,22 @@ class Game:
         current = self.time_of_day_minutes
         self._last_time_minutes = current
 
-        # --- Staggered entry/exit for NPCs ---
-        # 09:30 AM (570 mins) - Move random 1F NPCs to cafeteria (Break Time starts)
-        if previous < 570 <= current:
-            self.ui.trigger_announcement("BREAK TIME!", "Class dismissed - Cafeteria is now open")
-            get_controller().rumble(0.7, 0.7, 500)
-            self._move_random_npcs_to_cafeteria()
-
-        # 11:00 AM (660 mins) - Break Time is Over notification & leaving
-        if previous < 660 <= current:
-            self.ui.show_notification("Break Time is Over! Head back to class", NOTIF_WARNING, 4.0)
-            get_controller().rumble(0.5, 0.5, 400)
-            self._move_npcs_out_of_cafeteria()
-
-        # 01:30 PM (810 mins) - Return to cafeteria for lunch
-        if previous < 810 <= current:
-            self.ui.trigger_announcement("LUNCH TIME!", "Today's lunch is: Hamburger with French fries")
-            get_controller().rumble(0.7, 0.7, 500)
-            self._move_random_npcs_to_cafeteria()
-
-        # 03:00 PM (900 mins) - Lunch Time is Over notification & leaving
-        if previous < 900 <= current:
-            self.ui.show_notification("Lunch Time is Over! Head back to class", NOTIF_WARNING, 4.0)
-            get_controller().rumble(0.5, 0.5, 400)
-            self._move_npcs_out_of_cafeteria()
-
-        # 4:00 PM (960 mins) — Freeze clock, notify player, start NPC departure
+        # 4:00 PM (960 mins) — Freeze clock, notify player, NO NPC DEPARTURE
         if current >= 960:
             self.time_of_day_minutes = 960  # Freeze at exactly 4:00 PM
             if not self._school_day_ended:
                 self._school_day_ended = True
-                self.ui.trigger_announcement("SCHOOL'S OUT!", "Head to the bus to go home")
-                self.ui.show_notification("\U0001f6d1 School's out! Head to the bus to go home.", NOTIF_INFO, 8.0)
+                self.ui.trigger_announcement("SCHOOL'S OUT!", "Classes are over for the day.")
+                self.ui.show_notification("School's out! (NPCs will stay in their assigned rooms)", NOTIF_INFO, 8.0)
                 get_controller().rumble(0.7, 0.7, 500)
-                self._trigger_npc_departure()
             return
 
         # Update ScheduleManager for NPC routines
         if hasattr(self, 'schedule_manager'):
             self.schedule_manager.update(
                 current, self.npc_manager, self.school_map, self.current_floor,
-                is_visible=self._is_npc_on_camera
+                is_visible=self._is_npc_on_camera,
+                day_number=self.day_number
             )
         if self.day_number >= 2:
             self._place_ava_for_story()
@@ -2848,7 +2859,7 @@ class Game:
         radius_sq = radius * radius
         npcs = self.npc_manager.get_npcs_on_floor(noah.current_floor)
         for npc in npcs:
-            if npc is noah or not npc.id.startswith("npc_rnd_"):
+            if npc is noah or not is_generic_wanderer(npc.id):
                 continue
             dx = npc.rect.centerx - noah.rect.centerx
             dy = npc.rect.centery - noah.rect.centery
@@ -3222,8 +3233,6 @@ class Game:
             else:
                 msg = f"📅 {day_name} — {phase_label}"
                 self.ui.show_notification(msg, NOTIF_INFO)
-            self.npc_manager.update_schedules(self.current_phase, self.school_map, is_visible=self._is_npc_on_camera)
-            self._spread_first_floor_npcs()
             if random.random() < 0.3:
                 self._random_event()
         else:
@@ -3434,6 +3443,11 @@ class Game:
             if pop_rep >= 60 or overall_rep >= 60:
                 self._rooftop_unlocked = True
                 self.ui.show_notification("Axel Knight nods. Rooftop access unlocked!", NOTIF_SUCCESS)
+                axel = self.npc_manager.get_npc_by_id("npc_axel_knight")
+                if axel:
+                    axel.ai_enabled = True
+                    axel.target_pos = (1066, 180)  # Move up to step aside
+                    axel.stop_at_target = True
             else:
                 self.ui.show_notification(f"Axel sneers: 'You need 60 Popular reputation (Current: {pop_rep}). Get lost!'", NOTIF_ERROR)
         if result.get("day1_complete"):
@@ -4413,8 +4427,6 @@ class Game:
         self._advance_phase() # Triggers notifications
         
         # Re-init NPCs for the new day positions
-        self.npc_manager.update_schedules(self.current_phase, self.school_map, is_visible=self._is_npc_on_camera)
-        self._spread_first_floor_npcs()
         self._place_ava_for_story()
         if self.day_number == 2:
             self._current_main_mission_text = "Mission 4: Go to Tech Lab to meet Ava Thompson."
