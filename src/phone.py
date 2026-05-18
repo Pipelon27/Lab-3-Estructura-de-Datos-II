@@ -1875,6 +1875,10 @@ class Phone:
             path_ava = "assets/Imagenes realistas personajes/Ava Thompson.png"
             if os.path.exists(path_ava):
                 self.avatars["npc_ava_thompson"] = pygame.image.load(path_ava).convert_alpha()
+
+            path_marcus = "assets/Imagenes realistas personajes/Marcus Green.png"
+            if os.path.exists(path_marcus):
+                self.avatars["npc_marcus_green"] = pygame.image.load(path_marcus).convert_alpha()
         except Exception:
             pass
 

@@ -713,7 +713,7 @@ class NPCManager:
     def _create_default_npcs(self):
         """Fallback NPCs when JSON is missing."""
         defaults = [
-            ("npc_marcus",  "Marcus Rivera", SocialGroup.ATHLETES,
+            ("npc_marcus",  "Marcus Green", SocialGroup.ATHLETES,
              "Friendly team captain", "Secretly pressured by Smile Club",
              {"arrival": 0, "class_1": 0, "break_1": 1, "lunch": 3,
               "activities": 1, "departure": 0, "night": 5},

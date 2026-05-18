@@ -200,16 +200,16 @@ class DialogueSystem:
     def _create_defaults(self):
         """Fallback dialogue trees if JSON is missing."""
         # ── Marcus (Aiden) ──
-        root = DialogueNode("m_root", "Marcus Rivera",
+        root = DialogueNode("m_root", "Marcus Green",
                             "Hey, you're the new kid right? Welcome to Ravenside!")
         c1 = DialogueNode("m_c1", "Player", "Thanks! What's this place like?",
                           is_player_choice=True)
         c2 = DialogueNode("m_c2", "Player", "Yeah. Who runs things around here?",
                           is_player_choice=True)
-        c1r = DialogueNode("m_c1r", "Marcus Rivera",
+        c1r = DialogueNode("m_c1r", "Marcus Green",
                            "It's… mostly fine. Just watch out for the Smile Club.",
                            consequences={"reputation_changes": {"athletes": 5}})
-        c2r = DialogueNode("m_c2r", "Marcus Rivera",
+        c2r = DialogueNode("m_c2r", "Marcus Green",
                            "Director Walsh is in charge. But Dylan Brooks acts like he owns the halls.",
                            consequences={"xp": 10})
         root.add_child(c1)
@@ -219,16 +219,16 @@ class DialogueSystem:
         self.trees["dlg_marcus_aiden"] = DialogueTree(root)
 
         # ── Marcus (Lena) ──
-        root2 = DialogueNode("m2_root", "Marcus Rivera",
+        root2 = DialogueNode("m2_root", "Marcus Green",
                              "Oh hey — you must be Aiden's sister. I'm Marcus.")
         c2a = DialogueNode("m2_c1", "Player", "I'm Lena. What do you know about the network here?",
                            is_player_choice=True)
         c2b = DialogueNode("m2_c2", "Player", "Nice to meet you. Any tips for a new student?",
                            is_player_choice=True)
-        c2a_r = DialogueNode("m2_c1r", "Marcus Rivera",
+        c2a_r = DialogueNode("m2_c1r", "Marcus Green",
                              "Network? Sophie Chen in the tech club knows way more than me.",
                              consequences={"mission_unlock": "mission_strange_rumours"})
-        c2b_r = DialogueNode("m2_c2r", "Marcus Rivera",
+        c2b_r = DialogueNode("m2_c2r", "Marcus Green",
                              "Stay low, make friends, and don't attract the wrong attention.",
                              consequences={"reputation_changes": {"athletes": 3}})
         root2.add_child(c2a)
@@ -435,7 +435,7 @@ class DialogueSystem:
 
         box_w_offset = 140 if show_portrait else 0
 
-        box_h = 180 if choices else 130
+        box_h = max(180, 90 + len(choices) * 26 + 20) if choices else 130
         # If is NPC or player has portrait, move the box right to make room on the left
         box_x = 30 + box_w_offset if show_portrait else 30
         # Move up (from -20 to -60)
