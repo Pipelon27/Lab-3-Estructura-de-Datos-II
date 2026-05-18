@@ -2438,7 +2438,8 @@ class SchoolMap:
                         1700, 2050, 600, 350, (42, 58, 62)))
         f.add_room(Room("c_gardens", "English Gardens",
                         "Manicured gardens with hedge maze",
-                        100, 150, 1200, 1000, (32, 58, 32)))
+                        100, 150, 1200, 1000, (32, 58, 32),
+                        tile_path="data/tiles/ME_Singles_Terrains_and_Fences_32x32_Grass_Water_3_9.png"))
         f.add_room(Room("c_tennis", "Ping Pong Court",
                         "One court for recreation",
                         3100, 2100, 780, 750, (40, 52, 44),
@@ -2531,11 +2532,8 @@ class SchoolMap:
         # Interior columns for Ping Pong to prevent walking through the whole building
         f.walls.append(pygame.Rect(tx + 100, ty + 100, 40, 40))
         f.walls.append(pygame.Rect(tx + tw - 140, ty + 100, 40, 40))
-        # Garden hedges
-        f.walls.extend([
-            _hw(300, 500, 500), _hw(550, 800, 550),
-            _vw(750, 250, 450), _vw(450, 650, 350),
-        ])
+        # Garden hedges removed per user request
+
         
         # Ping pong table in the middle of Ping Pong Courts
         # Court bounds: x=3100, y=2100, w=780, h=750
