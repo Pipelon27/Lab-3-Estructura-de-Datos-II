@@ -2647,42 +2647,55 @@ class SchoolMap:
         # Fountain in front of Main Building entrance
         f.garden_decorations.append(('sprite', 2000, 1100, fountain_3_3))
         
+        # New bush sprites to alternate
+        bush_sprites = [
+            'ME_Singles_Garden_32x32_Bush_1.png',
+            'ME_Singles_Garden_32x32_Bush_2.png',
+            'ME_Singles_Garden_32x32_Bush_8.png',
+            'ME_Singles_Garden_32x32_Bush_12.png',
+        ]
+        bush_idx = 0
+        def next_bush():
+            nonlocal bush_idx
+            b = bush_sprites[bush_idx]
+            bush_idx = (bush_idx + 1) % len(bush_sprites)
+            return b
+
         # Roundabout bushes decoration (neat rows on each side)
         for side_x in [1420, 2580]: # Left and Right edges
             for by in range(2520, 2850, 45):
-                rad = 18
-                f.garden_decorations.append(('bush', side_x, by, rad))
+                f.garden_decorations.append(('sprite', side_x, by, next_bush()))
         
         # Benches (removed - brown rects deleted)
         
         # Parking Lot bushes (strictly outside the perimeter)
         # Top edge (above the parking lot)
         for px in range(20, 1180, 50):
-            f.garden_decorations.append(('bush', px, 2100 - 25, 18))
+            f.garden_decorations.append(('sprite', px, 2100 - 25, next_bush()))
         # Right edge (to the right of the parking lot)
         for py in range(2100, 2850, 50):
-            f.garden_decorations.append(('bush', 1200 + 25, py, 18))
+            f.garden_decorations.append(('sprite', 1200 + 25, py, next_bush()))
 
         # Main Building perimeters
         for bx in range(1400, 2600, 60): # Top
-            f.garden_decorations.append(('bush', bx, 1100 - 25, 20))
+            f.garden_decorations.append(('sprite', bx, 1100 - 25, next_bush()))
         for by in range(1100, 1950, 60): # Sides
-            f.garden_decorations.append(('bush', 1400 - 25, by, 20))
-            f.garden_decorations.append(('bush', 2600 + 25, by, 20))
+            f.garden_decorations.append(('sprite', 1400 - 25, by, next_bush()))
+            f.garden_decorations.append(('sprite', 2600 + 25, by, next_bush()))
 
         # Athletic Coliseum perimeters
         for cx in range(2800, 3880, 70): # Top
-            f.garden_decorations.append(('bush', cx, 150 - 30, 22))
+            f.garden_decorations.append(('sprite', cx, 150 - 30, next_bush()))
         for cy in range(150, 1050, 70): # Sides
-            f.garden_decorations.append(('bush', 2800 - 30, cy, 22))
-            f.garden_decorations.append(('bush', 3880 + 30, cy, 22))
+            f.garden_decorations.append(('sprite', 2800 - 30, cy, next_bush()))
+            f.garden_decorations.append(('sprite', 3880 + 30, cy, next_bush()))
 
         # Ping Pong Court perimeters
         for tx in range(3100, 3880, 60): # Top
-            f.garden_decorations.append(('bush', tx, 2100 - 25, 20))
+            f.garden_decorations.append(('sprite', tx, 2100 - 25, next_bush()))
         for ty in range(2100, 2750, 60): # Sides
-            f.garden_decorations.append(('bush', 3100 - 25, ty, 20))
-            f.garden_decorations.append(('bush', 3880 + 25, ty, 20))
+            f.garden_decorations.append(('sprite', 3100 - 25, ty, next_bush()))
+            f.garden_decorations.append(('sprite', 3880 + 25, ty, next_bush()))
 
         # Portal: building entrance → 1F reception
         f.transitions.append(FloorTransition(

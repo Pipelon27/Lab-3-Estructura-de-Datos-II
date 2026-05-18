@@ -186,11 +186,11 @@ class Game:
         # ── Parked car (parking lot) ──
         self._parked_car_rect = pygame.Rect(900, 2400, 300, 105)
         self._extra_parked_cars = [
-            (pygame.Rect(350, 2600, 200, 90), (180, 50, 50), 180),    # Red, faces LEFT
-            (pygame.Rect(700, 2100, 200, 90), (50, 100, 180), 0),     # Blue, faces RIGHT
-            (pygame.Rect(600, 2750, 200, 90), (50, 180, 80), 180),    # Green, faces LEFT
-            (pygame.Rect(350, 2150, 200, 90), (150, 150, 160), 0),    # Silver, faces RIGHT
-            (pygame.Rect(1000, 2600, 200, 90), (45, 45, 50), 180),    # Soft black, faces LEFT
+            (pygame.Rect(350, 2600, 200, 90), 'ME_Singles_Vehicles_32x32_Car_Left_4.png', 180),    # Red, faces LEFT
+            (pygame.Rect(700, 2100, 200, 90), 'ME_Singles_Vehicles_32x32_Car_Right_1.png', 0),     # Blue, faces RIGHT
+            (pygame.Rect(600, 2750, 200, 90), 'ME_Singles_Vehicles_32x32_Car_Left_2.png', 180),    # Green, faces LEFT
+            (pygame.Rect(350, 2150, 200, 90), 'ME_Singles_Vehicles_32x32_Car_Right_6.png', 0),     # Silver/Grey, faces RIGHT
+            (pygame.Rect(1000, 2600, 200, 90), 'ME_Singles_Vehicles_32x32_Car_Left_5.png', 180),   # Black, faces LEFT
         ]
         self._car_panel_active: bool = False  # "End day?" confirmation panel
         self._car_panel_input_delay: float = 0.0  # delay before accepting input
@@ -4656,17 +4656,30 @@ class Game:
 
     def _draw_extra_parked_cars(self, surface=None):
         surface = surface or self.screen
-        """Draw additional cars parked in the lot."""
+        """Draw additional cars parked in the lot using new sprites."""
         if self.current_floor != 0:
             return
-        for rect, color, angle in self._extra_parked_cars:
-            car_surf = self._build_regular_car_surface(color)
-            if angle == 180:
-                car_surf = pygame.transform.flip(car_surf, True, False)
-            elif angle != 0:
-                car_surf = pygame.transform.rotate(car_surf, angle)
+            
+        if not hasattr(self, '_extra_car_sprites'):
+            self._extra_car_sprites = {}
+            
+        for rect, sprite_name, angle in self._extra_parked_cars:
+            if sprite_name not in self._extra_car_sprites:
+                import os
+                path = os.path.join("data", "tiles", sprite_name)
+                try:
+                    img = pygame.image.load(path).convert_alpha()
+                    # Scale the sprite to perfectly fit the collision rectangle
+                    img = pygame.transform.scale(img, (rect.width, rect.height))
+                    self._extra_car_sprites[sprite_name] = img
+                except Exception as e:
+                    print(f"Failed to load car sprite {sprite_name}: {e}")
+                    self._extra_car_sprites[sprite_name] = self._build_regular_car_surface((100, 100, 100))
+                    
+            car_surf = self._extra_car_sprites[sprite_name]
             cr = self.camera.apply_rect(rect)
-            surface.blit(car_surf, (cr.x, cr.y - 10))
+            # The sprites already face left or right natively, no flipping needed!
+            surface.blit(car_surf, (cr.x, cr.y))
 
     def _draw_car_panel(self):
         """Draw the 'End the day?' confirmation panel overlay."""
