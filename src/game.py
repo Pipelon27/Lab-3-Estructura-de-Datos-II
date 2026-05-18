@@ -550,7 +550,7 @@ class Game:
         if self.sibling_npc.current_floor == FLOOR_CAMPUS:
             if room.id == "c_tennis" and not self._is_pingpong_unlocked():
                 room_invalid = True
-            elif room.id in ("c_coliseum", "c_coliseum_court") and not self._is_pingpong_unlocked():
+            elif room.id in ("c_coliseum", "c_coliseum_court") and not self._is_coliseum_unlocked():
                 room_invalid = True
             elif room.id in ("c_b_lab", "c_b_lib", "c_b_hall"):
                 if room.id == "c_b_lab" and not self._is_tech_lab_unlocked(): room_invalid = True
@@ -1752,6 +1752,21 @@ class Game:
             return True
         return False
 
+    def _is_coliseum_unlocked(self) -> bool:
+        if getattr(self, "_coliseum_unlocked", False):
+            return True
+        txt = getattr(self, "_current_main_mission_text", "")
+        if not txt:
+            return False
+        if "Mission 9:" in txt or "Mission 10:" in txt or "Mission 11:" in txt or "Side Mission:" in txt or self.day_number >= 3:
+            self._coliseum_unlocked = True
+            return True
+        m = self.mission_manager.missions.get("mission_server_room")
+        if m and m.status in (MissionStatus.AVAILABLE, MissionStatus.ACTIVE, MissionStatus.COMPLETED):
+            self._coliseum_unlocked = True
+            return True
+        return False
+
     def _try_building_entry_confirm(self) -> bool:
         target = self._entry_prompt_target
         if not target:
@@ -1759,6 +1774,12 @@ class Game:
             
         if target["id"] == "ping_pong_court":
             if not self._is_pingpong_unlocked():
+                self.ui.show_notification("This location cannot be accessed until the corresponding mission is unlocked.", NOTIF_ERROR)
+                self._entry_prompt_cooldown = 0.6
+                self._entry_prompt_target = None
+                return False
+        if target["id"] == "athletic_coliseum":
+            if not self._is_coliseum_unlocked():
                 self.ui.show_notification("This location cannot be accessed until the corresponding mission is unlocked.", NOTIF_ERROR)
                 self._entry_prompt_cooldown = 0.6
                 self._entry_prompt_target = None
@@ -1960,6 +1981,10 @@ class Game:
             if not self._is_pingpong_unlocked():
                 self.ui.show_notification("This location cannot be accessed until the corresponding mission is unlocked.", NOTIF_ERROR)
                 return False
+        if floor_id == FLOOR_COLISEUM_INTERIOR:
+            if not self._is_coliseum_unlocked():
+                self.ui.show_notification("This location cannot be accessed until the corresponding mission is unlocked.", NOTIF_ERROR)
+                return False
         if floor_id == FLOOR_ROOFTOP and not getattr(self, '_rooftop_unlocked', False):
             if getattr(self, '_rooftop_block_timer', 0) <= 0:
                 self.ui.show_notification("You must talk to Axel Knight to access the rooftop.", NOTIF_ERROR)
@@ -1984,6 +2009,9 @@ class Game:
                 self._go_to_floor(FLOOR_PINGPONG_INTERIOR, 650, 900)
                 return True
             if room.id == "c_coliseum":
+                if not self._is_coliseum_unlocked():
+                    self.ui.show_notification("This location cannot be accessed until the corresponding mission is unlocked.", NOTIF_ERROR)
+                    return False
                 self._go_to_floor(FLOOR_COLISEUM_INTERIOR, 900, 980)
                 return True
         if room:
