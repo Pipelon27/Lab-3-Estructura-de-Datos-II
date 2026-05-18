@@ -2570,7 +2570,7 @@ class SchoolMap:
                 f.walls.append(pygame.Rect(px - 10, py - 10, 20, 20))
         
         # Use the fountain sprite only at the Central Fountain POI
-        f.garden_decorations.append(('sprite', 2000, 2225, fountain_2_3, 280, 350))
+        f.garden_decorations.append(('sprite', 2000, 2225, fountain_3_3, 280, 350))
         
         # New bush sprites to alternate
         bush_sprites = [
