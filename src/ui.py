@@ -137,6 +137,14 @@ class UI:
         except:
             pass
 
+        # Smile Club Image for Alarm
+        self.smile_club_img = None
+        try:
+            img = pygame.image.load("assets/UI/smile club.png").convert_alpha()
+            self.smile_club_img = pygame.transform.smoothscale(img, (260, 260))
+        except Exception as e:
+            print(f"Error loading smile club image: {e}")
+
     # ── notifications ─────────────────────────────────────────
 
     def show_notification(self, text: str, colour: tuple = NOTIF_INFO,
@@ -1445,14 +1453,22 @@ class UI:
 
         elif screen_type == "alarm":
             # Big Red Alarm Window
-            panel = pygame.Rect(cx - 300, cy - 200, 600, 400)
+            panel = pygame.Rect(cx - 450, cy - 320, 900, 640)
             pygame.draw.rect(screen, (30, 10, 10), panel, border_radius=16)
             pygame.draw.rect(screen, (255, 50, 50), panel, 6, border_radius=16)
 
             # Warning Header
-            w_font = pygame.font.Font(VT323_PATH, 50)
+            w_font = pygame.font.Font(VT323_PATH, 56)
             header = w_font.render("WARNING: SECURITY BREACH DETECTED!", True, (255, 80, 80))
-            screen.blit(header, header.get_rect(center=(cx, panel.y + 60)))
+            screen.blit(header, header.get_rect(center=(cx, panel.y + 55)))
+            pygame.draw.line(screen, (255, 50, 50), (panel.x + 50, panel.y + 90), (panel.right - 50, panel.y + 90), 3)
+
+            # Smile Club Image
+            if getattr(self, 'smile_club_img', None):
+                img_rect = self.smile_club_img.get_rect(center=(cx, panel.y + 240))
+                pygame.draw.rect(screen, (20, 5, 5), img_rect.inflate(16, 16), border_radius=12)
+                pygame.draw.rect(screen, (255, 80, 80), img_rect.inflate(16, 16), 3, border_radius=12)
+                screen.blit(self.smile_club_img, img_rect)
 
             # Alarm lines
             lines = [
@@ -1460,15 +1476,15 @@ class UI:
                 "YOU HAVE BEEN DISCOVERED.",
                 "PREPARE FOR WHAT IS COMING.",
             ]
-            ly = panel.y + 140
+            ly = panel.y + 425
             for l in lines:
                 lbl = self.font_hud_lg.render(l, True, WHITE)
                 screen.blit(lbl, lbl.get_rect(center=(cx, ly)))
-                ly += 45
+                ly += 38
 
             # Acknowledge Button
-            ack_btn = pygame.Rect(cx - 150, cy + 120, 300, 50)
-            pygame.draw.rect(screen, (200, 40, 40), ack_btn, border_radius=8)
-            pygame.draw.rect(screen, WHITE, ack_btn, 2, border_radius=8)
-            a_lbl = self.font_hud_lg.render("Acknowledge & Escape", True, WHITE)
+            ack_btn = pygame.Rect(cx - 180, panel.bottom - 90, 360, 55)
+            pygame.draw.rect(screen, (200, 40, 40), ack_btn, border_radius=12)
+            pygame.draw.rect(screen, WHITE, ack_btn, 3, border_radius=12)
+            a_lbl = self.font_menu.render("Acknowledge & Escape", True, WHITE)
             screen.blit(a_lbl, a_lbl.get_rect(center=ack_btn.center))

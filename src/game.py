@@ -798,7 +798,7 @@ class Game:
                     self.mainframe_screen = "alarm"
 
             elif self.mainframe_screen == "alarm":
-                ack_btn = pygame.Rect(cx - 150, cy + 120, 300, 50)
+                ack_btn = pygame.Rect(cx - 180, cy + 230, 360, 55)
                 if ack_btn.collidepoint(pos):
                     self._exit_mainframe_success()
 
@@ -1134,15 +1134,7 @@ class Game:
             # A = Interact or Dash when no HUD focus
             if controller.is_interact_pressed():
                 if getattr(self, '_computer_prompt_active', False):
-                    self.state = GameState.MAINFRAME
-                    self.mainframe_user_input = ""
-                    self.mainframe_pass_input = ""
-                    self.mainframe_active_field = "user"
-                    self.mainframe_screen = "login"
-                    self.mainframe_error = ""
-                    self.mainframe_alarm = False
-                    self.mainframe_selected_email = None
-                    self._computer_prompt_active = False
+                    self._start_mainframe_login()
                     return
                 npc = self._nearest_npc(NPC_INTERACTION_RANGE)
                 if npc:
@@ -1398,6 +1390,11 @@ class Game:
 
         # If E is pressed and an NPC is nearby, open dialogue;
         if event.key == pygame.K_e:
+            # Priority 1: Computer Prompt (Mainframe Login)
+            if getattr(self, '_computer_prompt_active', False):
+                self._start_mainframe_login()
+                return
+            
             # Priority 2: Building Entrance
             if self._try_building_entry_confirm():
                 return
@@ -1614,6 +1611,17 @@ class Game:
     # ──────────────────────────────────────────────────────────
     #  INTERACTION HELPERS
     # ──────────────────────────────────────────────────────────
+
+    def _start_mainframe_login(self):
+        self.state = GameState.MAINFRAME
+        self.mainframe_user_input = ""
+        self.mainframe_pass_input = ""
+        self.mainframe_active_field = "user"
+        self.mainframe_screen = "login"
+        self.mainframe_error = ""
+        self.mainframe_alarm = False
+        self.mainframe_selected_email = None
+        self._computer_prompt_active = False
 
     def _nearest_npc(self, radius: float, skip_siblings: bool = False):
         """Return the closest NPC within *radius*, or None."""
@@ -2662,8 +2670,8 @@ class Game:
 
         if self.current_floor == FLOOR_1F:
             m_obj = self.mission_manager.missions.get("mission_high_school_mainframe")
-            if m_obj and m_obj.status == MissionStatus.ACTIVE:
-                if self.player.rect.colliderect(pygame.Rect(90, 320, 90, 64)):
+            if m_obj and m_obj.status in (MissionStatus.ACTIVE, MissionStatus.AVAILABLE):
+                if self.player.rect.colliderect(pygame.Rect(90, 320, 90, 64).inflate(50, 50)):
                     if self.character != Character.LENA:
                         if getattr(self, '_lena_hack_warn_timer', 0) <= 0:
                             self.ui.show_notification("Ava Thompson: 'Aiden, let Lena handle this computer. Switch characters!'", NOTIF_WARNING)
@@ -3354,6 +3362,7 @@ class Game:
                     obj.completed = True
                     obj.progress = obj.required
                 self.mission_manager.completed_ids.add("mission_tech_lab_ava")
+            self.mission_manager._refresh_availability()
             self._current_main_mission_text = "Mission 5: Open map to find Alan Chen's discreet location and talk to him."
         if result.get("show_alan_chen_map"):
             self._alan_chen_map_unlocked = True
@@ -3406,6 +3415,7 @@ class Game:
                     self.mission_manager.completed_ids.add("mission_return_tech_lab")
                     self.mission_manager.unlock_mission("mission_high_school_mainframe")
                     self.mission_manager.activate_mission("mission_high_school_mainframe")
+                    self.mission_manager._refresh_availability()
                     self._current_main_mission_text = "Mission 8: Switch to Lena, go to the computer marked with X in the Tech Lab and extract information."
             else:
                 self.ui.show_notification("Ava Thompson looks at you: 'You don't have the credentials yet. Go talk to Alan Chen.'", NOTIF_ERROR)
