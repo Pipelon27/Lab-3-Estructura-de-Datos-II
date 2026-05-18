@@ -97,6 +97,8 @@ class Game:
         self.previous_state = GameState.INTRO_CINEMATIC
         self.active_wallet_item = None
         self.wallet_focus_item = None
+        self.selected_yearbook_group = "Athletes"
+        self.yearbook_scroll_offset = 0
         self.pause_sel      = 0
 
         # Transition cooldown (prevents rapid re-triggering)
@@ -312,14 +314,14 @@ class Game:
                 obs.rect.centerx = oscar.rect.centerx + int(math.cos(angle) * radius)
                 obs.rect.centery = oscar.rect.centery + int(math.sin(angle) * radius)
 
-        # ── Gordon Ramsay (The Chef) ──
+        # ── El Gastroo (The Chef) ──
         self._place_ava_for_story()
         f1 = self.school_map.get_floor(FLOOR_1F)
         caf = f1.rooms.get("f1_cafeteria")
         if caf:
             gordon = NPC(
-                "npc_gordon", "Gordon Ramsay", 
-                SocialGroup.FACULTY, "Chef", "Gordon is shouting about undercooked lamb.",
+                "npc_gordon", "El Gastroo", 
+                SocialGroup.FACULTY, "Chef", "El Gastroo is shouting about undercooked lamb.",
                 gender="male"
             )
             gordon.current_floor = FLOOR_1F
@@ -389,6 +391,7 @@ class Game:
         # ── NEW SOCIAL SYSTEMS ────────────────────────────────
         self.social_reputation_manager = ReputationManager()
         self.social_reputation_manager.set_reputation_system(self.reputation)
+        self.social_reputation_manager.game = self
         
         self.social_dialogue_manager = SocialDialogueManager()
         self.social_dialogue_manager.reputation_manager = self.social_reputation_manager
@@ -861,7 +864,34 @@ class Game:
                         self.wallet_focus_item = None
                 elif self.state == GameState.WALLET:
                     if self.active_wallet_item:
-                        # Click anywhere to go back to wallet view
+                        if self.active_wallet_item == "yearbook":
+                            if event.button == 4: # Scroll Up
+                                self.yearbook_scroll_offset = max(0, self.yearbook_scroll_offset - 1)
+                                print(f"[Yearbook] Scroll UP. Offset: {self.yearbook_scroll_offset}")
+                                return
+                            elif event.button == 5: # Scroll Down
+                                self.yearbook_scroll_offset += 1
+                                print(f"[Yearbook] Scroll DOWN. Offset: {self.yearbook_scroll_offset}")
+                                return
+
+                            cx, cy = SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2
+                            main_panel = pygame.Rect(cx - 600, cy - 300, 1200, 600)
+                            left_panel = pygame.Rect(main_panel.x + 20, main_panel.y + 80, 280, main_panel.height - 100)
+                            if left_panel.collidepoint(event.pos):
+                                y_click = event.pos[1]
+                                start_y = left_panel.y + 45
+                                clicked_idx = (y_click - start_y) // 40
+                                if 0 <= clicked_idx < 6:
+                                    groups = ["Athletes", "Tech Club", "Populars", "Academics", "Rebels", "Outsiders"]
+                                    old_group = self.selected_yearbook_group
+                                    self.selected_yearbook_group = groups[clicked_idx]
+                                    if self.selected_yearbook_group != old_group:
+                                        self.yearbook_scroll_offset = 0
+                                    print(f"[Yearbook] Selected group: {self.selected_yearbook_group}")
+                                return
+                            elif main_panel.collidepoint(event.pos):
+                                return
+                        # Click anywhere else to go back to wallet view
                         self.active_wallet_item = None
                         self.wallet_focus_item = None
                     else:
@@ -1132,10 +1162,7 @@ class Game:
         # RB = Light Attack (Aiden) or Hack (Lena)
         if controller.is_attack_pressed():
             if self.character == Character.AIDEN:
-                target = self._nearest_npc(ATTACK_RANGE)
-                if target:
-                    self.combat_system.start_combat(self.player, target)
-                    self.state = GameState.COMBAT
+                self.player.start_attack()
             elif self.character == Character.LENA:
                 hackable = self._get_hackable()
                 if hackable:
@@ -1208,6 +1235,13 @@ class Game:
                     idx = focus_cycle.index(self.wallet_focus_item)
                     idx = (idx + move) % len(focus_cycle)
                     self.wallet_focus_item = focus_cycle[idx]
+        elif self.active_wallet_item == "yearbook":
+            move_v = controller.get_menu_direction()
+            if move_v != 0:
+                groups = ["Athletes", "Tech Club", "Populars", "Academics", "Rebels", "Outsiders"]
+                cur_idx = groups.index(self.selected_yearbook_group) if self.selected_yearbook_group in groups else 0
+                self.selected_yearbook_group = groups[(cur_idx + move_v) % len(groups)]
+                print(f"[Yearbook] Controller cycled group to: {self.selected_yearbook_group}")
 
     def _handle_controller_map(self, controller):
         """Handle controller input during MAP state."""
@@ -1314,12 +1348,34 @@ class Game:
             GameState.TRADING:          lambda e: self.trade_system.handle_input(e),
             GameState.INVENTORY_SCREEN: lambda e: self.inventory.handle_input(e),
             GameState.SKILL_TREE_SCREEN:lambda e: self.player.skill_tree.handle_input(e, self.player),
+            GameState.WALLET:           self._keys_wallet,
             GameState.PAUSED:           self._keys_paused,
             GameState.MISSION_SELECT:   self._keys_mission_select,
             GameState.GAME_OVER:        self._keys_game_over,
         }.get(self.state)
         if handler:
             handler(event)
+    def _keys_wallet(self, event: pygame.event.Event):
+        """Handle keyboard input while in the wallet view."""
+        if self.active_wallet_item == "yearbook":
+            groups = ["Athletes", "Tech Club", "Populars", "Academics", "Rebels", "Outsiders"]
+            cur_idx = groups.index(self.selected_yearbook_group) if self.selected_yearbook_group in groups else 0
+            if event.key in (pygame.K_UP, pygame.K_w):
+                self.selected_yearbook_group = groups[(cur_idx - 1) % len(groups)]
+                self.yearbook_scroll_offset = 0
+                print(f"[Yearbook] Cycled group UP to: {self.selected_yearbook_group}")
+            elif event.key in (pygame.K_DOWN, pygame.K_s):
+                self.selected_yearbook_group = groups[(cur_idx + 1) % len(groups)]
+                self.yearbook_scroll_offset = 0
+                print(f"[Yearbook] Cycled group DOWN to: {self.selected_yearbook_group}")
+            elif event.key == pygame.K_PAGEUP:
+                self.yearbook_scroll_offset = max(0, self.yearbook_scroll_offset - 1)
+                print(f"[Yearbook] Keyboard scrolled UP. Offset: {self.yearbook_scroll_offset}")
+            elif event.key == pygame.K_PAGEDOWN:
+                self.yearbook_scroll_offset += 1
+                print(f"[Yearbook] Keyboard scrolled DOWN. Offset: {self.yearbook_scroll_offset}")
+            elif event.key in (pygame.K_ESCAPE, pygame.K_i):
+                self.active_wallet_item = None
 
     # ── key handlers per state ────────────────────────────────
 
@@ -1341,28 +1397,16 @@ class Game:
             return
 
         # If E is pressed and an NPC is nearby, open dialogue;
-        if event.key in (pygame.K_e, pygame.K_RETURN):
-            if getattr(self, '_computer_prompt_active', False):
-                self.state = GameState.MAINFRAME
-                self.mainframe_user_input = ""
-                self.mainframe_pass_input = ""
-                self.mainframe_active_field = "user"
-                self.mainframe_screen = "login"
-                self.mainframe_error = ""
-                self.mainframe_alarm = False
-                self.mainframe_selected_email = None
-                self._computer_prompt_active = False
+        if event.key == pygame.K_e:
+            # Priority 2: Building Entrance
+            if self._try_building_entry_confirm():
                 return
-            if event.key == pygame.K_e:
-                # Priority 2: Building Entrance
-                if self._try_building_entry_confirm():
-                    return
-                
-                # Priority 3: NPC Interaction
-                npc = self._nearest_npc(NPC_INTERACTION_RANGE)
-                if npc:
-                    self._try_interact()
-                    return
+            
+            # Priority 3: NPC Interaction
+            npc = self._nearest_npc(NPC_INTERACTION_RANGE)
+            if npc and npc.health > 0:
+                self._try_interact()
+                return
         # SPACE (KEY_INTERACT) and dash aliases trigger dash
         elif event.key in (KEY_INTERACT, KEY_DASH_ALT, KEY_DASH_ALT2):
             self.player.start_dash()
@@ -1372,9 +1416,6 @@ class Game:
             self.state = GameState.WALLET
             self.active_wallet_item = None
             self.wallet_focus_item = None
-        elif event.key == KEY_SKILL_TREE:
-            self.previous_state = self.state
-            self.state = GameState.SKILL_TREE_SCREEN
         elif event.key == KEY_PHONE:
             self.phone.toggle_phone()
         elif event.key == KEY_HACK and self.character == Character.LENA:
@@ -1382,6 +1423,8 @@ class Game:
             if hackable:
                 self.hacking_game.start(hackable, self.player)
                 self.state = GameState.HACKING
+        elif event.key == KEY_LIGHT_ATTACK and self.character == Character.AIDEN:
+            self.player.start_attack()
         
 
     def _keys_cinematic(self, event: pygame.event.Event):
@@ -1572,12 +1615,14 @@ class Game:
     #  INTERACTION HELPERS
     # ──────────────────────────────────────────────────────────
 
-    def _nearest_npc(self, radius: float):
+    def _nearest_npc(self, radius: float, skip_siblings: bool = False):
         """Return the closest NPC within *radius*, or None."""
         npcs = self.npc_manager.get_npcs_on_floor(self.current_floor)
         px, py = self.player.rect.center
         best, best_d = None, radius
         for npc in npcs:
+            if skip_siblings and npc.id in ("npc_aiden", "npc_lena"):
+                continue
             d = ((npc.rect.centerx - px)**2 + (npc.rect.centery - py)**2) ** 0.5
             if d < best_d:
                 best_d = d
@@ -1600,7 +1645,15 @@ class Game:
     def _try_interact(self):
         """Interact with nearest NPC."""
         npc = self._nearest_npc(NPC_INTERACTION_RANGE)
-        if npc:
+        if npc and npc.health > 0:
+            if npc.id == "npc_gordon":
+                self.previous_state = self.state
+                self.state = GameState.SKILL_TREE_SCREEN
+                self.player.vx = 0
+                self.player.vy = 0
+                self.player._dashing = False
+                return
+
             # Check if this NPC has a dialogue_id (story NPC using old system)
             dlg_id = npc.get_dialogue_id(self.character)
             if dlg_id:
@@ -2371,6 +2424,48 @@ class Game:
         if getattr(self, '_rooftop_block_timer', 0) > 0:
             self._rooftop_block_timer -= dt
 
+        # ── Player Attacks NPCs ──
+        if getattr(self.player, 'is_attacking', False):
+            hitbox = self.player.get_attack_hitbox()
+            if hitbox:
+                for _npc in npcs_on_floor:
+                    if _npc.health <= 0 or _npc.id in ("npc_aiden", "npc_lena"):
+                        continue
+                    if _npc.id not in getattr(self.player, '_hit_npcs', set()):
+                        if hitbox.colliderect(_npc.rect):
+                            self.player._hit_npcs.add(_npc.id)
+                            _npc.health -= self.player.attack_damage
+                            self.ui.show_notification(f"Hit {_npc.name} for {self.player.attack_damage} dmg!", NOTIF_SUCCESS)
+                            if _npc.health <= 0:
+                                _npc.health = 0
+                                _npc.knockout_timer = 120.0
+                                _npc.is_hostile = False
+                                self.reputation.modify(_npc.group.value, -5)
+                                self.ui.show_notification(f"Knocked out {_npc.name}! -5 reputation with {_npc.group.value.title()}", NOTIF_ERROR)
+                            else:
+                                _npc.is_hostile = True
+
+        # ── Hostile NPCs chase & attack ──
+        import math
+        for _npc in npcs_on_floor:
+            if getattr(_npc, 'is_hostile', False) and _npc.health > 0:
+                dist = math.hypot(_npc.rect.centerx - self.player.rect.centerx, _npc.rect.centery - self.player.rect.centery)
+                if dist > 400:
+                    _npc.is_hostile = False
+                    _npc.target_pos = None
+                else:
+                    _npc.target_pos = self.player.rect.center
+                    _npc.ai_enabled = True
+                    if dist < 60:
+                        if getattr(_npc, 'attack_cooldown', 0) <= 0:
+                            dmg = getattr(_npc, 'target_damage', 8)
+                            self.player.take_damage(dmg)
+                            _npc.attack_cooldown = 1.0
+                            self.ui.show_notification(f"{_npc.name} attacked you!", NOTIF_ERROR)
+                            controller = get_controller()
+                            if controller.connected:
+                                controller.rumble(0.5, 0.5, 200)
+
         # ── Player pushes NPCs on contact ──────────────────────────────────
         # Stationary NPCs = heavy resistance (1px nudge), moving NPCs = light push
         from settings import NPC_SIZE
@@ -2908,7 +3003,7 @@ class Game:
     def _update_minimap_markers(self):
         """Register specific NPCs on the world map for easier tracking."""
         key_npcs = {
-            "npc_gordon":      ("Gordon Ramsay",  (200, 100, 50)),
+            "npc_gordon":      ("El Gastroo",  (200, 100, 50)),
             "npc_dylan":       ("Dylan Brooks",   (200, 50, 50)),
             "npc_marcus":      ("Marcus Rivera",  (50, 100, 200)),
             "npc_director":    ("Director Walsh", (150, 50, 200)),
@@ -3172,19 +3267,40 @@ class Game:
                         # Use average of friendship and trust as a simple relationship score
                         npc_rep = (rel_edge.friendship + rel_edge.trust) // 2
                     
+                    friendship = rel_edge.friendship if rel_edge else 50
+                    respect = rel_edge.respect if rel_edge else 50
+                    fear = rel_edge.fear if rel_edge else 0
+                    trust = rel_edge.trust if rel_edge else 50
+                    suspicion = rel_edge.suspicion if rel_edge else 0
+                    
                     npc_list.append({
                         "name": npc.name,
                         "id": npc_id,
                         "reputation": npc_rep,
                         "gender": getattr(npc, "gender", "unspecified"),
+                        "mask_revealed": getattr(npc, "mask_revealed", False),
+                        "public_personality": getattr(npc, "public_personality", "Unknown"),
+                        "private_personality": getattr(npc, "private_personality", "Unknown"),
+                        "friendship": friendship,
+                        "respect": respect,
+                        "fear": fear,
+                        "trust": trust,
+                        "suspicion": suspicion,
                     })
             
             if npc_list:
                 npc_groups[group_name] = npc_list
         
+        # Clamp scroll offset
+        selected_npcs = npc_groups.get(self.selected_yearbook_group, [])
+        max_scroll = max(0, len(selected_npcs) - 4)
+        self.yearbook_scroll_offset = max(0, min(self.yearbook_scroll_offset, max_scroll))
+        
         return {
             "reputation_data": reputation_data,
             "npc_groups": npc_groups,
+            "selected_group": self.selected_yearbook_group,
+            "scroll_offset": self.yearbook_scroll_offset,
         }
 
     def _apply_rewards(self, rewards: dict):

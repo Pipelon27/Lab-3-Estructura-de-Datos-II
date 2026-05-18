@@ -213,6 +213,7 @@ class NPC:
         self.health = 50
         self.is_hostile = False
         self.attack_cooldown = 0.0
+        self.knockout_timer = 0.0
 
         # Animation state
         self.animations = {}
@@ -350,10 +351,12 @@ class NPC:
         
         Called during normal game draw to show prompt to player.
         """
+        if self.health <= 0:
+            return
         from settings import NPC_SOCIAL_RANGE, UI_ACCENT, UI_TEXT
         
         # Check if we should draw (will be called conditionally from game loop)
-        prompt_text = "[E] Talk"
+        prompt_text = "[E] Skills" if self.id == "npc_gordon" else "[E] Talk"
         font = pygame.font.Font(VT323_PATH, 12)
         text_surf = font.render(prompt_text, True, UI_ACCENT)
         
@@ -381,6 +384,19 @@ class NPC:
 
     def update(self, dt: float, walls: list[pygame.Rect] | None = None):
         """Update AI and movement."""
+        if self.health <= 0:
+            if self.knockout_timer > 0:
+                # 1 second of real time roughly equals 1 in-game minute by default,
+                # so 120 seconds = 2 in-game hours
+                self.knockout_timer -= dt
+                if self.knockout_timer <= 0:
+                    self.health = self.max_health
+                    self.knockout_timer = 0.0
+            return
+
+        if self.attack_cooldown > 0:
+            self.attack_cooldown -= dt
+
         if not self.ai_enabled:
             self._advance_animation(dt)
             return

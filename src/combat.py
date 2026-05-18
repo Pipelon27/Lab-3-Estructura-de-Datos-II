@@ -54,6 +54,8 @@ class CombatSystem:
         self.player    = None
         self.target    = None
         self.timer     = 0          # generic frame counter
+        self.npc_attack_timer = 0
+        self.start_pos = None
 
         # Target (NPC) combat stats
         self.target_health     = 0
@@ -73,6 +75,8 @@ class CombatSystem:
         self.player    = player
         self.target    = npc
         self.timer     = 0
+        self.npc_attack_timer = 0
+        self.start_pos = (player.rect.centerx, player.rect.centery)
         self.hit_combo_count = 0
         self._result   = None
         self._hit_flash = 0
@@ -160,8 +164,9 @@ class CombatSystem:
 
         elif self.state == CombatState.BLOCKING:
             # NPC tries to attack while player blocks
-            self.timer += 1
-            if self.timer % 40 == 0:
+            self.npc_attack_timer += 1
+            if self.npc_attack_timer >= 40:
+                self.npc_attack_timer = 0
                 dmg = int(self.target_damage * (1 - BLOCK_DAMAGE_REDUCTION))
                 self.player.take_damage(dmg)
 
@@ -172,14 +177,22 @@ class CombatSystem:
 
         elif self.state == CombatState.IDLE:
             # NPC attacks on a slow cycle
-            self.timer += 1
-            if self.timer % 60 == 0:
+            self.npc_attack_timer += 1
+            if self.npc_attack_timer >= 60:
+                self.npc_attack_timer = 0
                 self._npc_counter_attack()
 
         # Check lose condition
         if self.player and not self.player.is_alive():
             self._end_combat("lose")
             return self._result
+
+        import math
+        if self.player and self.start_pos:
+            dist = math.hypot(self.player.rect.centerx - self.start_pos[0], self.player.rect.centery - self.start_pos[1])
+            if dist > 250:
+                self._end_combat("flee")
+                return self._result
 
         # Stamina regen during combat (slower)
         if self.player:
@@ -202,6 +215,10 @@ class CombatSystem:
             dmg = 0
 
         self.target_health = max(0, self.target_health - dmg)
+        if self.target:
+            self.target.health = self.target_health
+            if self.target_health <= 0:
+                self.target.knockout_timer = 120.0
         self._hit_flash = 8
 
     def _npc_counter_attack(self):
