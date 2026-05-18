@@ -3698,7 +3698,7 @@ class Game:
         floor = self.school_map.get_floor(self.current_floor)
         if floor:
             npcs = self.npc_manager.get_npcs_on_floor(self.current_floor)
-            floor.draw(target_surf, self.camera, self.player, npcs)
+            floor.draw(target_surf, self.camera, self.player, npcs, draw_furniture=False)
 
         # Draw parked car on campus
         if self.current_floor == FLOOR_CAMPUS:
@@ -3712,22 +3712,51 @@ class Game:
         if floor and hasattr(floor, 'draw_foreground'):
             floor.draw_foreground(target_surf, self.camera, self.player)
 
+        # ── Y-SORTED RENDER LOOP (Furniture, NPCs, Player) ──
+        drawables = []
+        if floor:
+            for furn in floor.furniture:
+                drawables.append({
+                    "type": "furn",
+                    "obj": furn,
+                    "bottom": furn["rect"].bottom
+                })
+
         for npc in self.npc_manager.get_npcs_on_floor(self.current_floor):
             if self._is_npc_on_camera(npc):
-                npc.draw(target_surf, self.camera)
+                drawables.append({
+                    "type": "npc",
+                    "obj": npc,
+                    "bottom": npc.rect.bottom
+                })
+
+        if not (self._car_departure_active and self._car_depart_phase == "drive_away"):
+            drawables.append({
+                "type": "player",
+                "obj": self.player,
+                "bottom": self.player.rect.bottom
+            })
+            if getattr(self, "remote_player", None):
+                if self.remote_player.current_floor == self.current_floor:
+                    drawables.append({
+                        "type": "remote_player",
+                        "obj": self.remote_player,
+                        "bottom": self.remote_player.rect.bottom
+                    })
+
+        drawables.sort(key=lambda d: d["bottom"])
+
+        for item in drawables:
+            if item["type"] == "furn":
+                floor.draw_single_furn(target_surf, self.camera, item["obj"])
+            elif item["type"] in ("npc", "player", "remote_player"):
+                item["obj"].draw(target_surf, self.camera)
 
         # Draw interaction prompt for nearest NPC in range
         if self.state == GameState.PLAYING:
             nearest_npc = self._nearest_npc(NPC_INTERACTION_RANGE)
             if nearest_npc:
                 nearest_npc.draw_interaction_prompt(target_surf, self.camera)
-
-        if not (self._car_departure_active and self._car_depart_phase == "drive_away"):
-            self.player.draw(target_surf, self.camera)
-            if getattr(self, "remote_player", None):
-                # Ghosting bug fix: only draw if on same floor
-                if self.remote_player.current_floor == self.current_floor:
-                    self.remote_player.draw(target_surf, self.camera)
 
         if self.current_floor == FLOOR_1F:
             m_obj = self.mission_manager.missions.get("mission_high_school_mainframe")
@@ -4103,7 +4132,9 @@ class Game:
         player_name = self.player.character.value.capitalize()
         self._marcus_win_dialogue_lines = [
             ("Marcus Green", "Wow! You play incredible! I haven't seen skills like that in a long time."),
-            ("Marcus Green", "You know what? I really like your style. You're cool."),
+            (player_name, "Good game. Now, what about the email Eli sent you about the Smile Club?"),
+            ("Marcus Green", "Look, man... I don't really know much about what you're talking about. Eli sends weird stuff."),
+            ("Marcus Green", "But you know what? I really like your style. You're cool."),
             ("Marcus Green", "There's a big party today up on the Rooftop with the populars. You should definitely come!"),
             (player_name, "A rooftop party? Sounds interesting. I'll be there."),
             ("Marcus Green", "Awesome! Enjoy the party up on the Rooftop!"),

@@ -324,7 +324,7 @@ class Floor:
         print(f"Sprite {sprite_name} not found in assets or data/tiles")
         return None
 
-    def draw(self, screen, camera, player=None, npcs=None):
+    def draw(self, screen, camera, player=None, npcs=None, draw_furniture=True):
         sw, sh = screen.get_width(), screen.get_height()
         bg_rect = pygame.Rect(0, 0, self.width, self.height)
         bg = camera.apply_rect(bg_rect)
@@ -522,78 +522,9 @@ class Floor:
                 screen_pos = camera.apply_pos(blit_x, blit_y)
                 screen.blit(rotated_surf, screen_pos)
 
-        for furn in self.furniture:
-            fr = camera.apply_rect(furn["rect"])
-            if fr.right < 0 or fr.left > sw or fr.bottom < 0 or fr.top > sh:
-                continue
-            ftype = furn.get("type")
-            if ftype == "bookshelf":
-                self._draw_bookshelf(screen, fr)
-            elif ftype == "round_table":
-                pygame.draw.circle(screen, furn["color"], fr.center, fr.width // 2)
-                if furn.get("outline"):
-                    pygame.draw.circle(screen, furn["outline"], fr.center, fr.width // 2, 2)
-            elif ftype == "lamp":
-                # Base
-                pygame.draw.circle(screen, (80, 80, 80), fr.center, fr.width // 3)
-                # Shade
-                pygame.draw.circle(screen, furn["color"], fr.center, fr.width // 2)
-                # Glow
-                glow_surf = pygame.Surface((fr.width * 2, fr.height * 2), pygame.SRCALPHA)
-                pygame.draw.circle(glow_surf, (255, 255, 200, 40), (fr.width, fr.height), fr.width)
-                screen.blit(glow_surf, (fr.centerx - fr.width, fr.centery - fr.height))
-            elif ftype == "plant":
-                self._draw_plant(screen, fr, furn["color"])
-            elif ftype == "bench":
-                self._draw_bench(screen, fr)
-            elif ftype == "buffet_tray":
-                # Silver outer tray
-                pygame.draw.rect(screen, (190, 190, 200), fr, border_radius=4)
-                pygame.draw.rect(screen, (150, 150, 160), fr, 2, border_radius=4)
-                # Inner food area
-                inner = fr.inflate(-8, -8)
-                if inner.width > 0 and inner.height > 0:
-                    pygame.draw.rect(screen, furn["color"], inner, border_radius=2)
-            elif ftype == "toilet":
-                self._draw_toilet(screen, fr, furn.get("facing", "down"))
-            elif ftype == "computer":
-                self._draw_computer(screen, fr, furn.get("facing", "up"))
-            elif ftype == "lab_bench":
-                self._draw_lab_bench(screen, fr)
-            elif ftype == "piano":
-                self._draw_piano(screen, fr)
-            elif ftype == "drum_set":
-                self._draw_drum_set(screen, fr)
-            elif ftype == "guitar":
-                self._draw_guitar(screen, fr)
-            elif ftype == "easel":
-                self._draw_easel(screen, fr)
-            elif ftype == "locker":
-                self._draw_locker(screen, fr)
-            elif ftype == "office_desk":
-                self._draw_office_desk(screen, fr, furn.get("facing", "down"))
-            elif ftype == "office_chair":
-                self._draw_office_chair(screen, fr)
-            elif ftype == "hospital_bed":
-                self._draw_hospital_bed(screen, fr, furn.get("facing", "down"))
-            elif ftype == "stage":
-                self._draw_stage(screen, fr)
-            elif ftype == "auditorium_seat":
-                self._draw_auditorium_seat(screen, fr)
-            elif ftype == "executive_desk":
-                self._draw_executive_desk(screen, fr)
-            elif ftype == "sofa_chair":
-                self._draw_sofa_chair(screen, fr)
-            elif ftype == "umbrella_table":
-                self._draw_umbrella_table(screen, fr)
-            elif ftype == "chalkboard":
-                self._draw_chalkboard(screen, fr, furn.get("facing", "up"))
-            elif ftype == "sink":
-                self._draw_sink(screen, fr, furn.get("facing", "down"))
-            else:
-                pygame.draw.rect(screen, furn["color"], fr)
-                if furn.get("outline"):
-                    pygame.draw.rect(screen, furn["outline"], fr, 2)
+        if draw_furniture:
+            for furn in self.furniture:
+                self.draw_single_furn(screen, camera, furn)
 
         # ── Two-pass wall rendering ──────────────────────────────
         # Pass 1: shadows + 3-D extrusions (bottom/right faces)
@@ -902,6 +833,80 @@ class Floor:
                 if tr.label and r.width > 20:
                     lbl = font_sm.render(tr.label, True, WHITE)
                     screen.blit(lbl, (r.x + 2, r.y - 16))
+
+    def draw_single_furn(self, screen, camera, furn):
+        sw, sh = screen.get_width(), screen.get_height()
+        fr = camera.apply_rect(furn["rect"])
+        if fr.right < 0 or fr.left > sw or fr.bottom < 0 or fr.top > sh:
+            return
+        ftype = furn.get("type")
+        if ftype == "bookshelf":
+            self._draw_bookshelf(screen, fr)
+        elif ftype == "round_table":
+            pygame.draw.circle(screen, furn["color"], fr.center, fr.width // 2)
+            if furn.get("outline"):
+                pygame.draw.circle(screen, furn["outline"], fr.center, fr.width // 2, 2)
+        elif ftype == "lamp":
+            # Base
+            pygame.draw.circle(screen, (80, 80, 80), fr.center, fr.width // 3)
+            # Shade
+            pygame.draw.circle(screen, furn["color"], fr.center, fr.width // 2)
+            # Glow
+            glow_surf = pygame.Surface((fr.width * 2, fr.height * 2), pygame.SRCALPHA)
+            pygame.draw.circle(glow_surf, (255, 255, 200, 40), (fr.width, fr.height), fr.width)
+            screen.blit(glow_surf, (fr.centerx - fr.width, fr.centery - fr.height))
+        elif ftype == "plant":
+            self._draw_plant(screen, fr, furn["color"])
+        elif ftype == "bench":
+            self._draw_bench(screen, fr)
+        elif ftype == "buffet_tray":
+            # Silver outer tray
+            pygame.draw.rect(screen, (190, 190, 200), fr, border_radius=4)
+            pygame.draw.rect(screen, (150, 150, 160), fr, 2, border_radius=4)
+            # Inner food area
+            inner = fr.inflate(-8, -8)
+            if inner.width > 0 and inner.height > 0:
+                pygame.draw.rect(screen, furn["color"], inner, border_radius=2)
+        elif ftype == "toilet":
+            self._draw_toilet(screen, fr, furn.get("facing", "down"))
+        elif ftype == "computer":
+            self._draw_computer(screen, fr, furn.get("facing", "up"))
+        elif ftype == "lab_bench":
+            self._draw_lab_bench(screen, fr)
+        elif ftype == "piano":
+            self._draw_piano(screen, fr)
+        elif ftype == "drum_set":
+            self._draw_drum_set(screen, fr)
+        elif ftype == "guitar":
+            self._draw_guitar(screen, fr)
+        elif ftype == "easel":
+            self._draw_easel(screen, fr)
+        elif ftype == "locker":
+            self._draw_locker(screen, fr)
+        elif ftype == "office_desk":
+            self._draw_office_desk(screen, fr, furn.get("facing", "down"))
+        elif ftype == "office_chair":
+            self._draw_office_chair(screen, fr)
+        elif ftype == "hospital_bed":
+            self._draw_hospital_bed(screen, fr, furn.get("facing", "down"))
+        elif ftype == "stage":
+            self._draw_stage(screen, fr)
+        elif ftype == "auditorium_seat":
+            self._draw_auditorium_seat(screen, fr)
+        elif ftype == "executive_desk":
+            self._draw_executive_desk(screen, fr)
+        elif ftype == "sofa_chair":
+            self._draw_sofa_chair(screen, fr)
+        elif ftype == "umbrella_table":
+            self._draw_umbrella_table(screen, fr)
+        elif ftype == "chalkboard":
+            self._draw_chalkboard(screen, fr, furn.get("facing", "up"))
+        elif ftype == "sink":
+            self._draw_sink(screen, fr, furn.get("facing", "down"))
+        else:
+            pygame.draw.rect(screen, furn["color"], fr)
+            if furn.get("outline"):
+                pygame.draw.rect(screen, furn["outline"], fr, 2)
 
     def _draw_basement_lighting(self, screen, camera, player):
         import math, time, random

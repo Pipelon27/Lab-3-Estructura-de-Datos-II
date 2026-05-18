@@ -63,14 +63,14 @@
           {
             "id": "m_c4",
             "speaker": "Player",
-            "text": "Wanna play some 1v1 basketball?",
+            "text": "I know something about the Smile Club. I saw the email Eli sent you informing you about them.",
             "consequences": {"start_basketball": true},
             "is_player_choice": true,
             "children": [
               {
                 "id": "m_c4r",
                 "speaker": "Marcus Green",
-                "text": "You're on! First to 5 wins.",
+                "text": "You want answers about that? First, I challenge you to a 1v1 basketball match. If you win, I'll tell you more. First to 5 wins!",
                 "consequences": {},
                 "is_player_choice": false,
                 "children": []
