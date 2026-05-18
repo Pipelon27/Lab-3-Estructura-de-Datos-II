@@ -1608,6 +1608,8 @@ class Game:
         for npc in npcs:
             if skip_siblings and npc.id in ("npc_aiden", "npc_lena"):
                 continue
+            if npc.id == "npc_noah_carter":
+                continue
             d = ((npc.rect.centerx - px)**2 + (npc.rect.centery - py)**2) ** 0.5
             if d < best_d:
                 best_d = d
