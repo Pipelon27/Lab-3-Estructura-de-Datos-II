@@ -3465,8 +3465,7 @@ class Game:
                 self.ui.show_notification("Ava Thompson looks at you: 'You don't have the credentials yet. Go talk to Alan Chen.'", NOTIF_ERROR)
         if "rooftop_check" in result:
             pop_rep = self.reputation.get("populars")
-            overall_rep = self.reputation.reputation_score
-            if pop_rep >= 60 or overall_rep >= 60:
+            if pop_rep >= 60:
                 self._rooftop_unlocked = True
                 self.ui.show_notification("Axel Knight nods. Rooftop access unlocked!", NOTIF_SUCCESS)
                 axel = self.npc_manager.get_npc_by_id("npc_axel_knight")
@@ -4120,7 +4119,6 @@ class Game:
     def _finish_marcus_win_dialogue(self):
         self._marcus_win_dialogue_active = False
         self._marcus_win_dialogue_completed = True
-        self._rooftop_unlocked = True
         self._current_main_mission_text = "Mission 10: Go to the Rooftop party and hang out with the populars."
         self.mission_manager.unlock_mission("mission_rooftop_party")
         self.mission_manager.activate_mission("mission_rooftop_party")
