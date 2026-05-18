@@ -688,16 +688,16 @@ class Game:
     def _exit_mainframe_success(self):
         self.state = GameState.PLAYING
         m_obj = self.mission_manager.missions.get("mission_high_school_mainframe")
-        if m_obj and m_obj.status != MissionStatus.COMPLETED:
+        if m_obj:
             m_obj.status = MissionStatus.COMPLETED
             for obj in m_obj.objectives:
                 obj.completed = True
                 obj.progress = obj.required
             self.mission_manager.completed_ids.add("mission_high_school_mainframe")
-            self.mission_manager.unlock_mission("mission_server_room")
-            self.mission_manager.activate_mission("mission_server_room")
-            self._current_main_mission_text = "Mission 9: Ask Lucas Kim about basement servers and get Basement Key."
-            self.ui.show_notification("SUCCESS: School mainframe data acquired! The Smile Club knows you're coming.", NOTIF_SUCCESS, 8.0)
+        self.mission_manager.unlock_mission("mission_server_room")
+        self.mission_manager.activate_mission("mission_server_room")
+        self._current_main_mission_text = "Mission 9: Ask Lucas Kim about basement servers and get Basement Key."
+        self.ui.show_notification("SUCCESS: School mainframe data acquired! The Smile Club knows you're coming.", NOTIF_SUCCESS, 8.0)
 
     def _handle_mainframe_event(self, event):
         if event.type == pygame.KEYDOWN:
@@ -1103,6 +1103,17 @@ class Game:
         if not handled_confirm and self._hud_focus not in ("ff", "wallet", "phone"):
             # A = Interact or Dash when no HUD focus
             if controller.is_interact_pressed():
+                if getattr(self, '_computer_prompt_active', False):
+                    self.state = GameState.MAINFRAME
+                    self.mainframe_user_input = ""
+                    self.mainframe_pass_input = ""
+                    self.mainframe_active_field = "user"
+                    self.mainframe_screen = "login"
+                    self.mainframe_error = ""
+                    self.mainframe_alarm = False
+                    self.mainframe_selected_email = None
+                    self._computer_prompt_active = False
+                    return
                 npc = self._nearest_npc(NPC_INTERACTION_RANGE)
                 if npc:
                     self._try_interact()
@@ -1330,16 +1341,28 @@ class Game:
             return
 
         # If E is pressed and an NPC is nearby, open dialogue;
-        if event.key == pygame.K_e:
-            # Priority 2: Building Entrance
-            if self._try_building_entry_confirm():
+        if event.key in (pygame.K_e, pygame.K_RETURN):
+            if getattr(self, '_computer_prompt_active', False):
+                self.state = GameState.MAINFRAME
+                self.mainframe_user_input = ""
+                self.mainframe_pass_input = ""
+                self.mainframe_active_field = "user"
+                self.mainframe_screen = "login"
+                self.mainframe_error = ""
+                self.mainframe_alarm = False
+                self.mainframe_selected_email = None
+                self._computer_prompt_active = False
                 return
-            
-            # Priority 3: NPC Interaction
-            npc = self._nearest_npc(NPC_INTERACTION_RANGE)
-            if npc:
-                self._try_interact()
-                return
+            if event.key == pygame.K_e:
+                # Priority 2: Building Entrance
+                if self._try_building_entry_confirm():
+                    return
+                
+                # Priority 3: NPC Interaction
+                npc = self._nearest_npc(NPC_INTERACTION_RANGE)
+                if npc:
+                    self._try_interact()
+                    return
         # SPACE (KEY_INTERACT) and dash aliases trigger dash
         elif event.key in (KEY_INTERACT, KEY_DASH_ALT, KEY_DASH_ALT2):
             self.player.start_dash()
@@ -1403,7 +1426,7 @@ class Game:
             ("mission_alan_chen_bathroom", 2, "Day 2: Talk to Alan Chen", "Mission 5: Find Alan Chen in his discreet location."),
             ("mission_tech_club_rep", 2, "Day 2: Earn Alan's Trust", "Mission 6: Gain 70 Tech Club reputation, then return to Alan Chen."),
             ("mission_return_tech_lab", 2, "Day 2: Return to Ava Thompson", "Mission 7: Deliver the hacked credentials to Ava Thompson."),
-            ("mission_high_school_mainframe", 2, "Day 2: High School Mainframe", "Mission 8: Go to the computer marked with X in the Tech Lab and extract information."),
+            ("mission_high_school_mainframe", 2, "Day 2: High School Mainframe", "Mission 8: Switch to Lena, go to the computer marked with X in the Tech Lab and extract information."),
             ("mission_helping_mia", 3, "Day 3: Helping Mia", "Day 3 - Mission 1: Talk to Mia Nakamura and confront Ava Patel."),
             ("mission_server_room", 4, "Day 4: Server Room Access", "Day 4 - Mission 1: Ask Lucas Kim about basement servers and get the key."),
             ("mission_final_showdown", 5, "Day 5: Final Showdown", "Day 5 - Mission 1: Enter Basement, disable Smile Club server, confront Director Walsh.")
@@ -1487,6 +1510,7 @@ class Game:
         self.day_number = target_day
         self.time_of_day_minutes = 7 * 60 # 7:00 AM
         self._last_time_minutes = 7 * 60
+        self._school_day_ended = False
 
         found_target = False
         for m_info in mission_list:
@@ -1522,6 +1546,12 @@ class Game:
             self._day1_story_complete = True
         if target_id == "mission_final_showdown":
             self.inventory.add_item("Basement Key", ItemCategory.KEY, "Opens the door to the school basement")
+        from src.inventory import ItemCategory
+        if target_id in ("mission_return_tech_lab", "mission_high_school_mainframe", "mission_helping_mia", "mission_server_room", "mission_final_showdown"):
+            if not self.inventory.has_item("Hacked Credentials"):
+                self.inventory.add_item("Hacked Credentials", ItemCategory.NOTE, "Hacked high school system credentials provided by Alan Chen.")
+        if target_id == "mission_high_school_mainframe":
+            self._ava_needs_to_walk_to_computer = True
 
         self.player.rect.center = (2000, 2700)
         self.current_floor = FLOOR_CAMPUS
@@ -2523,23 +2553,35 @@ class Game:
         self._update_minimap_markers()
 
         # Check mainframe login collision for Mission 8
+        self._computer_prompt_active = False
+        if getattr(self, '_ava_needs_to_walk_to_computer', False):
+            if self.current_floor == FLOOR_1F and self.character == Character.LENA:
+                ava = self.npc_manager.get_npc_by_id("npc_ava_thompson")
+                if ava:
+                    ava.ai_enabled = True
+                    ava.ignore_schedule = True
+                    ava.stop_at_target = True
+                    ava.target_queue = [(180, 350)]
+                    ava.target_pos = (180, 350)
+                    self._ava_needs_to_walk_to_computer = False
+
         if self.current_floor == FLOOR_1F:
             m_obj = self.mission_manager.missions.get("mission_high_school_mainframe")
             if m_obj and m_obj.status == MissionStatus.ACTIVE:
-                if self.player.rect.colliderect(pygame.Rect(850, 200, 140, 70)):
-                    self.state = GameState.MAINFRAME
-                    self.mainframe_user_input = ""
-                    self.mainframe_pass_input = ""
-                    self.mainframe_active_field = "user"
-                    self.mainframe_screen = "login"
-                    self.mainframe_error = ""
-                    self.mainframe_alarm = False
-                    self.mainframe_selected_email = None
-                    self.player.rect.y += 20  # Bounce back slightly
+                if self.player.rect.colliderect(pygame.Rect(90, 320, 90, 64)):
+                    if self.character != Character.LENA:
+                        if getattr(self, '_lena_hack_warn_timer', 0) <= 0:
+                            self.ui.show_notification("Ava Thompson: 'Aiden, let Lena handle this computer. Switch characters!'", NOTIF_WARNING)
+                            self._lena_hack_warn_timer = 2.0
+                    else:
+                        self._computer_prompt_active = True
 
         # Check game-over
         if not self.player.is_alive():
             self.state = GameState.GAME_OVER
+
+        if getattr(self, '_lena_hack_warn_timer', 0) > 0:
+            self._lena_hack_warn_timer -= dt
 
     # ── time of day ───────────────────────────────────────────
 
@@ -3212,35 +3254,33 @@ class Game:
                 self._current_main_mission_text = "Mission 6: Gain 70 Tech Club reputation, then return to Alan Chen in his discreet location."
         if "alan_chen_rep_check" in result:
             tech_rep = self.reputation.get("tech_club")
-            if tech_rep >= 70:
+            overall_rep = self.reputation.reputation_score
+            max_group_rep = max(self.reputation.standings.values()) if hasattr(self.reputation, 'standings') and self.reputation.standings else 0
+            if tech_rep >= 70 or overall_rep >= 70 or max_group_rep >= 70:
                 self.ui.show_notification("Alan Chen nods: 'You've earned my trust. Here are the hacked credentials.'", NOTIF_SUCCESS)
                 m_obj = self.mission_manager.missions.get("mission_tech_club_rep")
-                if m_obj and m_obj.status != MissionStatus.COMPLETED:
+                if m_obj:
                     m_obj.status = MissionStatus.COMPLETED
                     for obj in m_obj.objectives:
                         obj.completed = True
                         obj.progress = obj.required
                     self.mission_manager.completed_ids.add("mission_tech_club_rep")
-                    from src.inventory import ItemCategory
+                from src.inventory import ItemCategory
+                if not self.inventory.has_item("Hacked Credentials"):
                     self.inventory.add_item(
                         "Hacked Credentials", ItemCategory.NOTE,
                         "Hacked high school system credentials provided by Alan Chen.",
                     )
-                    self.mission_manager.unlock_mission("mission_return_tech_lab")
-                    self.mission_manager.activate_mission("mission_return_tech_lab")
-                    self._current_main_mission_text = "Mission 7: Return to the Tech Lab and give the hacked credentials to Ava Thompson."
+                self.mission_manager.unlock_mission("mission_return_tech_lab")
+                self.mission_manager.activate_mission("mission_return_tech_lab")
+                self._current_main_mission_text = "Mission 7: Return to the Tech Lab and give the hacked credentials to Ava Thompson."
             else:
-                self.ui.show_notification(f"Alan Chen shakes his head: 'You need 70 Tech Club reputation (Current: {tech_rep}). I can't trust you yet.'", NOTIF_ERROR)
+                curr_disp = max(tech_rep, overall_rep, max_group_rep)
+                self.ui.show_notification(f"Alan Chen shakes his head: 'You need 70 reputation (Current: {curr_disp}). I can't trust you yet.'", NOTIF_ERROR)
         if "give_hacked_credentials" in result:
             if self.inventory.has_item("Hacked Credentials"):
-                self.ui.show_notification("Ava Thompson: 'With these credentials we can log in to decrypt the encrypted messages. Go to the computer marked with X.'", NOTIF_SUCCESS, 8.0)
-                ava = self.npc_manager.get_npc_by_id("npc_ava_thompson")
-                if ava:
-                    ava.ai_enabled = False
-                    ava.ignore_schedule = True
-                    ava.rect.center = (820, 235)
-                    ava.target_queue = []
-                    ava.target_pos = ava.rect.center
+                self.ui.show_notification("Ava Thompson: 'We have the credentials, but I need someone who really knows their way around this system. Aiden, call your sister Lena to complete the inspection—she's the one who handles technology best.'", NOTIF_SUCCESS, 8.0)
+                self._ava_needs_to_walk_to_computer = True
                 m_obj = self.mission_manager.missions.get("mission_return_tech_lab")
                 if m_obj and m_obj.status != MissionStatus.COMPLETED:
                     m_obj.status = MissionStatus.COMPLETED
@@ -3250,7 +3290,7 @@ class Game:
                     self.mission_manager.completed_ids.add("mission_return_tech_lab")
                     self.mission_manager.unlock_mission("mission_high_school_mainframe")
                     self.mission_manager.activate_mission("mission_high_school_mainframe")
-                    self._current_main_mission_text = "Mission 8: Go to the computer marked with X in the Tech Lab and extract information."
+                    self._current_main_mission_text = "Mission 8: Switch to Lena, go to the computer marked with X in the Tech Lab and extract information."
             else:
                 self.ui.show_notification("Ava Thompson looks at you: 'You don't have the credentials yet. Go talk to Alan Chen.'", NOTIF_ERROR)
         if "rooftop_check" in result:
@@ -3421,6 +3461,10 @@ class Game:
             # Building entry prompt
             if self.current_floor == FLOOR_CAMPUS and self._entry_prompt_target:
                 self._draw_entry_prompt(self._entry_prompt_target["label"])
+            if getattr(self, '_computer_prompt_active', False):
+                is_controller = bool(self.controller and self.controller.connected)
+                key_hint = "[A]" if is_controller else "[ENTER]"
+                self._draw_prompt_box(f"Press {key_hint} to turn on the computer")
                 
             # Custom mission text overlay (matches cinematic mission box)
             if getattr(self, "_current_main_mission_text", None):
@@ -3497,7 +3541,7 @@ class Game:
         if self.current_floor == FLOOR_1F:
             m_obj = self.mission_manager.missions.get("mission_high_school_mainframe")
             if m_obj and m_obj.status == MissionStatus.ACTIVE:
-                comp_rect = self.camera.apply_rect(pygame.Rect(850, 200, 140, 70))
+                comp_rect = self.camera.apply_rect(pygame.Rect(90, 320, 90, 64))
                 pulse = (math.sin(pygame.time.get_ticks() * 0.005) + 1) * 0.5
                 x_col = (255, int(50 + 100 * pulse), 50)
                 pygame.draw.line(target_surf, x_col, comp_rect.topleft, comp_rect.bottomright, 6)
@@ -3532,6 +3576,21 @@ class Game:
         is_controller = bool(self.controller and self.controller.connected)
         key_hint = "[A]" if is_controller else "[E]"
         text = f"Enter {building_name}?  {key_hint} yes  |  move away to cancel"
+        fnt = pygame.font.Font(VT323_PATH, 22)
+        surf = fnt.render(text, True, (232, 236, 245))
+        self.screen.blit(surf, (panel.centerx - surf.get_width() // 2,
+                                panel.centery - surf.get_height() // 2))
+
+    def _draw_prompt_box(self, text: str):
+        panel_w, panel_h = 520, 54
+        panel = pygame.Rect(
+            self.screen.get_width() // 2 - panel_w // 2,
+            self.screen.get_height() - 120,
+            panel_w,
+            panel_h,
+        )
+        pygame.draw.rect(self.screen, (26, 30, 38), panel, border_radius=8)
+        pygame.draw.rect(self.screen, (160, 170, 190), panel, 2, border_radius=8)
         fnt = pygame.font.Font(VT323_PATH, 22)
         surf = fnt.render(text, True, (232, 236, 245))
         self.screen.blit(surf, (panel.centerx - surf.get_width() // 2,
