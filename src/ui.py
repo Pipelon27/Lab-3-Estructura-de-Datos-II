@@ -387,11 +387,16 @@ class UI:
         # Clasp
         pygame.draw.rect(screen, (220, 185, 55),
                          (wr.centerx - 4, wr.y + 14, 8, 7), border_radius=2)
+        from src.controller import get_controller
+        controller = get_controller()
+        is_controller = controller.connected and getattr(controller, "last_input_method", "keyboard") == "controller"
+
         # Label
         w_lbl = self.font_hint.render("Wallet", True, WHITE)
         screen.blit(w_lbl, w_lbl.get_rect(center=(wr.centerx, wr.top - 10)))
         # Key hint
-        k_lbl = self.font_hint.render("[I]", True, WHITE)
+        k_txt = "[X]" if is_controller else "[I]"
+        k_lbl = self.font_hint.render(k_txt, True, WHITE)
         screen.blit(k_lbl, k_lbl.get_rect(center=(wr.centerx, wr.bottom + 10)))
         wallet_hover = wr.collidepoint(pygame.mouse.get_pos())
         if wallet_hover or hud_focus == "wallet":
@@ -403,7 +408,8 @@ class UI:
         pr = self.phone_icon_rect
         ph_lbl = self.font_hint.render("Phone", True, WHITE)
         screen.blit(ph_lbl, ph_lbl.get_rect(center=(pr.centerx, pr.top - 10)))
-        ph_key = self.font_hint.render("[P]", True, WHITE)
+        ph_txt = "[LB]" if is_controller else "[P]"
+        ph_key = self.font_hint.render(ph_txt, True, WHITE)
         screen.blit(ph_key, ph_key.get_rect(center=(pr.centerx, pr.bottom + 10)))
         phone_hover = pr.collidepoint(pygame.mouse.get_pos())
         if phone_hover or hud_focus == "phone":
@@ -935,6 +941,10 @@ class UI:
                     controller_connected: bool = False, focus_item: str | None = None,
                     yearbook_data: dict | None = None, player=None, inventory=None):
         """Draw the wallet interface. Semi-transparent background."""
+        from src.controller import get_controller
+        controller = get_controller()
+        controller_connected = controller.connected and getattr(controller, "last_input_method", "keyboard") == "controller"
+
         money_val = player.money if player else 5
         overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
         overlay.fill((0, 0, 0, 200))

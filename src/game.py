@@ -817,6 +817,11 @@ class Game:
             if event.type == pygame.QUIT:
                 self.running = False
                 return
+            
+            # Switch input mode to keyboard on keypress or mouse click
+            if event.type in (pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN):
+                if self.controller:
+                    self.controller.last_input_method = "keyboard"
             if getattr(self, "_oscar_win_dialogue_active", False):
                 if event.type == pygame.KEYDOWN and event.key in (pygame.K_SPACE, pygame.K_RETURN):
                     self._advance_oscar_win_dialogue()
@@ -861,6 +866,9 @@ class Game:
                     skip_rect = getattr(self, '_skip_btn_rect', None)
                     if skip_rect and skip_rect.collidepoint(event.pos):
                         self._skip_cinematic()
+                        continue
+                    elif self._cine_phase in ("dialogue", "final_dialogue"):
+                        self._advance_cinematic_dialogue()
                         continue
                 if self.state == GameState.TRADING:
                     self.trade_system.handle_click(event.pos)
@@ -1449,7 +1457,7 @@ class Game:
 
     def _keys_cinematic(self, event: pygame.event.Event):
         """Handle keyboard input during the intro cinematic."""
-        if event.key in (pygame.K_SPACE, pygame.K_RETURN):
+        if event.key in (pygame.K_SPACE, pygame.K_RETURN, pygame.K_e, KEY_INTERACT):
             self._advance_cinematic_dialogue()
         elif event.key == pygame.K_q:  # Q key skips cinematic directly
             self._skip_cinematic()
@@ -3709,7 +3717,7 @@ class Game:
             if self.current_floor == FLOOR_CAMPUS and self._entry_prompt_target:
                 self._draw_entry_prompt(self._entry_prompt_target["label"])
             if getattr(self, '_computer_prompt_active', False):
-                is_controller = bool(self.controller and self.controller.connected)
+                is_controller = bool(self.controller and self.controller.connected and self.controller.last_input_method == "controller")
                 key_hint = "[A]" if is_controller else "[ENTER]"
                 self._draw_prompt_box(f"Press {key_hint} to turn on the computer")
                 
@@ -3863,7 +3871,7 @@ class Game:
         )
         pygame.draw.rect(self.screen, (26, 30, 38), panel, border_radius=8)
         pygame.draw.rect(self.screen, (160, 170, 190), panel, 2, border_radius=8)
-        is_controller = bool(self.controller and self.controller.connected)
+        is_controller = bool(self.controller and self.controller.connected and self.controller.last_input_method == "controller")
         key_hint = "[A]" if is_controller else "[E]"
         text = f"Enter {building_name}?  {key_hint} yes  |  move away to cancel"
         fnt = pygame.font.Font(VT323_PATH, 22)
@@ -4437,7 +4445,9 @@ class Game:
         # ── Prompt to advance ──
         if self._cine_phase in ("dialogue", "final_dialogue"):
             font_hint = pygame.font.Font(VT323_PATH, 16)
-            hint = font_hint.render("Press SPACE to continue", True, (160, 160, 160))
+            is_controller = bool(self.controller and self.controller.connected and getattr(self.controller, "last_input_method", "keyboard") == "controller")
+            msg = "Press A to continue" if is_controller else "Press SPACE to continue"
+            hint = font_hint.render(msg, True, (160, 160, 160))
             self.screen.blit(hint, hint.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT - 30)))
 
         # ── Skip button (top-right corner) ──
@@ -4539,7 +4549,9 @@ class Game:
         self.screen.blit(dim, (0, 0))
         self._draw_cinematic_dialogue(text, speaker)
         font_hint = pygame.font.Font(VT323_PATH, 16)
-        hint = font_hint.render("Press SPACE to continue", True, (160, 160, 160))
+        is_controller = bool(self.controller and self.controller.connected and getattr(self.controller, "last_input_method", "keyboard") == "controller")
+        msg = "Press A to continue" if is_controller else "Press SPACE to continue"
+        hint = font_hint.render(msg, True, (160, 160, 160))
         self.screen.blit(hint, hint.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT - 30)))
 
     def _draw_marcus_win_dialogue(self):
@@ -4552,7 +4564,9 @@ class Game:
         self.screen.blit(dim, (0, 0))
         self._draw_cinematic_dialogue(text, speaker)
         font_hint = pygame.font.Font(VT323_PATH, 16)
-        hint = font_hint.render("Press SPACE to continue", True, (160, 160, 160))
+        is_controller = bool(self.controller and self.controller.connected and getattr(self.controller, "last_input_method", "keyboard") == "controller")
+        msg = "Press A to continue" if is_controller else "Press SPACE to continue"
+        hint = font_hint.render(msg, True, (160, 160, 160))
         self.screen.blit(hint, hint.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT - 30)))
 
     def _draw_cinematic_wrapped_text(self, text: str, font, colour, x: int, y: int, max_w: int):

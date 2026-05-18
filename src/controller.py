@@ -112,6 +112,7 @@ class ControllerManager:
         self._last_joystick_count = 0
         self._reconnect_timer = 0.0
         
+        self.last_input_method = "keyboard"
         self._init_joystick()
     
     def _init_joystick(self):
@@ -204,7 +205,22 @@ class ControllerManager:
         # Update menu navigation timer
         if self._menu_timer > 0:
             self._menu_timer -= dt
-    
+
+        # Dynamically switch input method to controller if there's any active input
+        has_activity = (
+            abs(self.left_stick_x) > 0.15 or
+            abs(self.left_stick_y) > 0.15 or
+            abs(self.right_stick_x) > 0.15 or
+            abs(self.right_stick_y) > 0.15 or
+            self.rt_value > 0.15 or
+            self.lt_value > 0.15 or
+            len(self.buttons_pressed) > 0 or
+            self.dpad_x != 0 or
+            self.dpad_y != 0
+        )
+        if has_activity:
+            self.last_input_method = "controller"
+
     def _apply_deadzone(self, value: float) -> float:
         """Apply deadzone to stick value."""
         if abs(value) < STICK_DEADZONE:

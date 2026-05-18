@@ -242,6 +242,10 @@ class WorldMap:
 
     def draw(self, screen: pygame.Surface, controller_connected: bool = False):
         """Render the map viewer overlay."""
+        from src.controller import get_controller
+        controller = get_controller()
+        controller_connected = controller.connected and getattr(controller, "last_input_method", "keyboard") == "controller"
+
         screen.fill(UI_BG)
 
         # Header
