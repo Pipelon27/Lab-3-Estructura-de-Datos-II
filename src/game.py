@@ -313,14 +313,14 @@ class Game:
                 obs.rect.centerx = oscar.rect.centerx + int(math.cos(angle) * radius)
                 obs.rect.centery = oscar.rect.centery + int(math.sin(angle) * radius)
 
-        # ── Gordon Ramsay (The Chef) ──
+        # ── El Gastroo (The Chef) ──
         self._place_ava_for_story()
         f1 = self.school_map.get_floor(FLOOR_1F)
         caf = f1.rooms.get("f1_cafeteria")
         if caf:
             gordon = NPC(
-                "npc_gordon", "Gordon Ramsay", 
-                SocialGroup.FACULTY, "Chef", "Gordon is shouting about undercooked lamb.",
+                "npc_gordon", "El Gastroo", 
+                SocialGroup.FACULTY, "Chef", "El Gastroo is shouting about undercooked lamb.",
                 gender="male"
             )
             gordon.current_floor = FLOOR_1F
@@ -1384,9 +1384,6 @@ class Game:
             self.state = GameState.WALLET
             self.active_wallet_item = None
             self.wallet_focus_item = None
-        elif event.key == KEY_SKILL_TREE:
-            self.previous_state = self.state
-            self.state = GameState.SKILL_TREE_SCREEN
         elif event.key == KEY_PHONE:
             self.phone.toggle_phone()
         elif event.key == KEY_HACK and self.character == Character.LENA:
@@ -1610,6 +1607,14 @@ class Game:
         """Interact with nearest NPC."""
         npc = self._nearest_npc(NPC_INTERACTION_RANGE)
         if npc and npc.health > 0:
+            if npc.id == "npc_gordon":
+                self.previous_state = self.state
+                self.state = GameState.SKILL_TREE_SCREEN
+                self.player.vx = 0
+                self.player.vy = 0
+                self.player._dashing = False
+                return
+
             # Check if this NPC has a dialogue_id (story NPC using old system)
             dlg_id = npc.get_dialogue_id(self.character)
             if dlg_id:
@@ -2947,7 +2952,7 @@ class Game:
     def _update_minimap_markers(self):
         """Register specific NPCs on the world map for easier tracking."""
         key_npcs = {
-            "npc_gordon":      ("Gordon Ramsay",  (200, 100, 50)),
+            "npc_gordon":      ("El Gastroo",  (200, 100, 50)),
             "npc_dylan":       ("Dylan Brooks",   (200, 50, 50)),
             "npc_marcus":      ("Marcus Rivera",  (50, 100, 200)),
             "npc_director":    ("Director Walsh", (150, 50, 200)),
