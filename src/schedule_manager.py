@@ -264,6 +264,38 @@ class ScheduleManager:
                     self._allocation_map[n.id] = room_id
                     allocated_ids.add(n.id)
                     
+        # Swap rooftop non-populars with populars outside to keep only populars on the rooftop
+        rooftop_rooms = {"rt_terrace", "rt_benches"}
+        from settings import SocialGroup
+        
+        # 1. Identify non-populars currently assigned to the rooftop
+        invalid_rooftop_npcs = []
+        for npc in managed_npcs:
+            assigned_room = self._allocation_map.get(npc.id)
+            if assigned_room in rooftop_rooms:
+                is_popular = (npc.group == SocialGroup.POPULARS if hasattr(SocialGroup, "POPULARS") else getattr(npc, "group", None) == "populars")
+                if not is_popular:
+                    invalid_rooftop_npcs.append(npc)
+                    
+        # 2. Identify populars currently assigned outside the rooftop (excluding bathroom attendants/gender rooms)
+        populars_outside = []
+        for npc in managed_npcs:
+            assigned_room = self._allocation_map.get(npc.id)
+            if assigned_room and assigned_room not in rooftop_rooms and assigned_room not in {"f1_men_bath", "f1_women_bath"}:
+                is_popular = (npc.group == SocialGroup.POPULARS if hasattr(SocialGroup, "POPULARS") else getattr(npc, "group", None) == "populars")
+                if is_popular:
+                    populars_outside.append(npc)
+                    
+        # 3. Swap their rooms in self._allocation_map
+        rnd.shuffle(populars_outside)
+        for bad_npc in invalid_rooftop_npcs:
+            if populars_outside:
+                good_npc = populars_outside.pop()
+                room_a = self._allocation_map[bad_npc.id]
+                room_b = self._allocation_map[good_npc.id]
+                self._allocation_map[bad_npc.id] = room_b
+                self._allocation_map[good_npc.id] = room_a
+                
         # Proceed with moving all NPCs to their balanced targets
         count = 0
         for npc_id in self._managed_npc_ids:

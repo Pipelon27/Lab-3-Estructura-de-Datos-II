@@ -21,7 +21,7 @@ from settings import (
     GROUP_COLORS, ZONE_NAMES,
     MEDIUM_GRAY, WHITE, UI_TEXT_DIM, BLACK,
     Character, SocialGroup, DayPhase, Direction,
-    FLOOR_1F,
+    FLOOR_1F, FLOOR_2F,
     DATA_DIR, VT323_PATH)
 
 
@@ -953,6 +953,16 @@ class NPCManager:
                                 npc.rect.centerx = 1080
                         else:
                             npc.rect.update(previous_rect)
+
+            # Prevent NPCs from spawning/stuck in the empty/void spaces on Floor 2
+            if floor_id == FLOOR_2F and is_generic_wanderer(npc.id):
+                # Bottom-left void: x < 1050 and y > 1950
+                # Bottom-right void: x > 2150 and y > 1720
+                if (npc.rect.centerx < 1050 and npc.rect.centery > 1950) or \
+                   (npc.rect.centerx > 2150 and npc.rect.centery > 1720):
+                    npc.rect.center = (1600, 1000)
+                    npc.target_pos = None
+                    npc.target_queue = []
 
             if floor and floor.id == FLOOR_1F:
                 room = floor.get_room_at(npc.rect.centerx, npc.rect.centery)
