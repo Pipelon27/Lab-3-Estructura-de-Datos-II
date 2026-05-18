@@ -67,25 +67,16 @@ class RooftopParty:
         self._draw_sprite_at_world_pos(surface, camera, "dj", dj_x, dj_y)
         
         # 2. Laser Machines - Flanking the DJ booth nicely and safely inside
-        # Left: x = 1584, y = 560 (spans 1584..1616)
-        # Right: x = 1984, y = 560 (spans 1984..2016)
-        left_laser_x, left_laser_y = 1584, 560
-        right_laser_x, right_laser_y = 1984, 560
+        # Spread further apart for a wider stage feel, but perfectly balanced between DJ and tables
+        left_laser_x, left_laser_y = 1530, 560
+        right_laser_x, right_laser_y = 2038, 560
         self._draw_sprite_at_world_pos(surface, camera, "laser_machine_1", left_laser_x, left_laser_y)
         self._draw_sprite_at_world_pos(surface, camera, "laser_machine_2", right_laser_x, right_laser_y)
-        
-        # 3. Laser Light Effects - Always stable and fully inside the room (y = 530)
-        self._draw_sprite_at_world_pos(surface, camera, "laser_light_1", left_laser_x, left_laser_y - 30)
-        self._draw_sprite_at_world_pos(surface, camera, "laser_light_2", right_laser_x, right_laser_y - 30)
             
-        # 4. Stage Laser - Placed neatly in front of the DJ, always visible and stable
+        # 3. Stage Laser - Placed neatly in front of the DJ
         self._draw_sprite_at_world_pos(surface, camera, "stage_laser", 1784, 610)
-        self._draw_sprite_at_world_pos(surface, camera, "laser_light_1", 1784, 580)
         
-        # 5. Live Band (Singers) - Symmetrically placed in the gaps between DJ and laser machines
-        # This completely avoids overlap with DJ and lasers:
-        # Gap 1 (left laser to DJ): 1616..1784 (Singer 1 is at 1684)
-        # Gap 2 (DJ to right laser): 1816..1984 (Singer 2 is at 1884)
+        # 4. Live Band (Singers) - Symmetrically placed in the gaps between DJ and laser machines
         singer_positions = [
             ("singer_1", 1684, 590),
             ("singer_2", 1884, 590),
@@ -93,18 +84,16 @@ class RooftopParty:
         for singer_key, sx, sy in singer_positions:
             self._draw_sprite_at_world_pos(surface, camera, singer_key, sx, sy)
         
-        # 6. Spotlights - Placed strictly in the 4 corners of the terrace, always stable and on
-        # Shifting them down (y = 550) keeps spotlight heads (y = 530) fully inside the room.
-        # Removing the center-top spotlight completely solves the issue of covering the DJ!
+        # 5. Spotlights - Placed strictly in the 4 corners of the terrace
+        # Bottom spotlights moved up (y=1560) to stay away from the walls
         spotlight_positions = [
             (1240, 550),   # Top-Left corner
             (2328, 550),   # Top-Right corner
-            (1240, 1630),  # Bottom-Left corner
-            (2328, 1630),  # Bottom-Right corner
+            (1240, 1560),  # Bottom-Left corner
+            (2328, 1560),  # Bottom-Right corner
         ]
         for spx, spy in spotlight_positions:
             self._draw_sprite_at_world_pos(surface, camera, "spotlight_base", spx, spy)
-            self._draw_sprite_at_world_pos(surface, camera, "spotlight_light_head", spx, spy - 20)
     
     def get_collisions(self) -> list[pygame.Rect]:
         """Return invisible collision boxes for all party sprites to block the player."""
@@ -113,15 +102,15 @@ class RooftopParty:
         
         return [
             pygame.Rect(1784, 560, 32, 32),  # DJ
-            pygame.Rect(1584, 560, 32, 32),  # Left Laser
-            pygame.Rect(1984, 560, 32, 32),  # Right Laser
+            pygame.Rect(1530, 560, 32, 32),  # Left Laser
+            pygame.Rect(2038, 560, 32, 32),  # Right Laser
             pygame.Rect(1784, 610, 32, 32),  # Stage Laser
             pygame.Rect(1684, 590, 32, 32),  # Singer 1
             pygame.Rect(1884, 590, 32, 32),  # Singer 2
             pygame.Rect(1240, 550, 32, 32),  # Spotlight TL
             pygame.Rect(2328, 550, 32, 32),  # Spotlight TR
-            pygame.Rect(1240, 1630, 32, 32), # Spotlight BL
-            pygame.Rect(2328, 1630, 32, 32), # Spotlight BR
+            pygame.Rect(1240, 1560, 32, 32), # Spotlight BL
+            pygame.Rect(2328, 1560, 32, 32), # Spotlight BR
         ]
 
     def _draw_sprite_at_world_pos(self, surface: pygame.Surface, camera, sprite_key: str, world_x: int, world_y: int):
