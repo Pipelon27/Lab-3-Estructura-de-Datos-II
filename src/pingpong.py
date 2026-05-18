@@ -1406,7 +1406,9 @@ class PingPongGame:
                 surf = font.render(line, True, WHITE)
                 screen.blit(surf, surf.get_rect(center=(SCREEN_WIDTH // 2, y + (i * 36))))
             hint = self.font_hint if hasattr(self, 'font_hint') else pygame.font.Font(VT323_PATH, 16)
-            screen.blit(hint.render("Press SPACE to exit", True, UI_TEXT_DIM), (SCREEN_WIDTH // 2 - 110, by + box_h - 32))
+            is_controller = controller.connected and getattr(controller, "last_input_method", "keyboard") == "controller"
+            msg = "Press A to exit" if is_controller else "Press SPACE to exit"
+            screen.blit(hint.render(msg, True, UI_TEXT_DIM), (SCREEN_WIDTH // 2 - 110, by + box_h - 32))
 
         # ──── ESC Pause Menu ─────────────────────────────────────────────────
         if getattr(self, 'paused', False):
