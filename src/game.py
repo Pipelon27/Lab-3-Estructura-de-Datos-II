@@ -2423,6 +2423,10 @@ class Game:
             walls.append(self._parked_car_rect)
             for rect, _, _ in self._extra_parked_cars:
                 walls.append(rect)
+        
+        # Rooftop party collisions
+        if self.current_floor == FLOOR_ROOFTOP and self.day_number >= 3:
+            walls.extend(self.rooftop_party.get_collisions())
                     
         # Apply floor-specific speed boost (50% faster in main building) and faster trail decay
         in_main_building = self.current_floor in (FLOOR_1F, FLOOR_2F)
