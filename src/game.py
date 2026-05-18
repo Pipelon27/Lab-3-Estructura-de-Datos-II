@@ -999,6 +999,11 @@ class Game:
 
         # ── state-specific controller input ──
         if self.state == GameState.INTRO_CINEMATIC:
+            # Dedicated skip button: Y button, Back button, or B button skips cinematic directly!
+            if controller.is_skill_tree_pressed() or controller.is_map_pressed() or controller.is_cancel_pressed():
+                self._skip_cinematic()
+                return
+
             # D-pad toggles focus on Skip button
             menu_h = controller.get_menu_direction_horizontal()
             menu_v = controller.get_menu_direction()
@@ -1027,6 +1032,10 @@ class Game:
             self._handle_controller_wallet(controller)
         elif self.state == GameState.MAP:
             self._handle_controller_map(controller)
+        elif self.state == GameState.SOCIAL_INTERACTION:
+            self.social_dialogue_manager.handle_controller(controller)
+        elif self.state == GameState.BASKETBALL:
+            self.basketball.handle_controller(controller)
 
 
     def _toggle_pause(self):
@@ -1101,9 +1110,9 @@ class Game:
                 self._car_panel_cooldown = 1.0
             return
 
-        # D-pad up: open phone directly
+        # D-pad up or LB: open phone directly
         menu_v = controller.get_menu_direction()
-        if menu_v == -1:  # up
+        if menu_v == -1 or controller.is_block_pressed():
             self.phone.toggle_phone()
             self._hud_focus = None
             return
@@ -1143,7 +1152,7 @@ class Game:
             self._ff_controller_active = False
 
         if not handled_confirm and self._hud_focus not in ("ff", "wallet", "phone"):
-            # A = Interact or Dash when no HUD focus
+            # A = Interact only (dashing removed to resolve duplicate/overlapping dash controls)
             if controller.is_interact_pressed():
                 if getattr(self, '_computer_prompt_active', False):
                     self._start_mainframe_login()
@@ -1153,8 +1162,6 @@ class Game:
                     self._try_interact()
                 elif self._try_building_entry_confirm():
                     pass
-                else:
-                    self.player.start_dash()
 
             # RT dash is handled in player.update() via controller.rt_value
             # But we can also trigger dash on press for responsiveness
@@ -1444,6 +1451,8 @@ class Game:
         """Handle keyboard input during the intro cinematic."""
         if event.key in (pygame.K_SPACE, pygame.K_RETURN):
             self._advance_cinematic_dialogue()
+        elif event.key == pygame.K_q:  # Q key skips cinematic directly
+            self._skip_cinematic()
 
     def _keys_paused(self, event: pygame.event.Event):
         option_count = len(self.pause_options)
@@ -2324,10 +2333,20 @@ class Game:
                 self.pingpong.waiting_for_dismiss = True
 
         elif self.state == GameState.BASKETBALL:
+            # Fix camera to the center of the court (476 + 424, 258 + 347)
+            class _CourtTarget:
+                def __init__(self):
+                    self.rect = pygame.Rect(0, 0, 0, 0)
+                    self.rect.centerx = 900
+                    self.rect.centery = 605
+            self.camera.update(_CourtTarget())
+            
             result = self.basketball.update(dt)
             if getattr(self.basketball, 'finished', False):
                 self.basketball.finished = False
                 player_won = self.basketball.player_score > self.basketball.opp_score
+                if hasattr(self.basketball, 'floor') and self.basketball.floor:
+                    self.basketball.floor.hide_hoops = False
                 self.basketball.reset()
                 self.state = GameState.PLAYING
                 if player_won:
@@ -3531,7 +3550,22 @@ class Game:
                 pass
         if "start_basketball" in result and result["start_basketball"]:
             opponent = self.npc_manager.get_npc_by_id("npc_marcus_green")
-            self.basketball.start(self.player, opponent)
+            
+            # Clear other NPCs from the court
+            try:
+                floor = self.school_map.get_floor(self.current_floor)
+                if floor and hasattr(floor, "basketball_court"):
+                    bc = floor.basketball_court
+                    for npc in self.npc_manager.get_npcs_on_floor(self.current_floor):
+                        if npc != opponent and npc.rect.colliderect(bc):
+                            # Teleport out of the court safely (to the left of it)
+                            npc.rect.right = bc.left - 20
+                            npc.target_pos = None
+                            npc.target_queue = []
+            except Exception:
+                pass
+
+            self.basketball.start(self.player, opponent, floor)
             self.state = GameState.BASKETBALL
 
     # ── network ───────────────────────────────────────────────
@@ -3603,14 +3637,14 @@ class Game:
             GameState.DIALOGUE:          lambda: (self._draw_world(), self.dialogue_system.draw(self.screen)),
             GameState.SOCIAL_INTERACTION: lambda: (self._draw_world(), self.social_ui.draw(self.screen)),
             GameState.PINGPONG:          lambda: self.pingpong.draw(self.screen),
-            GameState.BASKETBALL:        lambda: self.basketball.draw(self.screen),
+            GameState.BASKETBALL:        lambda: (self._draw_world(), self.basketball.draw(self.screen, self.camera)),
             GameState.TRADING:           lambda: (self._draw_world(), self.trade_system.draw(self.screen)),
             GameState.PAUSED:            lambda: (
-                self.basketball.draw(self.screen) if getattr(self, 'previous_state', None) == GameState.BASKETBALL else self._draw_world(),
+                (self._draw_world(), self.basketball.draw(self.screen, self.camera)) if getattr(self, 'previous_state', None) == GameState.BASKETBALL else self._draw_world(),
                 self.ui.draw_pause_menu(self.screen, getattr(self, 'pause_sel', 0), self.pause_options)
             ),
             GameState.MISSION_SELECT:    lambda: (
-                self.basketball.draw(self.screen) if getattr(self, 'previous_state', None) == GameState.BASKETBALL else self._draw_world(),
+                (self._draw_world(), self.basketball.draw(self.screen, self.camera)) if getattr(self, 'previous_state', None) == GameState.BASKETBALL else self._draw_world(),
                 self.ui.draw_mission_select_menu(
                     self.screen,
                     getattr(self, 'mission_select_sel', 0),
@@ -3752,39 +3786,23 @@ class Game:
 
         for npc in self.npc_manager.get_npcs_on_floor(self.current_floor):
             if self._is_npc_on_camera(npc):
-                drawables.append({
-                    "type": "npc",
-                    "obj": npc,
-                    "bottom": npc.rect.bottom
-                })
-
-        if not (self._car_departure_active and self._car_depart_phase == "drive_away"):
-            drawables.append({
-                "type": "player",
-                "obj": self.player,
-                "bottom": self.player.rect.bottom
-            })
-            if getattr(self, "remote_player", None):
-                if self.remote_player.current_floor == self.current_floor:
-                    drawables.append({
-                        "type": "remote_player",
-                        "obj": self.remote_player,
-                        "bottom": self.remote_player.rect.bottom
-                    })
-
-        drawables.sort(key=lambda d: d["bottom"])
-
-        for item in drawables:
-            if item["type"] == "furn":
-                floor.draw_single_furn(target_surf, self.camera, item["obj"])
-            elif item["type"] in ("npc", "player", "remote_player"):
-                item["obj"].draw(target_surf, self.camera)
+                if self.state == GameState.BASKETBALL and hasattr(self.basketball, "opponent") and npc == self.basketball.opponent:
+                    continue
+                npc.draw(target_surf, self.camera)
 
         # Draw interaction prompt for nearest NPC in range
         if self.state == GameState.PLAYING:
             nearest_npc = self._nearest_npc(NPC_INTERACTION_RANGE)
             if nearest_npc:
                 nearest_npc.draw_interaction_prompt(target_surf, self.camera)
+
+        if not (self._car_departure_active and self._car_depart_phase == "drive_away"):
+            if self.state != GameState.BASKETBALL:
+                self.player.draw(target_surf, self.camera)
+            if getattr(self, "remote_player", None):
+                # Ghosting bug fix: only draw if on same floor
+                if self.remote_player.current_floor == self.current_floor:
+                    self.remote_player.draw(target_surf, self.camera)
 
         if self.current_floor == FLOOR_1F:
             m_obj = self.mission_manager.missions.get("mission_high_school_mainframe")
@@ -4649,31 +4667,26 @@ class Game:
                 self._begin_day_transition()
 
     def _build_car_surface(self) -> pygame.Surface:
-        """Create a school bus sprite surface (300x135, transparent bg)."""
-        w, h = 300, 135
-        surf = pygame.Surface((w, h), pygame.SRCALPHA)
-        bus_yellow = (250, 160, 30)
-        # Body
-        pygame.draw.rect(surf, bus_yellow, (0, 30, w, 75), border_radius=9)
-        # Roof (higher than car)
-        pygame.draw.rect(surf, bus_yellow, (0, 0, w, 38), border_radius=6)
-        # Windows
-        pygame.draw.rect(surf, (80, 130, 180), (15, 8, 45, 27), border_radius=3)
-        pygame.draw.rect(surf, (80, 130, 180), (75, 8, 45, 27), border_radius=3)
-        pygame.draw.rect(surf, (80, 130, 180), (135, 8, 45, 27), border_radius=3)
-        pygame.draw.rect(surf, (80, 130, 180), (195, 8, 45, 27), border_radius=3)
-        # Windshield (right side)
-        pygame.draw.rect(surf, (80, 130, 180), (255, 8, 30, 27), border_radius=3)
-        # Wheels
-        pygame.draw.circle(surf, (25, 25, 25), (60, 105), 21)
-        pygame.draw.circle(surf, (25, 25, 25), (w - 60, 105), 21)
-        # Headlights (right side = front)
-        pygame.draw.rect(surf, (255, 220, 80), (w - 9, 68, 9, 18), border_radius=3)
-        # Tail lights (left side)
-        pygame.draw.rect(surf, (220, 40, 40), (0, 68, 9, 18), border_radius=3)
-        # Black stripe
-        pygame.draw.rect(surf, (20, 20, 20), (0, 60, w, 6))
-        return surf
+        """Load the school bus sprite from data/tiles."""
+        import os
+        sprite_path = os.path.join(
+            os.path.dirname(os.path.dirname(__file__)),
+            "data", "tiles", "ME_Singles_Vehicles_32x32_Bus_Left_1.png"
+        )
+        try:
+            bus_sprite = pygame.image.load(sprite_path).convert_alpha()
+            # Scale to appropriate size (300x135 for consistency with parking lot)
+            scaled_bus = pygame.transform.scale(bus_sprite, (300, 135))
+            return scaled_bus
+        except Exception as e:
+            print(f"Failed to load bus sprite from {sprite_path}: {e}")
+            # Fallback: return a yellow placeholder if sprite not found
+            w, h = 300, 135
+            surf = pygame.Surface((w, h), pygame.SRCALPHA)
+            bus_yellow = (250, 160, 30)
+            pygame.draw.rect(surf, bus_yellow, (0, 30, w, 75), border_radius=9)
+            pygame.draw.rect(surf, bus_yellow, (0, 0, w, 38), border_radius=6)
+            return surf
 
     def _draw_parked_car(self, surface=None):
         surface = surface or self.screen

@@ -487,6 +487,35 @@ class SocialDialogueManager:
 
         return False
 
+    def handle_controller(self, controller):
+        """Handle Xbox controller input during social interaction."""
+        if not self._active_npc:
+            return
+
+        # Reaction phase: A or B button dismisses the dialogue
+        if self.state == InteractionState.SHOWING_REACTION:
+            if controller.is_confirm_pressed() or controller.is_cancel_pressed():
+                self._begin_close()
+            return
+
+        if self.state != InteractionState.ACTIVE:
+            return
+
+        # D-pad Up / Down / LS Up / Down for menu selection
+        menu_v = controller.get_menu_direction()
+        if menu_v != 0:
+            self._selected_option_idx = (self._selected_option_idx + menu_v) % len(self._available_options)
+            if self.social_ui:
+                self.social_ui.set_selected(self._selected_option_idx)
+
+        # A button to confirm
+        if controller.is_confirm_pressed():
+            self.confirm_choice()
+
+        # B button to exit dialogue immediately
+        if controller.is_cancel_pressed():
+            self._begin_close()
+
     def update(self, dt: float):
         """Tick cooldowns and state transitions. Called every frame unconditionally."""
         # Decrement cooldowns
