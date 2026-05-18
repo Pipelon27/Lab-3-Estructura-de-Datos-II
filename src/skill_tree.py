@@ -165,11 +165,11 @@ class SkillTree:
         """
         if not node.is_available():
             return False
-        if player.skill_points < node.cost:
+        if player.money < node.cost:
             return False
 
         node.unlocked = True
-        player.skill_points -= node.cost
+        player.money -= node.cost
 
         # Apply stat effects
         for stat, value in node.effect.items():
@@ -222,7 +222,7 @@ class SkillTree:
 
         # Header
         screen.blit(
-            font_title.render(f"Skill Tree  —  SP: {player.skill_points}", True, UI_ACCENT),
+            font_title.render(f"Skill Tree  —  Money: ${player.money}", True, UI_ACCENT),
             (30, 20),
         )
 
@@ -266,7 +266,7 @@ class SkillTree:
                 pygame.draw.rect(screen, UI_BORDER, info_rect, 2, border_radius=10)
                 
                 self._text(screen, node.name, font_node, UI_ACCENT, 60, SCREEN_HEIGHT - 110)
-                self._text(screen, f"Cost: {node.cost}", font_info, WHITE, SCREEN_WIDTH - 150, SCREEN_HEIGHT - 110)
+                self._text(screen, f"Cost: ${node.cost}", font_info, WHITE, SCREEN_WIDTH - 150, SCREEN_HEIGHT - 110)
                 self._wrap_text(screen, node.description, font_desc, UI_TEXT, 60, SCREEN_HEIGHT - 85, SCREEN_WIDTH - 200)
                 
                 if node.effect:
@@ -334,15 +334,15 @@ def build_aiden_tree() -> SkillTree:
     strength.unlocked = True  # branch unlocked by default
     strength.add_child(SkillNode(
         "Heavy Punch", "A devastating single blow",
-        cost=1, effect={"attack_damage": 5},
+        cost=10, effect={"attack_damage": 5},
     ))
     strength.add_child(SkillNode(
         "Combo Master", "Chain hits faster",
-        cost=2, effect={"combo_speed": 2},
+        cost=20, effect={"combo_speed": 2},
     ))
     strength.add_child(SkillNode(
         "Knockback", "Push enemies back on hit",
-        cost=2, effect={"knockback_force": 3},
+        cost=20, effect={"knockback_force": 3},
     ))
     root.add_child(strength)
 
@@ -351,15 +351,15 @@ def build_aiden_tree() -> SkillTree:
     athleticism.unlocked = True
     athleticism.add_child(SkillNode(
         "Sprint Boost", "Move faster while sprinting",
-        cost=1, effect={"sprint_speed": 2},
+        cost=10, effect={"sprint_speed": 2},
     ))
     athleticism.add_child(SkillNode(
         "Dodge Roll", "Roll to evade attacks",
-        cost=2, effect={"dodge_distance": 3},
+        cost=20, effect={"dodge_distance": 3},
     ))
     athleticism.add_child(SkillNode(
         "Stamina+", "Increase max stamina",
-        cost=1, effect={"max_stamina": 20},
+        cost=10, effect={"max_stamina": 20},
     ))
     root.add_child(athleticism)
 
@@ -368,15 +368,15 @@ def build_aiden_tree() -> SkillTree:
     popularity.unlocked = True
     popularity.add_child(SkillNode(
         "Team Leader", "+reputation gain with Athletes",
-        cost=1, effect={"rep_athletes_bonus": 5},
+        cost=10, effect={"rep_athletes_bonus": 5},
     ))
     popularity.add_child(SkillNode(
         "Crowd Support", "NPCs may help in combat",
-        cost=2, effect={"crowd_chance": 10},
+        cost=20, effect={"crowd_chance": 10},
     ))
     popularity.add_child(SkillNode(
         "Influence Aura", "Nearby NPCs respect you more",
-        cost=3, effect={"respect_aura": 5},
+        cost=30, effect={"respect_aura": 5},
     ))
     root.add_child(popularity)
 
@@ -395,15 +395,15 @@ def build_lena_tree() -> SkillTree:
     hacking.unlocked = True
     hacking.add_child(SkillNode(
         "Faster Cracking", "Reduce hack minigame timer",
-        cost=1, effect={"hack_time_bonus": 3},
+        cost=10, effect={"hack_time_bonus": 3},
     ))
     hacking.add_child(SkillNode(
         "Security Override", "Bypass tougher locks",
-        cost=2, effect={"hack_difficulty_reduction": 1},
+        cost=20, effect={"hack_difficulty_reduction": 1},
     ))
     hacking.add_child(SkillNode(
         "Camera Control", "Remote-view security cameras",
-        cost=2, effect={"camera_range": 2},
+        cost=20, effect={"camera_range": 2},
     ))
     root.add_child(hacking)
 
@@ -412,15 +412,15 @@ def build_lena_tree() -> SkillTree:
     intelligence.unlocked = True
     intelligence.add_child(SkillNode(
         "Better Clues", "Highlight hidden interactables",
-        cost=1, effect={"clue_radius": 50},
+        cost=10, effect={"clue_radius": 50},
     ))
     intelligence.add_child(SkillNode(
         "Puzzle Solver", "Extra hints in puzzles",
-        cost=2, effect={"puzzle_hints": 1},
+        cost=20, effect={"puzzle_hints": 1},
     ))
     intelligence.add_child(SkillNode(
         "XP Boost", "Earn 20% more XP",
-        cost=2, effect={"xp_multiplier": 20},
+        cost=20, effect={"xp_multiplier": 20},
     ))
     root.add_child(intelligence)
 
@@ -429,15 +429,15 @@ def build_lena_tree() -> SkillTree:
     social.unlocked = True
     social.add_child(SkillNode(
         "Better Trades", "Improved trade values",
-        cost=1, effect={"trade_bonus": 10},
+        cost=10, effect={"trade_bonus": 10},
     ))
     social.add_child(SkillNode(
         "Persuasion", "Unlock new dialogue options",
-        cost=2, effect={"persuasion_level": 1},
+        cost=20, effect={"persuasion_level": 1},
     ))
     social.add_child(SkillNode(
         "Lie Detection", "See NPC private face sooner",
-        cost=3, effect={"trust_reveal_threshold": -15},
+        cost=30, effect={"trust_reveal_threshold": -15},
     ))
     root.add_child(social)
 

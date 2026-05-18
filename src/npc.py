@@ -356,7 +356,7 @@ class NPC:
         from settings import NPC_SOCIAL_RANGE, UI_ACCENT, UI_TEXT
         
         # Check if we should draw (will be called conditionally from game loop)
-        prompt_text = "[E] Talk"
+        prompt_text = "[E] Skills" if self.id == "npc_gordon" else "[E] Talk"
         font = pygame.font.Font(VT323_PATH, 12)
         text_surf = font.render(prompt_text, True, UI_ACCENT)
         
