@@ -114,6 +114,10 @@ class Game:
         self._oscar_win_dialogue_index: int = 0
         self._oscar_win_dialogue_completed: bool = False
         self._oscar_win_dialogue_lines: list[tuple[str, str]] = []
+        self._marcus_win_dialogue_active: bool = False
+        self._marcus_win_dialogue_index: int = 0
+        self._marcus_win_dialogue_completed: bool = False
+        self._marcus_win_dialogue_lines: list[tuple[str, str]] = []
 
         # Day-cycle
         self.day_number     = 1
@@ -702,10 +706,7 @@ class Game:
                 obj.completed = True
                 obj.progress = obj.required
             self.mission_manager.completed_ids.add("mission_high_school_mainframe")
-        self.mission_manager.unlock_mission("mission_server_room")
-        self.mission_manager.activate_mission("mission_server_room")
-        self._current_main_mission_text = "Mission 9: Ask Lucas Kim about basement servers and get Basement Key."
-        self.ui.show_notification("SUCCESS: School mainframe data acquired! The Smile Club knows you're coming.", NOTIF_SUCCESS, 8.0)
+        self._complete_day2_story()
 
     def _handle_mainframe_event(self, event):
         if event.type == pygame.KEYDOWN:
@@ -821,6 +822,12 @@ class Game:
                     self._advance_oscar_win_dialogue()
                 elif event.type == pygame.MOUSEBUTTONDOWN:
                     self._advance_oscar_win_dialogue()
+                continue
+            if getattr(self, "_marcus_win_dialogue_active", False):
+                if event.type == pygame.KEYDOWN and event.key in (pygame.K_SPACE, pygame.K_RETURN):
+                    self._advance_marcus_win_dialogue()
+                elif event.type == pygame.MOUSEBUTTONDOWN:
+                    self._advance_marcus_win_dialogue()
                 continue
             if getattr(self, 'phone', None) and self.phone.is_visible:
                 if self.phone.handle_input(event):
@@ -1393,8 +1400,8 @@ class Game:
                 self._car_panel_cooldown = 1.0  # prevent re-trigger
             return
 
-        # If E is pressed and an NPC is nearby, open dialogue;
-        if event.key == pygame.K_e:
+        # If E, ENTER, or SPACE is pressed:
+        if event.key in (pygame.K_e, pygame.K_RETURN, KEY_INTERACT):
             # Priority 1: Computer Prompt (Mainframe Login)
             if getattr(self, '_computer_prompt_active', False):
                 self._start_mainframe_login()
@@ -1409,8 +1416,12 @@ class Game:
             if npc and npc.health > 0:
                 self._try_interact()
                 return
-        # SPACE (KEY_INTERACT) and dash aliases trigger dash
-        elif event.key in (KEY_INTERACT, KEY_DASH_ALT, KEY_DASH_ALT2):
+
+            # If KEY_INTERACT (SPACE) was pressed but no interaction happened, trigger dash
+            if event.key == KEY_INTERACT:
+                self.player.start_dash()
+
+        elif event.key in (KEY_DASH_ALT, KEY_DASH_ALT2):
             self.player.start_dash()
         elif event.key == KEY_INVENTORY:
             # Inventory removed - open wallet instead
@@ -1472,9 +1483,10 @@ class Game:
             ("mission_tech_club_rep", 2, "Day 2: Earn Alan's Trust", "Mission 6: Gain 70 Tech Club reputation, then return to Alan Chen."),
             ("mission_return_tech_lab", 2, "Day 2: Return to Ava Thompson", "Mission 7: Deliver the hacked credentials to Ava Thompson."),
             ("mission_high_school_mainframe", 2, "Day 2: High School Mainframe", "Mission 8: Switch to Lena, go to the computer marked with X in the Tech Lab and extract information."),
-            ("mission_helping_mia", 3, "Day 3: Helping Mia", "Day 3 - Mission 1: Talk to Mia Nakamura and confront Ava Patel."),
-            ("mission_server_room", 4, "Day 4: Server Room Access", "Day 4 - Mission 1: Ask Lucas Kim about basement servers and get the key."),
-            ("mission_final_showdown", 5, "Day 5: Final Showdown", "Day 5 - Mission 1: Enter Basement, disable Smile Club server, confront Director Walsh.")
+            ("mission_server_room", 3, "Day 3: Talk to Marcus Green", "Mission 9: Talk to Marcus Green in the Athletic Coliseum."),
+            ("mission_rooftop_party", 3, "Day 3: Rooftop Party", "Mission 10: Go to the Rooftop party and hang out with the populars."),
+            ("mission_helping_mia", 3, "Day 3: Helping Mia", "Side Mission: Talk to Mia Nakamura and confront Ava Patel."),
+            ("mission_final_showdown", 4, "Day 4: Final Showdown", "Mission 11: Enter Basement, disable Smile Club server, confront Director Walsh.")
         ]
 
     def _get_current_mission_index(self) -> int:
@@ -1592,7 +1604,7 @@ class Game:
         if target_id == "mission_final_showdown":
             self.inventory.add_item("Basement Key", ItemCategory.KEY, "Opens the door to the school basement")
         from src.inventory import ItemCategory
-        if target_id in ("mission_return_tech_lab", "mission_high_school_mainframe", "mission_helping_mia", "mission_server_room", "mission_final_showdown"):
+        if target_id in ("mission_return_tech_lab", "mission_high_school_mainframe", "mission_helping_mia", "mission_server_room", "mission_rooftop_party", "mission_final_showdown"):
             if not self.inventory.has_item("Hacked Credentials"):
                 self.inventory.add_item("Hacked Credentials", ItemCategory.NOTE, "Hacked high school system credentials provided by Alan Chen.")
         if target_id == "mission_high_school_mainframe":
@@ -2261,6 +2273,11 @@ class Game:
                 self.pingpong.finished = False
                 self.pingpong.reset()
                 self.state = GameState.PLAYING
+                try:
+                    if pygame.mixer.get_init():
+                        pygame.mixer.music.stop()
+                except Exception:
+                    pass
                 self.ui.show_notification("Settings not yet available in-game.", NOTIF_INFO)
             # When a match result arrives, show end-screen and apply reputation changes
             elif result is not None and not getattr(self.pingpong, 'waiting_for_dismiss', False):
@@ -2282,9 +2299,10 @@ class Game:
             result = self.basketball.update(dt)
             if getattr(self.basketball, 'finished', False):
                 self.basketball.finished = False
+                player_won = self.basketball.player_score > self.basketball.opp_score
                 self.basketball.reset()
                 self.state = GameState.PLAYING
-                if self.basketball.player_score > self.basketball.opp_score:
+                if player_won:
                     self.reputation.reputation_score = min(100, self.reputation.reputation_score + 20)
                     self.player.level += 1
                     from settings import SKILL_POINT_PER_LEVEL
@@ -2293,6 +2311,7 @@ class Game:
                     if hasattr(self.ui, 'trigger_level_up'):
                         self.ui.trigger_level_up()
                     self._last_known_level = self.player.level
+                    self._begin_marcus_win_dialogue()
                 else:
                     self.reputation.reputation_score = max(0, self.reputation.reputation_score - 10)
             # When player dismisses the end screen, finish the minigame and return to playing
@@ -2335,6 +2354,11 @@ class Game:
             self.pingpong.finished = False
             self.pingpong.reset()
             self.state = GameState.PLAYING
+            try:
+                if pygame.mixer.get_init():
+                    pygame.mixer.music.stop()
+            except Exception:
+                pass
             self._pending_pingpong_result = None
             if pingpong_result == "win":
                 self._begin_oscar_win_dialogue()
@@ -2423,6 +2447,10 @@ class Game:
             walls.append(self._parked_car_rect)
             for rect, _, _ in self._extra_parked_cars:
                 walls.append(rect)
+        
+        # Rooftop party collisions
+        if self.current_floor == FLOOR_ROOFTOP and self.day_number >= 3:
+            walls.extend(self.rooftop_party.get_collisions())
                     
         # Apply floor-specific speed boost (50% faster in main building) and faster trail decay
         in_main_building = self.current_floor in (FLOOR_1F, FLOOR_2F)
@@ -2696,6 +2724,8 @@ class Game:
                 # Auto-activate newly available missions
                 for m in self.mission_manager.get_available():
                     self.mission_manager.activate_mission(m.id)
+                    if m.id == "mission_final_showdown":
+                        self._current_main_mission_text = "Mission 11: Enter the Basement, disable the Smile Club server, and confront Director Walsh."
 
         # Update markers for key NPCs
         self._update_minimap_markers()
@@ -3033,7 +3063,7 @@ class Game:
         key_npcs = {
             "npc_gordon":      ("El Gastroo",  (200, 100, 50)),
             "npc_dylan":       ("Dylan Brooks",   (200, 50, 50)),
-            "npc_marcus":      ("Marcus Rivera",  (50, 100, 200)),
+            "npc_marcus_green":("Marcus Green",   (50, 100, 200)),
             "npc_director":    ("Director Walsh", (150, 50, 200)),
             "npc_noah_carter": ("Noah Carter",    (50, 180, 120)),
             "npc_ava_thompson": ("Ava Thompson",  (255, 180, 80)),
@@ -3439,8 +3469,7 @@ class Game:
                 self.ui.show_notification("Ava Thompson looks at you: 'You don't have the credentials yet. Go talk to Alan Chen.'", NOTIF_ERROR)
         if "rooftop_check" in result:
             pop_rep = self.reputation.get("populars")
-            overall_rep = self.reputation.reputation_score
-            if pop_rep >= 60 or overall_rep >= 60:
+            if pop_rep >= 60:
                 self._rooftop_unlocked = True
                 self.ui.show_notification("Axel Knight nods. Rooftop access unlocked!", NOTIF_SUCCESS)
                 axel = self.npc_manager.get_npc_by_id("npc_axel_knight")
@@ -3465,8 +3494,15 @@ class Game:
             opponent = self.npc_manager.get_npc_by_id("npc_oscar")
             self.pingpong.start(self.player, opponent)
             self.state = GameState.PINGPONG
+            try:
+                if pygame.mixer.get_init():
+                    pygame.mixer.music.load("sound/ping pong music.mp3")
+                    pygame.mixer.music.set_volume(0.25)
+                    pygame.mixer.music.play(-1)
+            except Exception:
+                pass
         if "start_basketball" in result and result["start_basketball"]:
-            opponent = self.npc_manager.get_npc_by_id("npc_marcus")
+            opponent = self.npc_manager.get_npc_by_id("npc_marcus_green")
             self.basketball.start(self.player, opponent)
             self.state = GameState.BASKETBALL
 
@@ -3627,6 +3663,8 @@ class Game:
 
         if getattr(self, "_oscar_win_dialogue_active", False):
             self._draw_oscar_win_dialogue()
+        if getattr(self, "_marcus_win_dialogue_active", False):
+            self._draw_marcus_win_dialogue()
 
         # ── Fullscreen overlays (drawn on top of everything) ──
         if self._day_transition_active:
@@ -4058,6 +4096,37 @@ class Game:
         self.mission_manager.activate_mission("mission_library_secrets")
         self._add_oscar_contact()
         self.ui.show_notification("New mission available!", NOTIF_INFO)
+
+    def _begin_marcus_win_dialogue(self):
+        if getattr(self, "_marcus_win_dialogue_completed", False):
+            return
+        player_name = self.player.character.value.capitalize()
+        self._marcus_win_dialogue_lines = [
+            ("Marcus Green", "Wow! You play incredible! I haven't seen skills like that in a long time."),
+            ("Marcus Green", "You know what? I really like your style. You're cool."),
+            ("Marcus Green", "There's a big party today up on the Rooftop with the populars. You should definitely come!"),
+            (player_name, "A rooftop party? Sounds interesting. I'll be there."),
+            ("Marcus Green", "Awesome! Enjoy the party up on the Rooftop!"),
+        ]
+        self._marcus_win_dialogue_index = 0
+        self._marcus_win_dialogue_active = True
+        if hasattr(self.player, "stop_audio"):
+            self.player.stop_audio()
+
+    def _advance_marcus_win_dialogue(self):
+        if not getattr(self, "_marcus_win_dialogue_active", False):
+            return
+        self._marcus_win_dialogue_index += 1
+        if self._marcus_win_dialogue_index >= len(self._marcus_win_dialogue_lines):
+            self._finish_marcus_win_dialogue()
+
+    def _finish_marcus_win_dialogue(self):
+        self._marcus_win_dialogue_active = False
+        self._marcus_win_dialogue_completed = True
+        self._current_main_mission_text = "Mission 10: Go to the Rooftop party and hang out with the populars."
+        self.mission_manager.unlock_mission("mission_rooftop_party")
+        self.mission_manager.activate_mission("mission_rooftop_party")
+        self.ui.show_notification("New mission available!", NOTIF_INFO)
         
         # Trigger Level Up after conversation finishes
         self.player.level += 1
@@ -4089,6 +4158,14 @@ class Game:
         message = "Day 1 all missions completed, go take the School Bus to go home."
         self._current_main_mission_text = message
         self.ui.trigger_announcement("DAY 1 COMPLETE", message)
+        self.ui.show_notification(message, NOTIF_SUCCESS, 8.0)
+
+    def _complete_day2_story(self):
+        self._day2_story_complete = True
+        self.ui.show_notification("Ava Thompson: 'With this information, I will follow up on who is behind the Smile Club. In the meantime, dedicate yourself to gaining reputation.'", NOTIF_INFO, 10.0)
+        message = "Day 2 all missions completed, go take the School Bus to go home."
+        self._current_main_mission_text = message
+        self.ui.trigger_announcement("DAY 2 COMPLETE", message)
         self.ui.show_notification(message, NOTIF_SUCCESS, 8.0)
 
     def _start_noah_guide(self):
@@ -4300,6 +4377,7 @@ class Game:
         avatar_ids = {
             "Noah Carter": "npc_noah_carter",
             "Oscar Jimenez": "npc_oscar",
+            "Marcus Green": "npc_marcus_green",
             "Aiden": "npc_aiden",
             "Lena": "npc_lena",
             "Aiden Parker": "npc_aiden",
@@ -4342,6 +4420,19 @@ class Game:
             return
         idx = min(self._oscar_win_dialogue_index, len(self._oscar_win_dialogue_lines) - 1)
         speaker, text = self._oscar_win_dialogue_lines[idx]
+        dim = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+        dim.fill((0, 0, 0, 65))
+        self.screen.blit(dim, (0, 0))
+        self._draw_cinematic_dialogue(text, speaker)
+        font_hint = pygame.font.Font(VT323_PATH, 16)
+        hint = font_hint.render("Press SPACE to continue", True, (160, 160, 160))
+        self.screen.blit(hint, hint.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT - 30)))
+
+    def _draw_marcus_win_dialogue(self):
+        if not self._marcus_win_dialogue_lines:
+            return
+        idx = min(self._marcus_win_dialogue_index, len(self._marcus_win_dialogue_lines) - 1)
+        speaker, text = self._marcus_win_dialogue_lines[idx]
         dim = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
         dim.fill((0, 0, 0, 65))
         self.screen.blit(dim, (0, 0))
@@ -4430,6 +4521,11 @@ class Game:
         self._place_ava_for_story()
         if self.day_number == 2:
             self._current_main_mission_text = "Mission 4: Go to Tech Lab to meet Ava Thompson."
+        elif self.day_number == 3:
+            self.mission_manager.unlock_mission("mission_server_room")
+            self.mission_manager.activate_mission("mission_server_room")
+            self.mission_manager._refresh_availability()
+            self._current_main_mission_text = "Mission 9: Talk to Marcus Green in the Athletic Coliseum."
         if hasattr(self, 'schedule_manager'):
             self.schedule_manager.reset_day()
         
