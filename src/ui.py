@@ -403,7 +403,7 @@ class UI:
 
     def draw_yearbook_view(self, screen: pygame.Surface, controller_connected: bool = False,
                           reputation_data: dict | None = None, npc_groups: dict | None = None,
-                          selected_group: str = "Athletes"):
+                          selected_group: str = "Athletes", scroll_offset: int = 0):
         """Draw the yearbook view with social group stats and NPC relationships."""
         cx, cy = SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2
         
@@ -495,17 +495,36 @@ class UI:
         npc_title = self.font_hud_lg.render(f"NPCs: {selected_group}", True, UI_ACCENT)
         screen.blit(npc_title, (right_panel.x + 15, right_panel.y + 10))
         
-        # Draw NPCs in selected group
+        # Get NPCs in selected group
         npcs = npc_groups.get(selected_group, [])
+        max_scroll = max(0, len(npcs) - 4)
+        scroll_offset = max(0, min(scroll_offset, max_scroll))
+        
+        # Draw scrollbar if there are more than 4 NPCs
+        has_scroll = len(npcs) > 4
+        if has_scroll:
+            scrollbar_rect = pygame.Rect(right_panel.right - 14, right_panel.y + 50, 6, right_panel.height - 70)
+            pygame.draw.rect(screen, (30, 20, 15), scrollbar_rect, border_radius=3)
+            
+            # Scroll handle
+            visible_ratio = 4 / len(npcs)
+            handle_height = max(25, int(scrollbar_rect.height * visible_ratio))
+            scroll_ratio = scroll_offset / max_scroll
+            handle_y = scrollbar_rect.y + int((scrollbar_rect.height - handle_height) * scroll_ratio)
+            
+            handle_rect = pygame.Rect(scrollbar_rect.x, handle_y, scrollbar_rect.width, handle_height)
+            pygame.draw.rect(screen, UI_ACCENT, handle_rect, border_radius=3)
+            pygame.draw.rect(screen, (180, 140, 90), handle_rect, 1, border_radius=3)
+
+        # Slice NPCs to show only 4 at a time
+        npcs_to_show = npcs[scroll_offset : scroll_offset + 4]
         y_offset = right_panel.y + 50
         
-        if npcs:
-            for npc_info in npcs:
-                if y_offset + 105 > right_panel.bottom - 10:
-                    break
-                
-                # Card Background Rect
-                card_rect = pygame.Rect(right_panel.x + 15, y_offset, right_panel.width - 30, 100)
+        if npcs_to_show:
+            for npc_info in npcs_to_show:
+                # Card Background Rect - adjust width if scrollbar exists
+                card_w = right_panel.width - 30 - (15 if has_scroll else 0)
+                card_rect = pygame.Rect(right_panel.x + 15, y_offset, card_w, 100)
                 pygame.draw.rect(screen, (40, 28, 20), card_rect, border_radius=8)
                 pygame.draw.rect(screen, (100, 75, 45), card_rect, 2, border_radius=8)
                 
@@ -534,27 +553,12 @@ class UI:
                     screen.blit(face_desc, (card_rect.x + 15, card_rect.y + 72))
                 
                 # 2. Right Section: Progress Bars
-                col_a_x = card_rect.x + 320
-                col_b_x = card_rect.x + 570
-                bar_w = 200
-                bar_h = 6
-                
-                # Column A: Friendship, Trust, Respect
-                friend_val = npc_info.get("friendship", 50)
-                draw_stat_bar(screen, col_a_x, card_rect.y + 8, bar_w, bar_h, friend_val, "Friendship", (100, 200, 100))
-                
-                trust_val = npc_info.get("trust", 50)
-                draw_stat_bar(screen, col_a_x, card_rect.y + 38, bar_w, bar_h, trust_val, "Trust", (100, 160, 220))
+                col_a_x = card_rect.x + (290 if has_scroll else 320)
+                bar_w = 400 if has_scroll else 430
+                bar_h = 12
                 
                 respect_val = npc_info.get("respect", 50)
-                draw_stat_bar(screen, col_a_x, card_rect.y + 68, bar_w, bar_h, respect_val, "Respect", (220, 180, 100))
-                
-                # Column B: Fear, Suspicion
-                fear_val = npc_info.get("fear", 0)
-                draw_stat_bar(screen, col_b_x, card_rect.y + 8, bar_w, bar_h, fear_val, "Fear", (220, 100, 100))
-                
-                suspicion_val = npc_info.get("suspicion", 0)
-                draw_stat_bar(screen, col_b_x, card_rect.y + 38, bar_w, bar_h, suspicion_val, "Suspicion", (200, 130, 220))
+                draw_stat_bar(screen, col_a_x, card_rect.y + 35, bar_w, bar_h, respect_val, "Reputation", (220, 180, 100))
                 
                 y_offset += 108
         else:
@@ -564,7 +568,8 @@ class UI:
             screen.blit(placeholder2, (right_panel.x + 30, right_panel.y + 130))
         
         # Return hint
-        return_text = "[B] Return to wallet" if controller_connected else "Press ESC or click to return to wallet"
+        scroll_hint = " • Use Mouse Wheel or PageUp/Down to scroll" if len(npcs) > 4 else ""
+        return_text = f"[B] Return to wallet{scroll_hint}" if controller_connected else f"Press ESC or click to return to wallet{scroll_hint}"
         hint_surface = self.font_hint.render(return_text, True, UI_ACCENT)
         screen.blit(hint_surface, hint_surface.get_rect(center=(cx, main_panel.bottom + 20)))
 
@@ -1141,7 +1146,8 @@ class UI:
                 reputation_data = yearbook_data.get("reputation_data", {}) if yearbook_data else {}
                 npc_groups = yearbook_data.get("npc_groups", {}) if yearbook_data else {}
                 selected_group = yearbook_data.get("selected_group", "Athletes") if yearbook_data else "Athletes"
-                self.draw_yearbook_view(screen, controller_connected, reputation_data, npc_groups, selected_group)
+                scroll_offset = yearbook_data.get("scroll_offset", 0) if yearbook_data else 0
+                self.draw_yearbook_view(screen, controller_connected, reputation_data, npc_groups, selected_group, scroll_offset)
 
             elif active_item == "cred":
                 big_cred = pygame.Rect(cx - 250, cy - 150, 500, 300)
