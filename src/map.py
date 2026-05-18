@@ -2417,6 +2417,7 @@ class SchoolMap:
 
     def _build_campus(self):
         f = Floor(0, "Campus", 4000, 3000, FLOOR_BG_COLORS[0])
+        f.bg_tile_path = "data/tiles/ME_Singles_Terrains_and_Fences_32x32_Grass_Water_3_9.png"
 
         f.add_room(Room("c_roundabout", "Entrance Roundabout",
                         "Main entrance to Ravenside High",
