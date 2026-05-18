@@ -253,6 +253,10 @@ class NPC:
             path = os.path.join(base_dir, "assets", "Characters BEHIND THE SMILE", "PROTAGONISTS", "Aiden Parker.png")
         elif self.id == "npc_lena":
             path = os.path.join(base_dir, "assets", "Characters BEHIND THE SMILE", "PROTAGONISTS", "Lena Parker.png")
+        elif self.id == "npc_director":
+            path = os.path.join(base_dir, "assets", "Characters BEHIND THE SMILE", "especiales", "director walsh.png")
+        elif self.id == "npc_gordon":
+            path = os.path.join(base_dir, "assets", "Characters BEHIND THE SMILE", "especiales", "el gastroo.png")
         else:
             folder = folder_map.get(self.group.value)
             if not folder:
