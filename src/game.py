@@ -228,6 +228,12 @@ class Game:
     #  INITIALISATION HELPERS
     # ──────────────────────────────────────────────────────────
 
+    def _get_parked_vehicle_rects(self) -> list[pygame.Rect]:
+        """Collision boxes for every visible vehicle in the campus parking lot."""
+        rects = [self._parked_car_rect]
+        rects.extend(rect for rect, _, _ in self._extra_parked_cars)
+        return rects
+
     def _init_map(self):
         self.school_map    = SchoolMap()
         self.current_floor = FLOOR_CAMPUS
@@ -2243,6 +2249,8 @@ class Game:
             npc_walls = list(floor.walls) if floor else []
             if self._player_spawned:
                 npc_walls.append(self.player.rect)
+            if self.current_floor == FLOOR_CAMPUS:
+                npc_walls.extend(self._get_parked_vehicle_rects())
             if floor:
                 for door in floor.doors:
                     if door.locked:
@@ -2499,9 +2507,7 @@ class Game:
 
         # Parked car is solid on campus
         if self.current_floor == FLOOR_CAMPUS:
-            walls.append(self._parked_car_rect)
-            for rect, _, _ in self._extra_parked_cars:
-                walls.append(rect)
+            walls.extend(self._get_parked_vehicle_rects())
         
         # Rooftop party collisions
         if self.current_floor == FLOOR_ROOFTOP and self.day_number >= 3:
@@ -2669,6 +2675,8 @@ class Game:
         # NPC AI — only update NPCs on current floor
         npc_walls = list(floor.walls) if floor else []
         npc_walls.append(self.player.rect)
+        if self.current_floor == FLOOR_CAMPUS:
+            npc_walls.extend(self._get_parked_vehicle_rects())
         
         # Add locked doors to NPC walls to block them too
         if floor:
@@ -4746,10 +4754,8 @@ class Game:
 
     def _draw_parked_car(self, surface=None):
         surface = surface or self.screen
-        """Draw the parked car in the campus parking lot (facing left)."""
+        """Draw the parking-lot school bus rotated to match its collision box."""
         car_surf = self._build_car_surface()
-        # Flip horizontally so the car faces left
-        car_surf = pygame.transform.flip(car_surf, True, False)
 
         if self._car_departure_active and self._car_depart_phase == "drive_away":
             sx, sy = self.camera.apply_pos(self._car_depart_wx, self._car_depart_wy)
@@ -4757,6 +4763,7 @@ class Game:
             surface.blit(car_surf, rect)
         else:
             cr = self.camera.apply_rect(self._parked_car_rect)
+            car_surf = pygame.transform.flip(car_surf, True, False)
             surface.blit(car_surf, (cr.x, cr.y - 10))
 
     def _build_regular_car_surface(self, color: tuple) -> pygame.Surface:
