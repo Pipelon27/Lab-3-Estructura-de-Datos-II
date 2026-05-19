@@ -533,7 +533,7 @@ class Floor:
         # another wall's top surface.
         pp_tables = getattr(self, 'ping_pong_tables', [])
         pp_table  = getattr(self, 'ping_pong_table', None)
-        fountain  = getattr(self, 'fountain_rect', None)
+        fountain_colliders = getattr(self, 'fountain_rects', [])
         # Collect all furniture rects so they are drawn as furniture, not walls
         furniture_rects = set()
         for furn in self.furniture:
@@ -553,7 +553,7 @@ class Floor:
         for wall, wr in visible_walls:
             if wall in pp_tables or (pp_table and wall == pp_table):
                 continue
-            if fountain and wall == fountain:
+            if wall in fountain_colliders:
                 continue
             if id(wall) in furniture_rects:
                 continue
@@ -563,7 +563,7 @@ class Floor:
         for wall, wr in visible_walls:
             if wall in pp_tables or (pp_table and wall == pp_table):
                 self._draw_ping_pong_table(screen, wr)
-            elif fountain and wall == fountain:
+            elif wall in fountain_colliders:
                 continue
             elif id(wall) in furniture_rects:
                 continue
@@ -2481,18 +2481,22 @@ class SchoolMap:
         f.ping_pong_table = pygame.Rect(3400, 2420, 180, 110)
         f.walls.append(f.ping_pong_table)
 
-        # Fountain collision - circular base at center of c_fountain room
+        # Fountain collision - sliced rectangles approximate the circular sprite.
         # Room center: 1700+300=2000, 2050+175=2225
         fountain_cx, fountain_cy = 2000, 2225
         fountain_base_r = 85
-        # Approximate circle with a square collision (slightly larger than visual)
-        f.fountain_rect = pygame.Rect(
-            fountain_cx - fountain_base_r,
-            fountain_cy - fountain_base_r,
-            fountain_base_r * 2,
-            fountain_base_r * 2
-        )
-        f.walls.append(f.fountain_rect)
+        fountain_slice_h = 24
+        f.fountain_rects = []
+        for y_offset in (-72, -48, -24, 0, 24, 48, 72):
+            half_width = int((fountain_base_r * fountain_base_r - y_offset * y_offset) ** 0.5)
+            rect = pygame.Rect(
+                fountain_cx - half_width,
+                fountain_cy + y_offset - fountain_slice_h // 2,
+                half_width * 2,
+                fountain_slice_h
+            )
+            f.fountain_rects.append(rect)
+            f.walls.append(rect)
 
         # Basketball court
         f.basketball_court = pygame.Rect(2800 + WT, 150 + WT, 1080 - 2 * WT, 950 - 2 * WT)
@@ -2570,7 +2574,7 @@ class SchoolMap:
                 f.walls.append(pygame.Rect(px - 10, py - 10, 20, 20))
         
         # Use the fountain sprite only at the Central Fountain POI
-        f.garden_decorations.append(('sprite', 2000, 2225, fountain_3_3, 280, 350))
+        f.garden_decorations.append(('sprite', 2000, 2225, fountain_3_3, 170, 170))
         
         # New bush sprites to alternate
         bush_sprites = [
