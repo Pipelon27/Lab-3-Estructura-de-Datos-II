@@ -2014,6 +2014,10 @@ class Game:
 
         npc = self._nearest_npc(NPC_INTERACTION_RANGE)
         if npc and npc.health > 0:
+            if npc.id == "npc_marcus_green" and self.current_floor != FLOOR_CAMPUS:
+                self.ui.show_notification("Marcus Green is not in the Sports Arena right now.", NOTIF_WARNING)
+                return
+
             # Day 4: Ava at rooftop party — use custom cinematic dialogue
             if (self.current_floor == FLOOR_ROOFTOP
                     and npc.id == "npc_ava_thompson"
@@ -3964,7 +3968,7 @@ class Game:
         try:
             player_data = self.player.to_dict()
             player_data["floor"] = self.current_floor
-            player_data["state"] = self.state.value
+            player_data["game_state"] = self.state.value
             
             if self.state == GameState.BASKETBALL:
                 bb_data = {
@@ -4014,7 +4018,7 @@ class Game:
             remote = self.network.get_remote_data()
             
             if remote and self.remote_player:
-                r_state = remote.get("state")
+                r_state = remote.get("game_state")
                 
                 # Auto teleport to basketball (only client follows host)
                 if not self.is_host and r_state == GameState.BASKETBALL.value and self.state != GameState.BASKETBALL:
