@@ -3883,6 +3883,7 @@ class Game:
                     f"You see {npc.name}'s true side…", NOTIF_WARNING,
                 )
         if "start_pingpong" in result and result["start_pingpong"]:
+            self.dialogue_system.active_tree = None
             opponent = self.npc_manager.get_npc_by_id("npc_oscar")
             self.pingpong.start(self.player, opponent)
             self.state = GameState.PINGPONG
@@ -3894,6 +3895,7 @@ class Game:
             except Exception:
                 pass
         if "start_basketball" in result and result["start_basketball"]:
+            self.dialogue_system.active_tree = None
             opponent = self.npc_manager.get_npc_by_id("npc_marcus_green")
             
             is_coop = getattr(self, "multiplayer", False)
@@ -3953,10 +3955,12 @@ class Game:
                         "opp_y": self.basketball.opponent.rect.centery if self.basketball.opponent else 0,
                         "opp_z": self.basketball.opp_z,
                         "opp_shooting": getattr(self.basketball, "opp_shooting", False),
+                        "opp_shoot_anim": getattr(self.basketball, "opp_shoot_anim", -1.0),
                         "opp2_x": self.basketball.opp2.rect.centerx if getattr(self.basketball, "opp2", None) else 0,
                         "opp2_y": self.basketball.opp2.rect.centery if getattr(self.basketball, "opp2", None) else 0,
                         "opp2_z": getattr(self.basketball, "opp2_z", 0),
                         "opp2_shooting": getattr(self.basketball, "opp2_shooting", False),
+                        "opp2_shoot_anim": getattr(self.basketball, "opp2_shoot_anim", -1.0),
                         "p_score": self.basketball.player_score,
                         "o_score": self.basketball.opp_score,
                         "shake_timer": getattr(self.basketball, "shake_timer", 0.0),
@@ -3964,8 +3968,8 @@ class Game:
                     })
                 player_data["bb_data"] = bb_data
             
-            # Host: also send NPC data for synchronization
-            if self.is_host:
+            # Host: also send NPC data for synchronization (skip in BASKETBALL state to save bandwidth & CPU)
+            if self.is_host and self.state != GameState.BASKETBALL:
                 npcs = self.npc_manager.get_npcs_on_floor(self.current_floor)
                 # Pack minimal NPC data to save bandwidth
                 player_data["npc_sync"] = [
