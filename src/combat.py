@@ -133,6 +133,48 @@ class CombatSystem:
             if event.key != KEY_BLOCK:
                 self.state = CombatState.IDLE
 
+    def handle_controller(self, controller, player):
+        """Handle Xbox controller input during combat."""
+        if not self.active:
+            return
+
+        # Flee (Back button)
+        if controller.is_map_pressed():
+            self._end_combat("flee")
+            return
+
+        # Action inputs
+        light_pressed = controller.is_attack_pressed() or controller.is_confirm_pressed()
+        heavy_pressed = controller.is_block_pressed() or controller.is_inventory_pressed()
+        block_pressed = controller.is_cancel_pressed() or controller.lt_value > 0.3
+        dash_pressed = controller.is_dash_triggered() or controller.is_skill_tree_pressed()
+
+        if self.state == CombatState.IDLE:
+            if light_pressed:
+                if player.stamina >= LIGHT_ATTACK_STAMINA:
+                    player.stamina -= LIGHT_ATTACK_STAMINA
+                    self.state = CombatState.LIGHT_ATTACK
+                    self.timer = ATTACK_COOLDOWN
+            elif heavy_pressed:
+                if player.stamina >= HEAVY_ATTACK_STAMINA:
+                    player.stamina -= HEAVY_ATTACK_STAMINA
+                    self.state = CombatState.HEAVY_ATTACK
+                    self.timer = ATTACK_COOLDOWN + 5
+            elif block_pressed:
+                self.state = CombatState.BLOCKING
+            elif dash_pressed:
+                player.start_dash()
+                self.state = CombatState.DASHING
+                self.timer = 10
+
+        elif self.state == CombatState.COMBO_WINDOW:
+            if light_pressed:
+                if player.stamina >= COMBO_STAMINA:
+                    player.stamina -= COMBO_STAMINA
+                    self.state = CombatState.COMBO_ATTACK
+                    self.timer = ATTACK_COOLDOWN
+                    self.hit_combo_count += 1
+
     # ── update ────────────────────────────────────────────────
 
     def update(self, dt: float) -> str | None:
@@ -163,12 +205,26 @@ class CombatSystem:
                 self._npc_counter_attack()
 
         elif self.state == CombatState.BLOCKING:
+            from src.controller import get_controller, XBOX_B, XBOX_LB
+            controller = get_controller()
+            controller_connected = controller.connected and getattr(controller, "last_input_method", "keyboard") == "controller"
+
+            if controller_connected:
+                block_held = (
+                    controller.is_button_held(XBOX_B) or
+                    controller.is_button_held(XBOX_LB) or
+                    controller.lt_value > 0.3
+                )
+                if not block_held:
+                    self.state = CombatState.IDLE
+
             # NPC tries to attack while player blocks
-            self.npc_attack_timer += 1
-            if self.npc_attack_timer >= 40:
-                self.npc_attack_timer = 0
-                dmg = int(self.target_damage * (1 - BLOCK_DAMAGE_REDUCTION))
-                self.player.take_damage(dmg)
+            if self.state == CombatState.BLOCKING:
+                self.npc_attack_timer += 1
+                if self.npc_attack_timer >= 40:
+                    self.npc_attack_timer = 0
+                    dmg = int(self.target_damage * (1 - BLOCK_DAMAGE_REDUCTION))
+                    self.player.take_damage(dmg)
 
         elif self.state == CombatState.DASHING:
             self.timer -= 1
@@ -288,10 +344,17 @@ class CombatSystem:
             screen.blit(flash, (0, 0))
 
         # ── Controls ──
-        screen.blit(font_hint.render(
-            "J Light  |  U Heavy  |  L Block  |  SHIFT Dash  |  ESC Flee",
-            True, UI_TEXT_DIM),
-            (SCREEN_WIDTH // 2 - 200, SCREEN_HEIGHT - 40))
+        from src.controller import get_controller
+        controller = get_controller()
+        controller_connected = controller.connected and getattr(controller, "last_input_method", "keyboard") == "controller"
+
+        if controller_connected:
+            controls_txt = "[A]/RB Light  |  [X]/LB Heavy  |  [B]/LT Block  |  [Y]/RT Dash  |  [Back] Flee"
+        else:
+            controls_txt = "J Light  |  U Heavy  |  L Block  |  SHIFT Dash  |  ESC Flee"
+
+        screen.blit(font_hint.render(controls_txt, True, UI_TEXT_DIM),
+                    (SCREEN_WIDTH // 2 - 200, SCREEN_HEIGHT - 40))
 
     @staticmethod
     def _draw_bar(screen, x, y, w, h, current, maximum, fg, bg):

@@ -1044,6 +1044,16 @@ class Game:
             self.social_dialogue_manager.handle_controller(controller)
         elif self.state == GameState.BASKETBALL:
             self.basketball.handle_controller(controller)
+        elif self.state == GameState.MAINFRAME:
+            self._handle_controller_mainframe(controller)
+        elif self.state == GameState.TRADING:
+            self._handle_controller_trading(controller)
+        elif self.state == GameState.INVENTORY_SCREEN:
+            self._handle_controller_inventory(controller)
+        elif self.state == GameState.SKILL_TREE_SCREEN:
+            self._handle_controller_skill_tree(controller)
+        elif self.state == GameState.HELP:
+            self._handle_controller_help(controller)
 
 
     def _toggle_pause(self):
@@ -1292,6 +1302,149 @@ class Game:
         """Handle controller input during PINGPONG state."""
         if hasattr(self.pingpong, 'handle_controller'):
             self.pingpong.handle_controller(controller)
+
+    def _handle_controller_mainframe(self, controller):
+        """Handle controller input for the MAINFRAME state."""
+        if not hasattr(self, "mainframe_focus_idx"):
+            self.mainframe_focus_idx = 4
+
+        # Back button / B button to go back or cancel
+        if controller.is_cancel_pressed():
+            if self.mainframe_screen == "login":
+                self.state = GameState.PLAYING
+            elif self.mainframe_screen == "desktop":
+                self.mainframe_screen = "alarm"
+            elif self.mainframe_screen == "mail":
+                self.mainframe_screen = "desktop"
+                self.mainframe_focus_idx = 0
+            elif self.mainframe_screen == "mail_view":
+                self.mainframe_screen = "mail"
+                self.mainframe_focus_idx = 0
+            elif self.mainframe_screen == "alarm":
+                self._exit_mainframe_success()
+            return
+
+        # D-pad Up / Down / Left / Right
+        menu_v = controller.get_menu_direction()
+        menu_h = controller.get_menu_direction_horizontal()
+
+        if self.mainframe_screen == "login":
+            # 5 focusable items: 0: User, 1: Pass, 2: Login, 3: Exit, 4: Autofill
+            if menu_v != 0:
+                self.mainframe_focus_idx = (self.mainframe_focus_idx + menu_v) % 5
+            elif menu_h != 0:
+                if self.mainframe_focus_idx == 2 and menu_h > 0:
+                    self.mainframe_focus_idx = 3
+                elif self.mainframe_focus_idx == 3 and menu_h < 0:
+                    self.mainframe_focus_idx = 2
+
+            if controller.is_confirm_pressed():
+                if self.mainframe_focus_idx == 0:
+                    self.mainframe_active_field = "user"
+                elif self.mainframe_focus_idx == 1:
+                    self.mainframe_active_field = "pass"
+                elif self.mainframe_focus_idx == 2:
+                    if self.mainframe_user_input == "admin_techlab" and self.mainframe_pass_input == "pWd_sMiLe_cLuB_99!":
+                        self.mainframe_screen = "desktop"
+                        self.mainframe_error = ""
+                        self.mainframe_focus_idx = 0
+                    else:
+                        self.mainframe_error = "INVALID CREDENTIALS"
+                elif self.mainframe_focus_idx == 3:
+                    self.state = GameState.PLAYING
+                elif self.mainframe_focus_idx == 4:
+                    self.mainframe_user_input = "admin_techlab"
+                    self.mainframe_pass_input = "pWd_sMiLe_cLuB_99!"
+                    self.mainframe_screen = "desktop"
+                    self.mainframe_error = ""
+                    self.mainframe_focus_idx = 0
+
+        elif self.mainframe_screen == "desktop":
+            # 4 focusable items: 0: Mail, 1: Files, 2: Recycle, 3: Disconnect
+            if menu_h != 0:
+                self.mainframe_focus_idx = (self.mainframe_focus_idx + menu_h) % 4
+            elif menu_v != 0:
+                self.mainframe_focus_idx = (self.mainframe_focus_idx + menu_v) % 4
+
+            if controller.is_confirm_pressed():
+                if self.mainframe_focus_idx == 0:
+                    self.mainframe_screen = "mail"
+                    self.mainframe_focus_idx = 0
+                elif self.mainframe_focus_idx == 3:
+                    self.mainframe_screen = "alarm"
+                    self.mainframe_focus_idx = 0
+
+        elif self.mainframe_screen == "mail":
+            # 6 focusable items:
+            # 0: Back, 1: Disconnect, 2: Eli's Email, 3: Walsh, 4: Davis, 5: IT Support
+            if menu_v != 0:
+                self.mainframe_focus_idx = (self.mainframe_focus_idx + menu_v) % 6
+            elif menu_h != 0:
+                if self.mainframe_focus_idx == 0 and menu_h > 0:
+                    self.mainframe_focus_idx = 1
+                elif self.mainframe_focus_idx == 1 and menu_h < 0:
+                    self.mainframe_focus_idx = 0
+
+            if controller.is_confirm_pressed():
+                if self.mainframe_focus_idx == 0:
+                    self.mainframe_screen = "desktop"
+                    self.mainframe_focus_idx = 0
+                elif self.mainframe_focus_idx == 1:
+                    self.mainframe_screen = "alarm"
+                    self.mainframe_focus_idx = 0
+                elif self.mainframe_focus_idx == 2:
+                    self.mainframe_screen = "mail_view"
+                    self.mainframe_selected_email = "eli"
+                    self.mainframe_focus_idx = 0
+
+        elif self.mainframe_screen == "mail_view":
+            # 3 focusable items: 0: Back, 1: Disconnect, 2: Close
+            if menu_v != 0:
+                self.mainframe_focus_idx = (self.mainframe_focus_idx + menu_v) % 3
+            elif menu_h != 0:
+                if self.mainframe_focus_idx == 0 and menu_h > 0:
+                    self.mainframe_focus_idx = 1
+                elif self.mainframe_focus_idx == 1 and menu_h < 0:
+                    self.mainframe_focus_idx = 0
+
+            if controller.is_confirm_pressed():
+                if self.mainframe_focus_idx in (0, 2):
+                    self.mainframe_screen = "mail"
+                    self.mainframe_focus_idx = 0
+                elif self.mainframe_focus_idx == 1:
+                    self.mainframe_screen = "alarm"
+                    self.mainframe_focus_idx = 0
+
+        elif self.mainframe_screen == "alarm":
+            # Only 1 focusable item: 0: Acknowledge & Escape
+            if controller.is_confirm_pressed():
+                self._exit_mainframe_success()
+
+    def _handle_controller_trading(self, controller):
+        """Handle controller input during TRADING state."""
+        self.trade_system.handle_controller(controller)
+
+    def _handle_controller_inventory(self, controller):
+        """Handle controller input in Inventory Screen."""
+        # Press X or B to close and return to playing
+        if controller.is_inventory_pressed() or controller.is_cancel_pressed():
+            self.state = GameState.PLAYING
+            return
+        self.inventory.handle_controller(controller)
+
+    def _handle_controller_skill_tree(self, controller):
+        """Handle controller input in Skill Tree Screen."""
+        # Press Y or B to close and return to playing
+        if controller.is_skill_tree_pressed() or controller.is_cancel_pressed():
+            self.state = GameState.PLAYING
+            return
+        self.skill_tree.handle_controller(controller, self.player)
+
+    def _handle_controller_help(self, controller):
+        """Handle controller input in Help Screen."""
+        # Press B or Start or Back to close and return to previous state
+        if controller.is_cancel_pressed() or controller.is_pause_pressed():
+            self.state = getattr(self, 'previous_state', GameState.PLAYING)
 
     def _on_key_down(self, event: pygame.event.Event):
         # ── intro cinematic: allow pause + dialogue advance only ──
@@ -1656,6 +1809,7 @@ class Game:
         self.mainframe_alarm = False
         self.mainframe_selected_email = None
         self._computer_prompt_active = False
+        self.mainframe_focus_idx = 4  # Start with focus on the Auto-Fill button for seamless controller play
 
     def _nearest_npc(self, radius: float, skip_siblings: bool = False):
         """Return the closest NPC within *radius*, or None."""
