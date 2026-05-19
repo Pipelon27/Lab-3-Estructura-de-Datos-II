@@ -60,6 +60,8 @@ ROOM_ASSET_FOLDER = {
     "b_surveillance":     "basement/security_room",
     "b_detention":        "basement/cells",
     "b_terminal":         "basement/final_terminal",
+    "b_men_bath":         "common",
+    "b_women_bath":       "common",
     # rooftop
     "rt_terrace":         "common",
     "rt_benches":         "common",
@@ -92,6 +94,8 @@ ROOM_FLOOR_TILE = {
     "b_surveillance":   "tile_gray",
     "b_detention":      "concrete",
     "b_terminal":       "tile_gray",
+    "b_men_bath":       "tile_warm",
+    "b_women_bath":     "tile_warm",
     "b_stairs_up":      "stone_gray",
     "rt_stairs_down":   "stone_gray",
     "rt_terrace":       "stone_gray",

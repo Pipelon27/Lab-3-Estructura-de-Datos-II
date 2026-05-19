@@ -3306,6 +3306,14 @@ class SchoolMap:
                         1150, 800, 800, 500, (38, 28, 32),
                         mission_tag="Choose your ending",
                         tile_path=_tile_b))
+        f.add_room(Room("b_men_bath", "Men Bathroom",
+                        "Basement Men's restroom tucked in the corner",
+                        2000, 800, 350, 500, (36, 52, 70),
+                        tile_path="data/tiles/piso_blancobaldosa.png"))
+        f.add_room(Room("b_women_bath", "Women Bathroom",
+                        "Basement Women's restroom tucked in the corner",
+                        2350, 800, 350, 500, (58, 48, 68),
+                        tile_path="data/tiles/piso_blancobaldosa.png"))
 
         # Outer boundary
         f.walls.extend([
@@ -3316,10 +3324,14 @@ class SchoolMap:
         f.walls.extend([
             _vw(300, 200, 1100), _vw(2700 - WT, 200, 1100),
         ])
+        # Bathroom dividing wall
+        f.walls.append(_vw(2350 - WT//2, 800, 500))
+
         f.walls.extend(_hwall_gaps(200, 300, 2700, [(600, DW), (1450, DW), (2300, DW)]))
-        f.walls.extend(_hwall_gaps(1300 - WT, 300, 2700, [(600, DW), (1450, DW), (2300, DW)]))
+        # Updated bottom wall gaps to align with centered bathroom doors
+        f.walls.extend(_hwall_gaps(1300 - WT, 300, 2700, [(600, DW), (1450, DW), (2135, DW), (2485, DW)]))
         f.walls.extend(_vwall_gaps(1150, 200, 1300, [(400, DW), (950, DW)]))
-        f.walls.extend(_vwall_gaps(2000, 200, 1300, [(400, DW), (950, DW)]))
+        f.walls.extend(_vwall_gaps(2000, 200, 1300, [(400, DW)]))
         f.walls.extend(_hwall_gaps(750, 300, 2700, [(600, DW), (1450, DW)]))
 
         # Stair area divider — door in LOWER corridor (going UP)
@@ -3339,13 +3351,14 @@ class SchoolMap:
         # Bottom outer wall doors (y=1300 - WT)
         f.add_door(Door("door_b_detention_bot", 600, 1300 - 16, DW, 16, is_vertical=False))
         f.add_door(Door("door_b_terminal_bot", 1450, 1300 - 16, DW, 16, is_vertical=False))
-        f.add_door(Door("door_b_surv_bot", 2300, 1300 - 16, DW, 16, is_vertical=False))
+        # Bathroom doors centered inside each bathroom
+        f.add_door(Door("door_b_men_bath", 2135, 1300 - 16, DW, 16, is_vertical=False))
+        f.add_door(Door("door_b_women_bath", 2485, 1300 - 16, DW, 16, is_vertical=False))
 
         # Vertical internal doors (x=1150 and x=2000)
         f.add_door(Door("door_b_smile_server", 1150, 400, 16, DW, is_vertical=True))
         f.add_door(Door("door_b_detention_terminal", 1150, 950, 16, DW, is_vertical=True))
         f.add_door(Door("door_b_server_surv", 2000, 400, 16, DW, is_vertical=True))
-        f.add_door(Door("door_b_terminal_surv", 2000, 950, 16, DW, is_vertical=True))
 
         # Horizontal internal doors (y=750)
         f.add_door(Door("door_b_smile_detention", 600, 750, DW, 16, is_vertical=False))
@@ -3358,40 +3371,14 @@ class SchoolMap:
 
         # ── BASEMENT DECORATIONS ──
         # 1. Coffee Machine - pegada a la pared de la derecha (against the right wall)
-        # Right boundary is x = 3200 - WT. Let's place it at x = 3200 - WT - 48, y = 1600.
-        # It's a blocking sprite-based furniture.
         _add_furn(f, pygame.Rect(3200 - WT - 48, 1600, 48, 64), "sprite_furn",
                   sprite_name="ME_Singles_Subway_and_Train_Station_32x32_Coffee_Machine_Right.png")
 
         # 2. Shovel (la pala) - en una de las esquinas
-        # Let's put it in the bottom-left corner of the main corridor (x = WT + 20, y = 2400 - WT - 48).
-        # We can make it a blocking furniture (width 32, height 48).
         _add_furn(f, pygame.Rect(WT + 20, 2400 - WT - 48, 32, 48), "sprite_furn",
                   sprite_name="ME_Singles_Worksite_32x32_Shovel_3.png")
 
-        # 3. Graffiti (los grafitis deben estar en las paredes)
-        # These are non-blocking sprite_decor items drawn on walls.
-        # Let's place them symmetrically and beautifully on the south-facing walls of the room cluster (y = 1300 - WT).
-        # Since it's y = 1300 - WT, they are on the wall face/cap.
-        # We will scale them to 64x48.
-        _add_furn(f, pygame.Rect(500, 1300 - WT - 32, 64, 48), "sprite_decor", blocking=False,
-                  sprite_name="ME_Singles_Subway_and_Train_Station_32x32_Green_FNS_Writing_Graffiti.png")
-        _add_furn(f, pygame.Rect(1500, 1300 - WT - 32, 64, 48), "sprite_decor", blocking=False,
-                  sprite_name="ME_Singles_Subway_and_Train_Station_32x32_Green_Purple_Writing_Graffiti.png")
-        _add_furn(f, pygame.Rect(2300, 1300 - WT - 32, 64, 48), "sprite_decor", blocking=False,
-                  sprite_name="ME_Singles_Subway_and_Train_Station_32x32_Green_FNS_Writing_Graffiti.png")
-        # Let's also put graffiti on the left and right walls of the basement
-        _add_furn(f, pygame.Rect(WT, 1000, 48, 64), "sprite_decor", blocking=False,
-                  sprite_name="ME_Singles_Subway_and_Train_Station_32x32_Green_Purple_Writing_Graffiti.png")
-        _add_furn(f, pygame.Rect(3200 - WT - 48, 1000, 48, 64), "sprite_decor", blocking=False,
-                  sprite_name="ME_Singles_Subway_and_Train_Station_32x32_Green_FNS_Writing_Graffiti.png")
-
-        # 4. Wooden Tiny Tables (mesas) - ordenadas y simétricas
-        # Symmetrical 2x6 grid in the lower corridor (avoiding stairs at x=550..1050, y=1620..1900).
-        # Grid Y coordinates: Row 1 at y = 1450, Row 2 at y = 2050.
-        # Grid X coordinates (perfectly symmetric around x=1600):
-        # x = 400, 1200, 1500, 1700, 2000, 2800.
-        # Each table blocks path (blocking=True) and is 48x48.
+        # 3. Wooden Tiny Tables (mesas) - ordenadas y simétricas
         table_positions = [
             (400, 1450), (1200, 1450), (1500, 1450), (1700, 1450), (2000, 1450), (2800, 1450),
             (400, 2050), (1200, 2050), (1500, 2050), (1700, 2050), (2000, 2050), (2800, 2050)
@@ -3399,6 +3386,124 @@ class SchoolMap:
         for tx, ty in table_positions:
             _add_furn(f, pygame.Rect(tx, ty, 48, 48), "sprite_furn",
                       sprite_name="ME_Singles_Swimming_Pool_32x32_Wooden_Tiny_Table_2.png")
+
+        # 4. Bathroom Furniture (centered and mathematically positioned to avoid collision)
+        # Men's Bathroom
+        _add_furn(f, pygame.Rect(2100, 850, 64, 96), "sprite_furn",
+                  sprite_name="ME_Singles_Worksite_32x32_Portable_Toilet_2.png")
+        _add_furn(f, pygame.Rect(2220, 850, 60, 40), "sink", facing="down")
+        _add_furn(f, pygame.Rect(2030, 1150, 48, 48), "sprite_furn",
+                  sprite_name="ME_Singles_City_Props_32x32_Trashbin_14.png")
+
+        # Women's Bathroom
+        _add_furn(f, pygame.Rect(2450, 850, 64, 96), "sprite_furn",
+                  sprite_name="ME_Singles_Worksite_32x32_Portable_Toilet_3.png")
+        _add_furn(f, pygame.Rect(2570, 850, 60, 40), "sink", facing="down")
+        _add_furn(f, pygame.Rect(2380, 1150, 48, 48), "sprite_furn",
+                  sprite_name="ME_Singles_City_Props_32x32_Trashbin_14.png")
+
+        # 5. Broken Pillars
+        _add_furn(f, pygame.Rect(WT + 30, WT + 30, 48, 96), "sprite_furn",
+                  sprite_name="ME_Singles_Garden_32x32_Pillar_Broken_3.png")
+        _add_furn(f, pygame.Rect(3200 - WT - 78, 2400 - WT - 126, 48, 96), "sprite_furn",
+                  sprite_name="ME_Singles_Garden_32x32_Pillar_Broken_3.png")
+
+        # 6. Creepy Statues
+        _add_furn(f, pygame.Rect(1020, 230, 48, 96), "sprite_furn",
+                  sprite_name="ME_Singles_Garden_32x32_Statue_Putto_1.png")
+        _add_furn(f, pygame.Rect(330, 830, 48, 96), "sprite_furn",
+                  sprite_name="ME_Singles_Garden_32x32_Statue_Putto_2.png")
+
+        # 7. Solid Floor Holes and Cracks (Blocking - must go around them)
+        # --- Corridors ---
+        # Left Corridor
+        _add_furn(f, pygame.Rect(120, 450, 64, 64), "sprite_furn", blocking=True,
+                  sprite_name="ME_Singles_City_Props_32x32_Holes_1.png")
+        _add_furn(f, pygame.Rect(80, 1050, 64, 64), "sprite_furn", blocking=True,
+                  sprite_name="ME_Singles_City_Props_32x32_Holes_2.png")
+        _add_furn(f, pygame.Rect(140, 1650, 64, 64), "sprite_furn", blocking=True,
+                  sprite_name="ME_Singles_City_Props_32x32_Holes_3.png")
+        # Right Corridor
+        _add_furn(f, pygame.Rect(2900, 450, 64, 64), "sprite_furn", blocking=True,
+                  sprite_name="ME_Singles_City_Props_32x32_Holes_4.png")
+        _add_furn(f, pygame.Rect(2850, 1050, 64, 64), "sprite_furn", blocking=True,
+                  sprite_name="ME_Singles_City_Props_32x32_Holes_5.png")
+        _add_furn(f, pygame.Rect(2950, 1650, 64, 64), "sprite_furn", blocking=True,
+                  sprite_name="ME_Singles_City_Props_32x32_Holes_6.png")
+        # Top Corridor
+        _add_furn(f, pygame.Rect(750, 60, 64, 64), "sprite_furn", blocking=True,
+                  sprite_name="ME_Singles_City_Props_32x32_Holes_7.png")
+        _add_furn(f, pygame.Rect(1650, 80, 64, 64), "sprite_furn", blocking=True,
+                  sprite_name="ME_Singles_City_Props_32x32_Holes_8.png")
+        # Bottom Corridor
+        _add_furn(f, pygame.Rect(600, 1600, 64, 64), "sprite_furn", blocking=True,
+                  sprite_name="ME_Singles_City_Props_32x32_Holes_9.png")
+        _add_furn(f, pygame.Rect(1400, 1600, 64, 64), "sprite_furn", blocking=True,
+                  sprite_name="ME_Singles_City_Props_32x32_Holes_10.png")
+        _add_furn(f, pygame.Rect(2200, 1600, 64, 64), "sprite_furn", blocking=True,
+                  sprite_name="ME_Singles_City_Props_32x32_Holes_11.png")
+        _add_furn(f, pygame.Rect(1000, 2150, 64, 64), "sprite_furn", blocking=True,
+                  sprite_name="ME_Singles_City_Props_32x32_Holes_12.png")
+        _add_furn(f, pygame.Rect(1800, 2150, 64, 64), "sprite_furn", blocking=True,
+                  sprite_name="ME_Singles_City_Props_32x32_Holes_1.png")
+
+        # --- Room Interiors ---
+        # Smile Club Room
+        _add_furn(f, pygame.Rect(450, 300, 64, 64), "sprite_furn", blocking=True,
+                  sprite_name="ME_Singles_City_Props_32x32_Holes_2.png")
+        _add_furn(f, pygame.Rect(950, 600, 64, 64), "sprite_furn", blocking=True,
+                  sprite_name="ME_Singles_City_Props_32x32_Holes_3.png")
+        # Server Room
+        _add_furn(f, pygame.Rect(1300, 350, 64, 64), "sprite_furn", blocking=True,
+                  sprite_name="ME_Singles_City_Props_32x32_Holes_4.png")
+        _add_furn(f, pygame.Rect(1750, 600, 64, 64), "sprite_furn", blocking=True,
+                  sprite_name="ME_Singles_City_Props_32x32_Holes_5.png")
+        # Surveillance Room
+        _add_furn(f, pygame.Rect(2150, 400, 64, 64), "sprite_furn", blocking=True,
+                  sprite_name="ME_Singles_City_Props_32x32_Holes_6.png")
+        _add_furn(f, pygame.Rect(2550, 300, 64, 64), "sprite_furn", blocking=True,
+                  sprite_name="ME_Singles_City_Props_32x32_Holes_7.png")
+        # Detention Cells
+        _add_furn(f, pygame.Rect(400, 950, 64, 64), "sprite_furn", blocking=True,
+                  sprite_name="ME_Singles_City_Props_32x32_Holes_8.png")
+        _add_furn(f, pygame.Rect(900, 1100, 64, 64), "sprite_furn", blocking=True,
+                  sprite_name="ME_Singles_City_Props_32x32_Holes_9.png")
+        # Final Terminal Room
+        _add_furn(f, pygame.Rect(1300, 900, 64, 64), "sprite_furn", blocking=True,
+                  sprite_name="ME_Singles_City_Props_32x32_Holes_10.png")
+        _add_furn(f, pygame.Rect(1800, 1100, 64, 64), "sprite_furn", blocking=True,
+                  sprite_name="ME_Singles_City_Props_32x32_Holes_11.png")
+        _add_furn(f, pygame.Rect(1500, 1000, 64, 64), "sprite_furn", blocking=True,
+                  sprite_name="ME_Singles_City_Props_32x32_Holes_12.png")
+        # Bathrooms
+        _add_furn(f, pygame.Rect(2180, 1050, 64, 64), "sprite_furn", blocking=True,
+                  sprite_name="ME_Singles_City_Props_32x32_Holes_1.png")
+        _add_furn(f, pygame.Rect(2530, 1050, 64, 64), "sprite_furn", blocking=True,
+                  sprite_name="ME_Singles_City_Props_32x32_Holes_2.png")
+
+        # 8. Corridor Small Trash Piles (Non-blocking)
+        _add_furn(f, pygame.Rect(WT + 20, 800, 48, 48), "sprite_decor", blocking=False,
+                  sprite_name="ME_Singles_City_Props_32x32_Small_Trash_Pile_1.png")
+        _add_furn(f, pygame.Rect(2700 - WT + 10, 1450, 48, 48), "sprite_decor", blocking=False,
+                  sprite_name="ME_Singles_City_Props_32x32_Small_Trash_Pile_2.png")
+        _add_furn(f, pygame.Rect(1100, 2320, 48, 48), "sprite_decor", blocking=False,
+                  sprite_name="ME_Singles_City_Props_32x32_Small_Trash_Pile_3.png")
+        _add_furn(f, pygame.Rect(2400, 2320, 48, 48), "sprite_decor", blocking=False,
+                  sprite_name="ME_Singles_City_Props_32x32_Small_Trash_Pile_4.png")
+
+        # 9. Worksite Cones
+        _add_furn(f, pygame.Rect(510, 1450, 32, 32), "sprite_furn",
+                  sprite_name="ME_Singles_Worksite_32x32_Cone_2.png")
+        _add_furn(f, pygame.Rect(2750, 1450, 32, 32), "sprite_furn",
+                  sprite_name="ME_Singles_Worksite_32x32_Cone_2.png")
+        _add_furn(f, pygame.Rect(200, 1950, 32, 32), "sprite_furn",
+                  sprite_name="ME_Singles_Worksite_32x32_Cone_2.png")
+
+        # 10. Corridor Trashbins
+        _add_furn(f, pygame.Rect(3120, 500, 48, 48), "sprite_furn",
+                  sprite_name="ME_Singles_City_Props_32x32_Trashbin_14.png")
+        _add_furn(f, pygame.Rect(WT + 20, 1400, 48, 48), "sprite_furn",
+                  sprite_name="ME_Singles_City_Props_32x32_Trashbin_14.png")
 
         return f
 
