@@ -105,6 +105,7 @@ class Game:
 
         # Transition cooldown (prevents rapid re-triggering)
         self._transition_cooldown: float = 0.0
+        self._current_main_mission_text: str = "Mission 1: Follow Noah Carter through the school."
         self._bathroom_block_timer: float = 0.0
         self._bathroom_blocked_room: str | None = None
         self._cafeteria_block_timer: float = 0.0
