@@ -2678,6 +2678,13 @@ class Game:
                     self.rect.centery = 605
             self.camera.update(_CourtTarget())
             
+            # Apply screen shake to camera offset in basketball mode
+            if hasattr(self, "basketball") and getattr(self.basketball, "shake_timer", 0.0) > 0.0:
+                intensity = getattr(self.basketball, "shake_intensity", 5)
+                import random
+                self.camera.offset.x += random.randint(-intensity, intensity)
+                self.camera.offset.y += random.randint(-intensity, intensity)
+            
             result = self.basketball.update(dt)
             if getattr(self.basketball, 'finished', False):
                 self.basketball.finished = False
@@ -3929,7 +3936,7 @@ class Game:
             except Exception:
                 pass
 
-            self.basketball.start(self.player, opponent, floor, is_coop=is_coop, ally=ally, opp2=opp2)
+            self.basketball.start(self.player, opponent, floor, is_coop=is_coop, ally=ally, opp2=opp2, is_host=self.is_host)
             self.state = GameState.BASKETBALL
 
     # ── network ───────────────────────────────────────────────
@@ -3948,13 +3955,17 @@ class Game:
                     "shoot_bar": self.basketball.shoot_bar,
                     "shooting": self.basketball.shooting,
                     "blocking": self.basketball.blocking,
+                    "pass_request": getattr(self.basketball, "pass_requested", False),
                 }
+                if getattr(self.basketball, "pass_requested", False):
+                    self.basketball.pass_requested = False
                 if self.is_host:
                     bb_data.update({
                         "ball_x": self.basketball.ball_x,
                         "ball_y": self.basketball.ball_y,
                         "ball_z": self.basketball.ball_z,
                         "ball_held_by": self.basketball.ball_held_by,
+                        "possession": getattr(self.basketball, "possession", None),
                         "pass_in_flight": getattr(self.basketball, "pass_in_flight", False),
                         "opp_x": self.basketball.opponent.rect.centerx if self.basketball.opponent else 0,
                         "opp_y": self.basketball.opponent.rect.centery if self.basketball.opponent else 0,
@@ -3966,6 +3977,8 @@ class Game:
                         "opp2_shooting": getattr(self.basketball, "opp2_shooting", False),
                         "p_score": self.basketball.player_score,
                         "o_score": self.basketball.opp_score,
+                        "shake_timer": getattr(self.basketball, "shake_timer", 0.0),
+                        "shake_intensity": getattr(self.basketball, "shake_intensity", 0),
                     })
                 player_data["bb_data"] = bb_data
             
@@ -3984,9 +3997,20 @@ class Game:
             if remote and self.remote_player:
                 r_state = remote.get("state")
                 
-                # Auto teleport to basketball
-                if r_state == GameState.BASKETBALL.value and self.state != GameState.BASKETBALL:
-                    self._handle_interaction_result({"start_basketball": True})
+                # Auto teleport to basketball (only client follows host)
+                if not self.is_host and r_state == GameState.BASKETBALL.value and self.state != GameState.BASKETBALL:
+                    self._apply_dialogue_result({"start_basketball": True})
+                
+                # Auto exit basketball (client follows host out of the game)
+                if not self.is_host and self.state == GameState.BASKETBALL and r_state != GameState.BASKETBALL.value:
+                    player_won = self.basketball.player_score > self.basketball.opp_score
+                    self.basketball.finished = False
+                    if hasattr(self.basketball, 'floor') and self.basketball.floor:
+                        self.basketball.floor.hide_hoops = False
+                    self.basketball.reset()
+                    self.state = GameState.PLAYING
+                    if player_won:
+                        self._begin_marcus_win_dialogue()
                 
                 if self.state == GameState.BASKETBALL and "bb_data" in remote:
                     if hasattr(self, "basketball"):
@@ -4217,7 +4241,7 @@ class Game:
                 })
             if getattr(self, "remote_player", None):
                 # Ghosting bug fix: only draw if on same floor
-                if self.remote_player.current_floor == self.current_floor:
+                if self.remote_player.current_floor == self.current_floor and self.state != GameState.BASKETBALL:
                     drawables.append({
                         "type": "remote_player",
                         "obj": self.remote_player,

@@ -1,110 +1,33 @@
 {
   "room_id": "b_terminal",
   "props": [
-    {
-      "sprite": "Basement_Singles_32x32_1.png",
-      "gx": 2,
-      "gy": 2,
-      "collision": "solid",
-      "layer": "below"
-    },
-    {
-      "sprite": "Basement_Singles_32x32_10.png",
-      "gx": 5,
-      "gy": 2,
-      "collision": "solid",
-      "layer": "below"
-    },
-    {
-      "sprite": "Basement_Singles_32x32_100.png",
-      "gx": 8,
-      "gy": 2,
-      "collision": "solid",
-      "layer": "below"
-    },
-    {
-      "sprite": "Basement_Singles_32x32_101.png",
-      "gx": 11,
-      "gy": 2,
-      "collision": "solid",
-      "layer": "below"
-    },
-    {
-      "sprite": "Basement_Singles_32x32_102.png",
-      "gx": 14,
-      "gy": 2,
-      "collision": "solid",
-      "layer": "below"
-    },
-    {
-      "sprite": "Basement_Singles_32x32_103.png",
-      "gx": 17,
-      "gy": 2,
-      "collision": "none",
-      "layer": "below"
-    },
-    {
-      "sprite": "Basement_Singles_32x32_104.png",
-      "gx": 20,
-      "gy": 2,
-      "collision": "none",
-      "layer": "below"
-    },
-    {
-      "sprite": "Basement_Singles_32x32_105.png",
-      "gx": 23,
-      "gy": 2,
-      "collision": "none",
-      "layer": "below"
-    },
-    {
-      "sprite": "Basement_Singles_32x32_106.png",
-      "gx": 2,
-      "gy": 5,
-      "collision": "none",
-      "layer": "below"
-    },
-    {
-      "sprite": "Basement_Singles_32x32_107.png",
-      "gx": 5,
-      "gy": 5,
-      "collision": "none",
-      "layer": "below"
-    },
-    {
-      "sprite": "Basement_Singles_32x32_108.png",
-      "gx": 8,
-      "gy": 5,
-      "collision": "none",
-      "layer": "below"
-    },
-    {
-      "sprite": "Basement_Singles_32x32_109.png",
-      "gx": 11,
-      "gy": 5,
-      "collision": "none",
-      "layer": "below"
-    },
-    {
-      "sprite": "Basement_Singles_32x32_11.png",
-      "gx": 14,
-      "gy": 5,
-      "collision": "solid",
-      "layer": "below"
-    },
-    {
-      "sprite": "Basement_Singles_32x32_110.png",
-      "gx": 17,
-      "gy": 5,
-      "collision": "none",
-      "layer": "below"
-    },
-    {
-      "sprite": "Basement_Singles_32x32_111.png",
-      "gx": 20,
-      "gy": 5,
-      "collision": "none",
-      "layer": "below"
-    }
+    { "sprite": "Basement_Singles_32x32_100.png", "gx": 2, "gy": 1, "collision": "solid", "layer": "below" },
+    { "sprite": "Basement_Singles_32x32_100.png", "gx": 4, "gy": 1, "collision": "solid", "layer": "below" },
+    { "sprite": "Basement_Singles_32x32_100.png", "gx": 6, "gy": 1, "collision": "solid", "layer": "below" },
+    { "sprite": "Basement_Singles_32x32_100.png", "gx": 8, "gy": 1, "collision": "solid", "layer": "below" },
+    { "sprite": "Basement_Singles_32x32_100.png", "gx": 16, "gy": 1, "collision": "solid", "layer": "below" },
+    { "sprite": "Basement_Singles_32x32_100.png", "gx": 18, "gy": 1, "collision": "solid", "layer": "below" },
+    { "sprite": "Basement_Singles_32x32_100.png", "gx": 20, "gy": 1, "collision": "solid", "layer": "below" },
+    { "sprite": "Basement_Singles_32x32_100.png", "gx": 22, "gy": 1, "collision": "solid", "layer": "below" },
+
+    { "sprite": "Basement_Singles_32x32_1.png", "gx": 3, "gy": 4, "collision": "solid", "layer": "below" },
+    { "sprite": "Basement_Singles_32x32_1.png", "gx": 3, "gy": 6, "collision": "solid", "layer": "below" },
+    { "sprite": "Basement_Singles_32x32_1.png", "gx": 3, "gy": 8, "collision": "solid", "layer": "below" },
+    { "sprite": "Basement_Singles_32x32_1.png", "gx": 3, "gy": 10, "collision": "solid", "layer": "below" },
+
+    { "sprite": "Basement_Singles_32x32_10.png", "gx": 21, "gy": 4, "collision": "solid", "layer": "below" },
+    { "sprite": "Basement_Singles_32x32_10.png", "gx": 21, "gy": 6, "collision": "solid", "layer": "below" },
+    { "sprite": "Basement_Singles_32x32_10.png", "gx": 21, "gy": 8, "collision": "solid", "layer": "below" },
+    { "sprite": "Basement_Singles_32x32_10.png", "gx": 21, "gy": 10, "collision": "solid", "layer": "below" },
+
+    { "sprite": "Basement_Singles_32x32_110.png", "gx": 12, "gy": 5, "collision": "solid", "layer": "below" },
+    { "sprite": "Basement_Singles_32x32_103.png", "gx": 12, "gy": 4, "collision": "none", "layer": "below" },
+    { "sprite": "Basement_Singles_32x32_104.png", "gx": 12, "gy": 6, "collision": "none", "layer": "below" },
+    { "sprite": "Basement_Singles_32x32_104.png", "gx": 12, "gy": 7, "collision": "none", "layer": "below" },
+    { "sprite": "Basement_Singles_32x32_104.png", "gx": 11, "gy": 5, "collision": "none", "layer": "below" },
+    { "sprite": "Basement_Singles_32x32_104.png", "gx": 13, "gy": 5, "collision": "none", "layer": "below" },
+
+    { "sprite": "Basement_Singles_32x32_111.png", "gx": 8, "gy": 12, "collision": "solid", "layer": "below" },
+    { "sprite": "Basement_Singles_32x32_111.png", "gx": 16, "gy": 12, "collision": "solid", "layer": "below" }
   ]
 }
