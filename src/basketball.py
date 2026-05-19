@@ -1419,6 +1419,67 @@ class BasketballGame:
 
         return None
 
+    def _draw_premium_shoot_bar(self, screen, camera, x, y, z, value, smooth_val_attr, is_3pt):
+        # Retrieve or initialize the smooth value
+        if not hasattr(self, smooth_val_attr):
+            setattr(self, smooth_val_attr, 0.0)
+        curr_smooth = getattr(self, smooth_val_attr)
+        
+        # Smoothly LERP towards target
+        curr_smooth += (value - curr_smooth) * 0.35
+        curr_smooth = max(0.0, min(1.0, curr_smooth))
+        setattr(self, smooth_val_attr, curr_smooth)
+
+        # Apply camera position
+        bx, by = camera.apply_pos(x, y - z - 85)
+        
+        bar_w = 70
+        bar_h = 10
+        bar_x = bx - bar_w // 2
+        bar_y = by
+
+        # 1. Draw outer border/shadow
+        shadow_rect = pygame.Rect(bar_x - 3, bar_y - 3, bar_w + 6, bar_h + 6)
+        pygame.draw.rect(screen, (10, 10, 20, 180), shadow_rect, border_radius=4)
+        
+        # 2. Draw background panel
+        bg_rect = pygame.Rect(bar_x, bar_y, bar_w, bar_h)
+        pygame.draw.rect(screen, (30, 30, 45), bg_rect, border_radius=3)
+        pygame.draw.rect(screen, (60, 60, 85), bg_rect, width=1, border_radius=3)
+
+        # 3. Draw Sweet Spot
+        green_min, green_max = (0.75, 0.85) if is_3pt else (0.7, 0.9)
+        green_x = bar_x + int(bar_w * green_min)
+        green_w = int(bar_w * (green_max - green_min))
+        
+        green_rect = pygame.Rect(green_x, bar_y + 1, green_w, bar_h - 2)
+        pygame.draw.rect(screen, (0, 220, 100), green_rect)
+        
+        # 4. Fill progress bar with dynamic color transitions
+        fill_w = int(bar_w * curr_smooth)
+        if fill_w > 0:
+            if green_min < curr_smooth < green_max:
+                color = (0, 255, 120)  # Neon Green
+            elif 0.5 < curr_smooth < 0.95:
+                color = (255, 220, 0)  # Vibrant Yellow
+            else:
+                color = (255, 70, 70)  # Bright Coral Red
+            
+            fill_rect = pygame.Rect(bar_x + 1, bar_y + 1, fill_w - 2, bar_h - 2)
+            pygame.draw.rect(screen, color, fill_rect, border_radius=2)
+            
+            # Gloss overlay sheen
+            try:
+                sheen = pygame.Surface((fill_w - 2, (bar_h - 2) // 2), pygame.SRCALPHA)
+                sheen.fill((255, 255, 255, 60))
+                screen.blit(sheen, (bar_x + 1, bar_y + 1))
+            except Exception:
+                pass
+
+        # 5. Draw target marker line
+        perfect_release_x = bar_x + int(bar_w * 0.8)
+        pygame.draw.line(screen, (255, 255, 255), (perfect_release_x, bar_y - 2), (perfect_release_x, bar_y + bar_h + 2), 2)
+
     def draw(self, screen: pygame.Surface, camera):
         # We don't fill the background. The actual map is drawn behind this!
         
@@ -1604,48 +1665,30 @@ class BasketballGame:
         pygame.draw.rect(screen, (0, 0, 0, 150), s_rect.inflate(20, 10))
         screen.blit(score_text, s_rect)
 
-        # Opponent Shooting Bar
-        if self.opp_shooting:
-            bar_w = 60
-            bar_h = 8
-            bx, by = camera.apply_pos(self.opponent.rect.centerx, old_oy - self.opp_z - 80)
-            bar_x = bx - bar_w // 2
-            bar_y = by
-            pygame.draw.rect(screen, BLACK, (bar_x, bar_y, bar_w, bar_h))
-            
-            fill_w = int(bar_w * self.opp_shoot_bar)
-            color = (255, 0, 0)
-            if 0.7 < self.opp_shoot_bar < 0.9:
-                color = (0, 255, 0)
-            elif 0.5 < self.opp_shoot_bar < 0.95:
-                color = (255, 255, 0)
-                
-            pygame.draw.rect(screen, color, (bar_x, bar_y, fill_w, bar_h))
-            pygame.draw.rect(screen, WHITE, (bar_x + int(bar_w * 0.8) - 2, bar_y - 2, 4, bar_h + 4))
-
-        # Shooting Bar
+        # Draw all active shooting bars with smooth local LERP interpolation
+        # 1. Local Player
         if self.shooting:
             dist = math.hypot(self.player.rect.centerx - self.right_rim[0], self.player.rect.centery - self.right_rim[1])
             is_3pt = dist > self.three_point_radius
+            self._draw_premium_shoot_bar(screen, camera, self.player.rect.centerx, old_py, self.player_z, self.shoot_bar, "smooth_shoot_bar", is_3pt)
             
-            bar_w = 60
-            bar_h = 8
-            bx, by = camera.apply_pos(self.player.rect.centerx, old_py - self.player_z - 80)
-            bar_x = bx - bar_w // 2
-            bar_y = by
-            pygame.draw.rect(screen, BLACK, (bar_x, bar_y, bar_w, bar_h))
-            
-            fill_w = int(bar_w * self.shoot_bar)
-            color = (255, 0, 0)
-            
-            green_min, green_max = (0.75, 0.85) if is_3pt else (0.7, 0.9)
-            if green_min < self.shoot_bar < green_max:
-                color = (0, 255, 0)
-            elif 0.5 < self.shoot_bar < 0.95:
-                color = (255, 255, 0)
-                
-            pygame.draw.rect(screen, color, (bar_x, bar_y, fill_w, bar_h))
-            pygame.draw.rect(screen, WHITE, (bar_x + int(bar_w * 0.8) - 2, bar_y - 2, 4, bar_h + 4))
+        # 2. Remote Ally Teammate (Coop)
+        if self.is_coop and self.ally and getattr(self, "ally_shooting", False):
+            dist = math.hypot(self.ally.rect.centerx - self.right_rim[0], self.ally.rect.centery - self.right_rim[1])
+            is_3pt = dist > self.three_point_radius
+            self._draw_premium_shoot_bar(screen, camera, self.ally.rect.centerx, old_ay, self.ally_z, getattr(self, "ally_shoot_bar", 0.0), "smooth_ally_shoot_bar", is_3pt)
+
+        # 3. Main Opponent AI
+        if self.opp_shooting:
+            dist = math.hypot(self.opponent.rect.centerx - self.left_rim[0], self.opponent.rect.centery - self.left_rim[1])
+            is_3pt = dist > self.three_point_radius
+            self._draw_premium_shoot_bar(screen, camera, self.opponent.rect.centerx, old_oy, self.opp_z, self.opp_shoot_bar, "smooth_opp_shoot_bar", is_3pt)
+
+        # 4. Teammate Opponent AI (Coop)
+        if self.is_coop and self.opp2 and getattr(self, "opp2_shooting", False):
+            dist = math.hypot(self.opp2.rect.centerx - self.left_rim[0], self.opp2.rect.centery - self.left_rim[1])
+            is_3pt = dist > self.three_point_radius
+            self._draw_premium_shoot_bar(screen, camera, self.opp2.rect.centerx, old_o2y, getattr(self, "opp2_z", 0.0), getattr(self, "opp2_shoot_bar", 0.0), "smooth_opp2_shoot_bar", is_3pt)
 
         # Check if a controller is connected to show dynamic button prompts
         controller_connected = False

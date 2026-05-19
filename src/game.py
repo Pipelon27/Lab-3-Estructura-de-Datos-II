@@ -1787,7 +1787,7 @@ class Game:
             ("mission_rooftop_party", 4, "Day 4: Rooftop Party", "Mission 10: Go to the Rooftop party and hang out with the populars."),
             ("mission_talk_ava_rooftop", 4, "Day 4: Find Ava at the Rooftop Party", "Mission 11: Talk to Ava Thompson at the rooftop party."),
             ("mission_check_ava_phone", 4, "Day 4: Check Ava's Phone", "Mission 12: Check Ava Thompson's phone before she comes back (15 seconds!)."),
-            ("mission_final_showdown", 4, "Day 4: Final Showdown", "Mission 13: Enter Basement, disable Smile Club server, confront Director Walsh.")
+            ("mission_final_showdown", 4, "Day 4: Go to the Basement", "Mission 13: Go to the Basement and see what they're plotting!")
         ]
 
     def _get_current_mission_index(self) -> int:
@@ -1939,6 +1939,21 @@ class Game:
         elif target_id == "mission_check_ava_phone":
             self.player.rect.center = (1520, 770)   # Near the phone chair
             self.current_floor = FLOOR_ROOFTOP
+        elif target_id == "mission_final_showdown":
+            self.player.rect.center = (800, 1760)   # Near basement stairs on 1F
+            self.current_floor = FLOOR_1F
+        elif target_id == "mission_server_room":
+            self.player.rect.center = (900, 980)    # Athletic Coliseum interior
+            self.current_floor = FLOOR_COLISEUM_INTERIOR
+        elif target_id == "mission_strange_rumours":
+            self.player.rect.center = (650, 900)    # Ping Pong court interior
+            self.current_floor = FLOOR_PINGPONG_INTERIOR
+        elif target_id == "mission_library_secrets":
+            self.player.rect.center = (2650, 350)   # Library on 1F
+            self.current_floor = FLOOR_1F
+        elif target_id == "mission_tech_lab_ava":
+            self.player.rect.center = (180, 350)    # Tech lab on 1F
+            self.current_floor = FLOOR_1F
         else:
             self.player.rect.center = (2000, 2700)
             self.current_floor = FLOOR_CAMPUS
@@ -2013,6 +2028,10 @@ class Game:
 
         npc = self._nearest_npc(NPC_INTERACTION_RANGE)
         if npc and npc.health > 0:
+            if npc.id == "npc_marcus_green" and self.current_floor != FLOOR_COLISEUM_INTERIOR:
+                self.ui.show_notification("Marcus Green is not in the Sports Arena right now.", NOTIF_WARNING)
+                return
+
             # Day 4: Ava at rooftop party — use custom cinematic dialogue
             if (self.current_floor == FLOOR_ROOFTOP
                     and npc.id == "npc_ava_thompson"
@@ -3963,7 +3982,7 @@ class Game:
         try:
             player_data = self.player.to_dict()
             player_data["floor"] = self.current_floor
-            player_data["state"] = self.state.value
+            player_data["game_state"] = self.state.value
             
             if self.state == GameState.BASKETBALL:
                 bb_data = {
@@ -4013,7 +4032,7 @@ class Game:
             remote = self.network.get_remote_data()
             
             if remote and self.remote_player:
-                r_state = remote.get("state")
+                r_state = remote.get("game_state")
                 
                 # Auto teleport to basketball (only client follows host)
                 if not self.is_host and r_state == GameState.BASKETBALL.value and self.state != GameState.BASKETBALL:

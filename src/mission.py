@@ -293,8 +293,8 @@ class MissionManager:
         )
 
         m4 = Mission(
-            "mission_final_showdown", "Final Showdown",
-            "Enter the Basement and shut down the Smile Club for good.",
+            "mission_final_showdown", "Go to the Basement",
+            "Go to the Basement and see what they're plotting!",
             objectives=[
                 MissionObjective("go_to_zone", "6", "Enter the Basement"),
                 MissionObjective("hack_target", "smile_server", "Disable the central server"),
