@@ -1,6 +1,7 @@
 import pygame
 import math
 import random
+import os
 from settings import SCREEN_WIDTH, SCREEN_HEIGHT, UI_ACCENT, WHITE, BLACK, KEY_LEFT, KEY_RIGHT, KEY_UP, KEY_DOWN, VT323_PATH, Direction
 
 class BasketballGame:
@@ -127,9 +128,10 @@ class BasketballGame:
         self.opp_ai_target = (580, 605)
         self.opp2_ai_target = (700, 605)
         self.opp_pass_cooldown = 0.0
+        self.sounds = {}
+        self.dribble_channel = None
         
         # Load custom ball sprite
-        import os
         base_dir = os.path.dirname(os.path.dirname(__file__))
         ball_path = os.path.join(base_dir, "assets", "ball.png")
         if os.path.exists(ball_path):
@@ -137,6 +139,47 @@ class BasketballGame:
             self.ball_img = pygame.transform.scale(self.ball_img, (40, 40))
         else:
             self.ball_img = None
+        self._load_sounds(base_dir)
+
+    def _load_sounds(self, base_dir):
+        sound_dir = os.path.join(base_dir, "assets", "sounds")
+        sound_files = {
+            "steal": "sonido_robo.mp3",
+            "dribble": "sonido_drible.mp3",
+            "shot": "sonido_tiro.mp3",
+            "net": "sonido_net.mp3",
+            "perfect": "Ho Ho Ho Green Giant Sound Effect.mp3",
+        }
+        for name, filename in sound_files.items():
+            path = os.path.join(sound_dir, filename)
+            if not os.path.exists(path):
+                continue
+            try:
+                self.sounds[name] = pygame.mixer.Sound(path)
+            except pygame.error:
+                pass
+
+    def _play_sound(self, name):
+        sound = self.sounds.get(name)
+        if sound:
+            sound.play()
+
+    def _update_dribble_sound(self):
+        sound = self.sounds.get("dribble")
+        moving = (
+            self.active
+            and not self.show_menu
+            and not self.waiting_for_dismiss
+            and self.player is not None
+            and getattr(self.player, "is_moving", False)
+            and self.player_z <= 0
+        )
+        if moving and sound:
+            if self.dribble_channel is None or not self.dribble_channel.get_busy():
+                self.dribble_channel = sound.play(-1)
+        elif self.dribble_channel is not None:
+            self.dribble_channel.stop()
+            self.dribble_channel = None
 
     def start(self, player, opponent, floor, is_coop=False, ally=None, opp2=None, is_host=True):
         self.player = player
@@ -231,6 +274,7 @@ class BasketballGame:
         self.pass_in_flight = False
         self._mouse_held = False
         self._click_hold_timer = 0.0
+        self._update_dribble_sound()
 
     def sync_state(self, bb_data: dict, is_host: bool):
         """Synchronize state with the remote player."""
@@ -308,6 +352,7 @@ class BasketballGame:
             new_o_score = bb_data.get("o_score", self.opp_score)
             
             if new_p_score > self.player_score:
+                self._play_sound("net")
                 diff = new_p_score - self.player_score
                 self.swish_effect = {
                     "x": self.right_rim[0],
@@ -344,6 +389,7 @@ class BasketballGame:
                     })
                 
             if new_o_score > self.opp_score:
+                self._play_sound("net")
                 diff = new_o_score - self.opp_score
                 self.swish_effect = {
                     "x": self.left_rim[0],
@@ -458,6 +504,7 @@ class BasketballGame:
                                             self.opp2_shooting = False
                                         self.ball_held_by = 'player'
                                         self.possession = 'player'
+                                        self._play_sound("steal")
 
             elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
                 if self._mouse_held and self.ball_held_by == 'player':
@@ -527,6 +574,7 @@ class BasketballGame:
                             self.opp_shooting = False
                             self.ball_held_by = 'player'
                             self.possession = 'player'
+                            self._play_sound("steal")
 
     def _initiate_pass(self, from_entity, to_entity):
         """Start a pass from from_entity to to_entity."""
@@ -557,6 +605,7 @@ class BasketballGame:
 
     def _shoot_ball(self, shooter, power_bar):
         self.last_shot_team = shooter
+        self._play_sound("shot")
         
         target_quality = 0.8
         is_perfect = (shooter in ('player', 'ally') and abs(power_bar - target_quality) < 0.02)
@@ -665,6 +714,7 @@ class BasketballGame:
                 "timer": 0.8
             }
         elif is_perfect:
+            self._play_sound("perfect")
             self.swish_effect = {
                 "x": start_x,
                 "y": start_y,
@@ -857,6 +907,7 @@ class BasketballGame:
         # Player Movement (using top-down WASD logic from player)
         # To reuse animations and collisions:
         self.player.update(keys, self.court_walls, dt)
+        self._update_dribble_sound()
         if self.player_shoot_anim >= 0:
             self.player.state = "shoot"
             anim_key = f"shoot_{self.player.direction.value}"
@@ -1080,6 +1131,7 @@ class BasketballGame:
                             self.ally_shooting = False
                         self.ball_held_by = 'opp'
                         self.possession = 'opp'
+                        self._play_sound("steal")
                     
                     if self.is_coop and self.opp2:
                         pdist2 = math.hypot(target_ent.rect.centerx - self.opp2.rect.centerx,
@@ -1093,6 +1145,7 @@ class BasketballGame:
                                 self.ally_shooting = False
                             self.ball_held_by = 'opp2'
                             self.possession = 'opp2'
+                            self._play_sound("steal")
 
             # AI steals when very close
             if self.ball_held_by in ('player', 'ally') and not self.opp_blocking:
@@ -1103,6 +1156,7 @@ class BasketballGame:
                     if sdist < self.ai_steal_range and random.random() < 0.03:
                         self.ball_held_by = 'opp'
                         self.possession = 'opp'
+                        self._play_sound("steal")
             
             # AI passes to opp2 in coop
             if self.is_coop and self.opp2 and self.ball_held_by == 'opp' and not self.opp_shooting:
@@ -1262,6 +1316,7 @@ class BasketballGame:
                     self.ball_vz = 300
                     self.blocking = False
                     self.possession = None
+                    self._play_sound("steal")
                     from src.controller import get_controller
                     controller = get_controller()
                     if controller.connected and getattr(controller, "last_input_method", "keyboard") == "controller":
@@ -1273,6 +1328,7 @@ class BasketballGame:
                     self.ball_vz = 300
                     self.opp_blocking = False
                     self.possession = None
+                    self._play_sound("steal")
     
                 # Catching (only if ball is low or player jumps)
                 if p_dist < 40 and abs(self.ball_z - self.player_z) < 50 and self.possession != 'player':
@@ -1308,6 +1364,7 @@ class BasketballGame:
                     if dist_right < 20 and self.reset_timer <= 0:
                         pts = 3 if (self.last_shot_team in ('player', 'ally') and math.hypot(self.last_shot_x - self.right_rim[0], self.last_shot_y - self.right_rim[1]) > self.three_point_radius) else 2
                         self.player_score += pts
+                        self._play_sound("net")
                         self.reset_timer = 1.0 # Wait 1 second before resetting
                         self.shake_timer = 0.3
                         self.shake_intensity = 8
@@ -1350,6 +1407,7 @@ class BasketballGame:
                     elif dist_left < 20 and self.reset_timer <= 0:
                         pts = 3 if (self.last_shot_team in ('opp', 'opp2') and math.hypot(self.last_shot_x - self.left_rim[0], self.left_rim[1] - 605) > self.three_point_radius) else 2
                         self.opp_score += pts
+                        self._play_sound("net")
                         self.reset_timer = 1.0
                         self.shake_timer = 0.3
                         self.shake_intensity = 8
