@@ -161,11 +161,12 @@
     {
       "id": "mission_final_showdown",
       "title": "Final Showdown",
-      "description": "This is it. Enter the Basement, disable the Smile Club's central server, and confront Director Walsh with the evidence.",
+      "description": "This is it. Enter the Basement and explore the labyrinth to find the Smile Club.",
       "objectives": [
-        {"type": "go_to_zone", "target": "6", "description": "Enter the Basement", "required": 1},
-        {"type": "hack_target", "target": "smile_server", "description": "Disable the Smile Club server", "required": 1},
-        {"type": "talk_to", "target": "npc_director", "description": "Confront Director Walsh", "required": 1}
+        {"type": "go_to_zone", "target": "6", "description": "Explore the labyrinth", "required": 1},
+        {"type": "win_combat", "target": "npc_ava_thompson", "description": "Knock out Ava Thompson", "required": 1},
+        {"type": "win_combat", "target": "npc_marcus_green", "description": "Knock out Marcus Green", "required": 1},
+        {"type": "win_combat", "target": "npc_noah_carter", "description": "Knock out Noah Carter", "required": 1}
       ],
       "prerequisites": ["mission_check_ava_phone"],
       "rewards": {"xp": 200},

@@ -230,6 +230,11 @@ class NPC:
         self.attack_cooldown = 0.0
         self.knockout_timer = 0.0
 
+        # Stealth state
+        self.stealth_state = "PATROL" # IDLE, PATROL, SUSPICIOUS, SEARCHING, ALERTED
+        self.suspicion_level = 0.0
+        self.vision_cone_angle = 90.0 # degrees
+
         # Animation state
         self.animations = {}
         self.state = "idle"
