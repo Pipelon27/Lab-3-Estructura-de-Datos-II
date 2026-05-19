@@ -538,7 +538,7 @@ class DialogueSystem:
             
             # Border: Green if someone has voted, amber/accent otherwise
             b_col = (50, 255, 120) if total_votes == 2 else ((50, 200, 100) if total_votes == 1 else UI_ACCENT)
-            pygame.draw.rect(screen, b_col, pill_rect, 1.5, border_radius=6)
+            pygame.draw.rect(screen, b_col, pill_rect, 2, border_radius=6)
             
             # Text
             font_pill = pygame.font.Font(VT323_PATH, 14)
