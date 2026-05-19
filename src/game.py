@@ -4254,34 +4254,34 @@ class Game:
                     if hasattr(self, "basketball"):
                         self.basketball.sync_state(remote["bb_data"], self.is_host)
                 
-                # Apply dialogue/cinematic consensus voting resolution
-                if self.state == GameState.DIALOGUE and self.dialogue_system.active_tree:
-                    if self.dialogue_continue_voted and self.remote_dialogue_continue:
-                        # BOTH confirmed continue: advance locally on both ends
-                        choices = self.dialogue_system.active_tree.get_choices()
-                        if choices:
-                            cons = self.dialogue_system.active_tree.make_choice(self.dialogue_system._choice_index)
-                            if cons:
-                                self.dialogue_system._all_consequences.append(cons)
-                            self.dialogue_system._choice_index = 0
-                            if not self.dialogue_system.active_tree.advance(self.dialogue_system._all_consequences):
-                                self.dialogue_system._finish()
-                        else:
-                            if not self.dialogue_system.active_tree.advance(self.dialogue_system._all_consequences):
-                                self.dialogue_system._finish()
-                        self.dialogue_continue_voted = False
+                # Apply dialogue/cinematic consensus voting resolution (HOST ONLY)
+                if self.is_host:
+                    if self.state == GameState.DIALOGUE and self.dialogue_system.active_tree:
+                        if self.dialogue_continue_voted and self.remote_dialogue_continue:
+                            choices = self.dialogue_system.active_tree.get_choices()
+                            if choices:
+                                cons = self.dialogue_system.active_tree.make_choice(self.dialogue_system._choice_index)
+                                if cons:
+                                    self.dialogue_system._all_consequences.append(cons)
+                                self.dialogue_system._choice_index = 0
+                                if not self.dialogue_system.active_tree.advance(self.dialogue_system._all_consequences):
+                                    self.dialogue_system._finish()
+                            else:
+                                if not self.dialogue_system.active_tree.advance(self.dialogue_system._all_consequences):
+                                    self.dialogue_system._finish()
+                            self.dialogue_continue_voted = False
 
-                if self.state == GameState.INTRO_CINEMATIC and self._cine_phase in ("dialogue", "final_dialogue"):
-                    if self.cinematic_continue_voted and self.remote_cinematic_continue:
-                        self._advance_cinematic_dialogue()
-                        self.cinematic_continue_voted = False
+                    if self.state == GameState.INTRO_CINEMATIC and self._cine_phase in ("dialogue", "final_dialogue"):
+                        if self.cinematic_continue_voted and self.remote_cinematic_continue:
+                            self._advance_cinematic_dialogue()
+                            self.cinematic_continue_voted = False
 
-                if self.state == GameState.INTRO_CINEMATIC:
-                    if self.cinematic_skip_voted and self.remote_cinematic_skip:
-                        self._skip_cinematic()
-                        self.cinematic_skip_voted = False
+                    if self.state == GameState.INTRO_CINEMATIC:
+                        if self.cinematic_skip_voted and self.remote_cinematic_skip:
+                            self._skip_cinematic()
+                            self.cinematic_skip_voted = False
 
-                # Bus Travel/Day transition consensus resolution
+                # Bus Travel/Day transition consensus resolution (BOTH - but triggered cooperatively)
                 if self.car_departure_voted and self.remote_car_departure_voted:
                     self._car_panel_active = False
                     self._start_car_departure()
@@ -4305,6 +4305,10 @@ class Game:
                             self.player._dashing = False
                             self._pending_dialogue_request = None
                         
+                        # Clear Client's dialogue continue vote if node changed
+                        if self.dialogue_system.active_tree and r_node_id and self.dialogue_system.active_tree.current.id != r_node_id:
+                            self.dialogue_continue_voted = False
+                            
                         if self.dialogue_system.active_tree and r_node_id:
                             self.dialogue_system.active_tree.set_current_by_id(r_node_id)
                         self.dialogue_system._choice_index = r_choice_idx
@@ -4327,8 +4331,23 @@ class Game:
                                         
                     # Sync intro cinematic variables
                     self._cine_phase = remote.get("cine_phase", self._cine_phase)
+                    
+                    r_cine_dlg_idx = remote.get("cine_dlg_index")
+                    r_noah_final_idx = remote.get("noah_final_dlg_index")
+                    
+                    if r_cine_dlg_idx is not None and r_cine_dlg_idx != self._cine_dlg_index:
+                        self.cinematic_continue_voted = False
                     self._cine_dlg_index = remote.get("cine_dlg_index", self._cine_dlg_index)
+                    
+                    if r_noah_final_idx is not None and r_noah_final_idx != self._noah_final_dlg_index:
+                        self.cinematic_continue_voted = False
                     self._noah_final_dlg_index = remote.get("noah_final_dlg_index", self._noah_final_dlg_index)
+
+                    # Authoritative state transition for intro cinematic skip/completion
+                    if self.state == GameState.INTRO_CINEMATIC and r_state == GameState.PLAYING.value:
+                        self._skip_cinematic()
+                        self.cinematic_skip_voted = False
+                        self.cinematic_continue_voted = False
 
                 else:
                     # Host-specific processing: handle dialogue request from Client
