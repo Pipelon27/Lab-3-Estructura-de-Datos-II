@@ -474,6 +474,7 @@ class Aiden(Player):
         super().__init__(x, y, Character.AIDEN, AIDEN_COLOR, AIDEN_OUTLINE)
         self.attack_damage = 12          # slightly higher base
         self.sprint_speed  = PLAYER_SPRINT_SPEED + 1
+        self.hack_time_bonus = 2         # matched with Lena's base
         self.skill_tree    = build_aiden_tree()
         self._load_sprites()
 
@@ -527,6 +528,8 @@ class Lena(Player):
 
     def __init__(self, x: int, y: int):
         super().__init__(x, y, Character.LENA, LENA_COLOR, LENA_OUTLINE)
+        self.attack_damage = 12          # matched with Aiden's base
+        self.sprint_speed  = PLAYER_SPRINT_SPEED + 1  # matched with Aiden's base
         self.hack_time_bonus = 2         # starts with small bonus
         self.skill_tree      = build_lena_tree()
         self._load_sprites()
