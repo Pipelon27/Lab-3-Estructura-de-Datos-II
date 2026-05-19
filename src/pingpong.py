@@ -1192,7 +1192,7 @@ class PingPongGame:
                 })
 
         # Allow drawing the end screen, menu, or countdown even when `active` is False
-        if not self.active and not getattr(self, 'waiting_for_dismiss', False) and not getattr(self, 'show_menu', False) and not getattr(self, 'countdown_active', False):
+        if not is_spectating and not self.active and not getattr(self, 'waiting_for_dismiss', False) and not getattr(self, 'show_menu', False) and not getattr(self, 'countdown_active', False):
             return
         controller = get_controller()
         # Background image (lazy load)
