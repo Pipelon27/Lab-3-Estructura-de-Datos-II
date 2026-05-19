@@ -116,8 +116,9 @@ class PingPongGame:
         # Super Shot (auto): unlocks every 6 player points
         self.super_points_spent = 0
         # Character sprites for hit/attack animations
-        self._player_sprites = {}
+        self._player_sprites = {"aiden": {}, "lena": {}}
         self._opp_sprites = {}
+        self.active_cheers = []
         self._player_hit_timer = 0.0
         self._opp_hit_timer = 0.0
         self._bounce_sound = None
@@ -235,16 +236,19 @@ class PingPongGame:
                     frames.append(pygame.transform.scale(frame, (sw, sh)))
                 return frames
 
-            char_name = player_obj.__class__.__name__
-            if char_name == "Lena":
-                p_path = os.path.join("assets", "Characters BEHIND THE SMILE", "PROTAGONISTS", "Lena Parker.png")
-            else:
-                p_path = os.path.join("assets", "Characters BEHIND THE SMILE", "PROTAGONISTS", "Aiden Parker.png")
+            self._player_sprites = {"aiden": {}, "lena": {}}
 
-            p_sheet = pygame.image.load(p_path).convert_alpha()
-            # Player faces RIGHT → cols 0-5
-            self._player_sprites["idle"]   = get_frames(p_sheet, 1, range(0, 6))
-            self._player_sprites["attack"] = get_frames(p_sheet, 3, range(0, 6))
+            # Load Aiden
+            a_path = os.path.join("assets", "Characters BEHIND THE SMILE", "PROTAGONISTS", "Aiden Parker.png")
+            a_sheet = pygame.image.load(a_path).convert_alpha()
+            self._player_sprites["aiden"]["idle"]   = get_frames(a_sheet, 1, range(0, 6))
+            self._player_sprites["aiden"]["attack"] = get_frames(a_sheet, 3, range(0, 6))
+
+            # Load Lena
+            l_path = os.path.join("assets", "Characters BEHIND THE SMILE", "PROTAGONISTS", "Lena Parker.png")
+            l_sheet = pygame.image.load(l_path).convert_alpha()
+            self._player_sprites["lena"]["idle"]   = get_frames(l_sheet, 1, range(0, 6))
+            self._player_sprites["lena"]["attack"] = get_frames(l_sheet, 3, range(0, 6))
 
             o_path = os.path.join("assets", "Characters BEHIND THE SMILE", "POPULARS", "Oscar Jimenez.png")
             o_sheet = pygame.image.load(o_path).convert_alpha()
@@ -283,13 +287,36 @@ class PingPongGame:
         if sound:
             sound.play()
 
-    def _draw_character_sprite(self, screen: pygame.Surface, x: int, y: int, is_player: bool):
+    def spawn_cheer(self, text: str, is_local: bool = False):
+        import random
+        color = (255, 100, 200) if ("GO" in text or "❤️" in text) else (255, 220, 60)
+        self.active_cheers.append({
+            "text": text,
+            "x": random.randint(120, 360) if is_local else random.randint(300, 500),
+            "y": SCREEN_HEIGHT - 60,
+            "color": color,
+            "timer": 1.5,
+            "vy": -120.0
+        })
+        try:
+            if pygame.mixer.get_init():
+                sound = self._load_sound("_cheer_sound", "sonido_punto_PP.mp3")
+                if sound:
+                    sound.play()
+        except Exception:
+            pass
+
+    def _draw_character_sprite(self, screen: pygame.Surface, x: int, y: int, is_player: bool, active_char: str = "aiden"):
         """Draw idle sprite plus racket overlay."""
-        sprites = self._player_sprites if is_player else self._opp_sprites
         hit_timer = self._player_hit_timer if is_player else self._opp_hit_timer
         anim_timer = self._player_anim_timer if is_player else self._opp_anim_timer
 
-        frames = sprites.get("idle", []) if self._sprites_loaded else []
+        if is_player:
+            char_sprites = self._player_sprites.get(active_char, {})
+            frames = char_sprites.get("idle", []) if self._sprites_loaded else []
+        else:
+            frames = self._opp_sprites.get("idle", []) if self._sprites_loaded else []
+
         cx = x + self.sprite_size // 2
         cy = y + self.sprite_size // 2
 
@@ -639,6 +666,13 @@ class PingPongGame:
                 self._dash_pressed_controller = True
 
     def update(self, dt: float) -> str | None:
+        # Update active cheers
+        for c in list(self.active_cheers):
+            c["y"] += c["vy"] * dt
+            c["timer"] -= dt
+            if c["timer"] <= 0:
+                self.active_cheers.remove(c)
+
         # If paused, do nothing
         if getattr(self, 'paused', False):
             return None
@@ -1096,7 +1130,67 @@ class PingPongGame:
             pygame.draw.rect(screen, (8, 8, 8),
                              (cx - leg_w // 2 - 5, cy + leg_h - 5, leg_w + 10, 6))
 
-    def draw(self, screen: pygame.Surface):
+    def draw(self, screen: pygame.Surface, remote_pp_data: dict | None = None):
+        is_spectating = remote_pp_data is not None
+        local_char = "aiden"
+        if self.player:
+            local_char = self.player.__class__.__name__.lower()
+        active_char = ("lena" if local_char == "aiden" else "aiden") if is_spectating else local_char
+
+        orig_self_fields = {}
+        if is_spectating:
+            orig_self_fields = {
+                "player_score": self.player_score,
+                "opponent_score": self.opponent_score,
+                "player_x": self.player_x,
+                "player_y": self.player_y,
+                "opp_x": self.opp_x,
+                "opp_y": self.opp_y,
+                "ball_center": self.ball.center,
+                "ball_z": self.ball_z,
+                "ball_color": self.ball_color,
+                "ball_trail_color": self.ball_trail_color,
+                "ball_dash_timer": self.ball_dash_timer,
+                "super_points_spent": self.super_points_spent,
+                "countdown_active": self.countdown_active,
+                "countdown_timer": self.countdown_timer,
+                "countdown_go_shown": getattr(self, "countdown_go_shown", False),
+                "show_menu": self.show_menu,
+                "waiting_for_dismiss": self.waiting_for_dismiss,
+                "end_message": self.end_message,
+                "extra_balls": list(self.extra_balls),
+            }
+
+            self.player_score = remote_pp_data.get("player_score", 0)
+            self.opponent_score = remote_pp_data.get("opponent_score", 0)
+            self.player_x = remote_pp_data.get("player_x", 0.0)
+            self.player_y = remote_pp_data.get("player_y", 0.0)
+            self.opp_x = remote_pp_data.get("opp_x", 0.0)
+            self.opp_y = remote_pp_data.get("opp_y", 0.0)
+            self.ball.center = (remote_pp_data.get("ball_cx", SCREEN_WIDTH // 2), remote_pp_data.get("ball_cy", SCREEN_HEIGHT // 2))
+            self.ball_z = remote_pp_data.get("ball_z", 0.0)
+            self.ball_color = remote_pp_data.get("ball_color", (255, 140, 0))
+            self.ball_trail_color = remote_pp_data.get("ball_trail_color", (255, 140, 0))
+            self.ball_dash_timer = remote_pp_data.get("ball_dash_timer", 0.0)
+            self.super_points_spent = remote_pp_data.get("super_points_spent", 0)
+            self.countdown_active = remote_pp_data.get("countdown_active", False)
+            self.countdown_timer = remote_pp_data.get("countdown_timer", 0.0)
+            self.countdown_go_shown = remote_pp_data.get("countdown_go_shown", False)
+            self.show_menu = remote_pp_data.get("show_menu", False)
+            self.waiting_for_dismiss = remote_pp_data.get("waiting_for_dismiss", False)
+            self.end_message = remote_pp_data.get("end_message", None)
+            
+            # Map extra balls
+            self.extra_balls = []
+            for b in remote_pp_data.get("extra_balls", []):
+                self.extra_balls.append({
+                    "rect": pygame.Rect(b["cx"] - self.ball.width // 2, b["cy"] - self.ball.height // 2, self.ball.width, self.ball.height),
+                    "z": b.get("z", 0.0),
+                    "trail_color": b.get("trail_color", (255, 140, 0)),
+                    "dash_timer": b.get("dash_timer", 0.0),
+                    "vel": b.get("vel", [0.0, 0.0])
+                })
+
         # Allow drawing the end screen, menu, or countdown even when `active` is False
         if not self.active and not getattr(self, 'waiting_for_dismiss', False) and not getattr(self, 'show_menu', False) and not getattr(self, 'countdown_active', False):
             return
@@ -1169,7 +1263,7 @@ class PingPongGame:
             # draw characters
             player_sprite_x = int(self.player_x - self.sprite_size // 2)
             player_sprite_y = int(self.player_y - self.sprite_size // 2)
-            self._draw_character_sprite(screen, player_sprite_x, player_sprite_y, is_player=True)
+            self._draw_character_sprite(screen, player_sprite_x, player_sprite_y, is_player=True, active_char=active_char)
             opp_sprite_x = int(court.right + 12)
             opp_sprite_y = int(self.opp_y - self.sprite_size // 2)
             self._draw_character_sprite(screen, opp_sprite_x, opp_sprite_y, is_player=False)
@@ -1257,7 +1351,7 @@ class PingPongGame:
             # draw characters
             player_sprite_x = int(self.player_x - self.sprite_size // 2)
             player_sprite_y = int(self.player_y - self.sprite_size // 2)
-            self._draw_character_sprite(screen, player_sprite_x, player_sprite_y, is_player=True)
+            self._draw_character_sprite(screen, player_sprite_x, player_sprite_y, is_player=True, active_char=active_char)
             opp_sprite_x = int(court.right + 12)
             opp_sprite_y = int(self.opp_y - self.sprite_size // 2)
             self._draw_character_sprite(screen, opp_sprite_x, opp_sprite_y, is_player=False)
@@ -1321,7 +1415,7 @@ class PingPongGame:
         # draw characters with sprite animations
         player_sprite_x = int(self.player_x - self.sprite_size // 2)
         player_sprite_y = int(self.player_y - self.sprite_size // 2)
-        self._draw_character_sprite(screen, player_sprite_x, player_sprite_y, is_player=True)
+        self._draw_character_sprite(screen, player_sprite_x, player_sprite_y, is_player=True, active_char=active_char)
         opp_sprite_x = int(court.right + 12)
         opp_sprite_y = int(self.opp_y - self.sprite_size // 2)
         self._draw_character_sprite(screen, opp_sprite_x, opp_sprite_y, is_player=False)
@@ -1494,5 +1588,82 @@ class PingPongGame:
             nw = nav_font.size(nav)[0]
             screen.blit(nav_font.render(nav, True, UI_TEXT_DIM),
                         (pm_x + (pm_w - nw) // 2, pm_y + pm_h - 28))
+
+        # ─── Draw active cheers (both spec and local) ───
+        cheer_font = pygame.font.Font(VT323_PATH, 24)
+        for c in self.active_cheers:
+            alpha = int(255 * (c["timer"] / 1.5))
+            surf = cheer_font.render(c["text"], True, c["color"])
+            surf.set_alpha(alpha)
+            # Draw shadow
+            shadow = cheer_font.render(c["text"], True, (10, 10, 10))
+            shadow.set_alpha(alpha)
+            screen.blit(shadow, (c["x"] + 2, c["y"] + 2))
+            screen.blit(surf, (c["x"], c["y"]))
+
+        # ─── Spectating overlay & state restoration ───
+        if is_spectating:
+            # 1. Neon borders / CRT vignette
+            overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+            # Subtle scanline overlay
+            for sy in range(0, SCREEN_HEIGHT, 4):
+                pygame.draw.line(overlay, (10, 10, 20, 18), (0, sy), (SCREEN_WIDTH, sy), 2)
+            # Neon border highlight
+            pygame.draw.rect(overlay, (245, 60, 120, 45), (10, 10, SCREEN_WIDTH - 20, SCREEN_HEIGHT - 20), 4, border_radius=12)
+            screen.blit(overlay, (0, 0))
+
+            # 2. Glowing glassmorphic banner at the top center
+            banner_w = 400
+            banner_h = 42
+            bx = (SCREEN_WIDTH - banner_w) // 2
+            by = 38
+            # Dark glassmorphic background
+            bg_surf = pygame.Surface((banner_w, banner_h), pygame.SRCALPHA)
+            bg_surf.fill((16, 16, 28, 190))
+            pygame.draw.rect(bg_surf, (245, 60, 120), (0, 0, banner_w, banner_h), 2, border_radius=8)
+            screen.blit(bg_surf, (bx, by))
+
+            # LIVE indicator (blinking red circle)
+            import time
+            if int(time.time() * 2) % 2 == 0:
+                pygame.draw.circle(screen, (255, 40, 40), (bx + 26, by + banner_h // 2), 6)
+            else:
+                pygame.draw.circle(screen, (100, 20, 20), (bx + 26, by + banner_h // 2), 6)
+
+            # Text
+            b_font = pygame.font.Font(VT323_PATH, 22)
+            ally_name = active_char.upper()
+            text_str = f"LIVE SPECTATING: {ally_name}"
+            tw = b_font.size(text_str)[0]
+            screen.blit(b_font.render(text_str, True, (255, 255, 255)), (bx + 50, by + 8))
+
+            # Cheering hint at the bottom
+            h_font = pygame.font.Font(VT323_PATH, 20)
+            hint_str = "Press SPACE/ENTER/C to Cheer for your ally!"
+            hw = h_font.size(hint_str)[0]
+            # Draw shadow
+            screen.blit(h_font.render(hint_str, True, (10, 10, 10)), ((SCREEN_WIDTH - hw) // 2 + 1, SCREEN_HEIGHT - 75))
+            screen.blit(h_font.render(hint_str, True, (245, 220, 60)), ((SCREEN_WIDTH - hw) // 2, SCREEN_HEIGHT - 76))
+
+            # Restore original self fields
+            self.player_score = orig_self_fields["player_score"]
+            self.opponent_score = orig_self_fields["opponent_score"]
+            self.player_x = orig_self_fields["player_x"]
+            self.player_y = orig_self_fields["player_y"]
+            self.opp_x = orig_self_fields["opp_x"]
+            self.opp_y = orig_self_fields["opp_y"]
+            self.ball.center = orig_self_fields["ball_center"]
+            self.ball_z = orig_self_fields["ball_z"]
+            self.ball_color = orig_self_fields["ball_color"]
+            self.ball_trail_color = orig_self_fields["ball_trail_color"]
+            self.ball_dash_timer = orig_self_fields["ball_dash_timer"]
+            self.super_points_spent = orig_self_fields["super_points_spent"]
+            self.countdown_active = orig_self_fields["countdown_active"]
+            self.countdown_timer = orig_self_fields["countdown_timer"]
+            self.countdown_go_shown = orig_self_fields["countdown_go_shown"]
+            self.show_menu = orig_self_fields["show_menu"]
+            self.waiting_for_dismiss = orig_self_fields["waiting_for_dismiss"]
+            self.end_message = orig_self_fields["end_message"]
+            self.extra_balls = orig_self_fields["extra_balls"]
 
 

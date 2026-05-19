@@ -468,6 +468,11 @@ class Game:
         self.pingpong = PingPongGame()
         # Basketball minigame
         self.basketball = BasketballGame()
+        # Ping Pong multiplayer state
+        self._pingpong_match_won = False
+        self._remote_pingpong_match_won = False
+        self._spectating_pingpong = False
+        self._pending_pp_cheer = False
         
         # Rooftop Party (Day 3 event)
         self.rooftop_party = RooftopParty(self.screen)
@@ -2086,6 +2091,10 @@ class Game:
         for npc in npcs:
             if skip_siblings and npc.id in ("npc_aiden", "npc_lena"):
                 continue
+            if (npc.id in getattr(self, "_final_smile_ids", ())
+                    and (getattr(self, "_is_final_showdown_active", lambda: False)()
+                         or getattr(self, "_final_reveal_started", False))):
+                continue
             if npc.id == "npc_noah_carter":
                 continue
             d = ((npc.rect.centerx - px)**2 + (npc.rect.centery - py)**2) ** 0.5
@@ -2525,6 +2534,12 @@ class Game:
             self.player.rect.centerx = sx
             self.player.rect.centery = sy
 
+            # Teleport remote player model in coop to prevent them from staying on the previous floor
+            if self.multiplayer and self.remote_player:
+                self.remote_player.rect.centerx = sx + 40
+                self.remote_player.rect.centery = sy
+                self.remote_player.current_floor = floor_id
+
             # Push out of walls to be safe if teleporting inside one
             for w in floor.walls:
                 if self.player.rect.colliderect(w):
@@ -2782,6 +2797,62 @@ class Game:
                     self.ui.show_notification("You were knocked out…", NOTIF_ERROR)
                     self.player.health = self.player.max_health // 2
         elif self.state == GameState.PINGPONG:
+            # Handle spectating inputs & updates
+            if self._spectating_pingpong:
+                # ── Spectator inputs for cheering ──
+                import pygame
+                keys = pygame.key.get_pressed()
+                if not hasattr(self, "_cheer_cooldown"):
+                    self._cheer_cooldown = 0.0
+                if self._cheer_cooldown > 0:
+                    self._cheer_cooldown -= dt
+                
+                cheer_pressed = False
+                controller = get_controller()
+                if self._cheer_cooldown <= 0:
+                    if keys[pygame.K_SPACE] or keys[pygame.K_RETURN] or keys[pygame.K_c]:
+                        cheer_pressed = True
+                    elif controller and controller.connected and (controller.is_confirm_pressed() or controller.get_button_state("x")):
+                        cheer_pressed = True
+                
+                if cheer_pressed:
+                    self._cheer_cooldown = 0.4
+                    import random
+                    remote_name = "LENA"
+                    if self.remote_player and "lena" in self.remote_player.character.value.lower():
+                        remote_name = "LENA"
+                    elif self.remote_player and "aiden" in self.remote_player.character.value.lower():
+                        remote_name = "AIDEN"
+                    cheers = [
+                        f"✨ GO {remote_name}! ✨", f"❤️ KEEP IT UP! ❤️", f"🔥 UNSTOPPABLE! 🔥",
+                        f"⚡ SHOT! ⚡", f"🌟 VAMOS! 🌟", f"🎉 YOU GOT THIS! 🎉"
+                    ]
+                    txt = random.choice(cheers)
+                    self.pingpong.spawn_cheer(txt, is_local=True)
+                    self._pending_pp_cheer = txt
+
+                # Check coop victory consensus exit
+                if self._pingpong_match_won and self._remote_pingpong_match_won:
+                    if self.is_host:
+                        self.pingpong.finished = False
+                        self.pingpong.reset()
+                        self._spectating_pingpong = False
+                        self._pingpong_match_won = False
+                        self._remote_pingpong_match_won = False
+                        self.state = GameState.PLAYING
+                        try:
+                            if pygame.mixer.get_init():
+                                pygame.mixer.music.stop()
+                        except Exception:
+                            pass
+                        self._begin_oscar_win_dialogue()
+                    else:
+                        # Client waits for host state transition
+                        pass
+                
+                # Squelch regular updates
+                return
+
             result = self.pingpong.update(dt)
             # 'settings' from the pause menu — exit minigame cleanly for now
             if result == 'settings':
@@ -2797,17 +2868,25 @@ class Game:
             # When a match result arrives, show end-screen and apply reputation changes
             elif result is not None and not getattr(self.pingpong, 'waiting_for_dismiss', False):
                 if result == "win":
-                    # add +20 reputation
-                    self.reputation.reputation_score = min(100, self.reputation.reputation_score + 20)
-                    self.pingpong.end_message = "Win Match\n+20 Reputation"
-                    self._pending_pingpong_result = "win"
-                elif result == "lose":
-                    self._pending_pingpong_result = "lose"
-                    if self.reputation.reputation_score > 0:
-                        self.reputation.reputation_score = max(0, self.reputation.reputation_score - 10)
-                        self.pingpong.end_message = "Lose Match\n-10 Reputation"
+                    if self.multiplayer:
+                        self._pingpong_match_won = True
+                        self.pingpong.end_message = "Match Won!\nSpectating Ally..."
+                        self._pending_pingpong_result = "win"
                     else:
-                        self.pingpong.end_message = "Lose Match"
+                        self.reputation.reputation_score = min(100, self.reputation.reputation_score + 20)
+                        self.pingpong.end_message = "Win Match\n+20 Reputation"
+                        self._pending_pingpong_result = "win"
+                elif result == "lose":
+                    if self.multiplayer:
+                        self._pending_pingpong_result = "lose"
+                        self.pingpong.end_message = "Match Lost!\nPress SPACE/A to Retry"
+                    else:
+                        self._pending_pingpong_result = "lose"
+                        if self.reputation.reputation_score > 0:
+                            self.reputation.reputation_score = max(0, self.reputation.reputation_score - 10)
+                            self.pingpong.end_message = "Lose Match\n-10 Reputation"
+                        else:
+                            self.pingpong.end_message = "Lose Match"
                 self.pingpong.waiting_for_dismiss = True
 
         elif self.state == GameState.BASKETBALL:
@@ -2883,18 +2962,40 @@ class Game:
             self._update_class_schedule()
 
         if getattr(self.pingpong, 'finished', False):
-            pingpong_result = getattr(self, "_pending_pingpong_result", None)
             self.pingpong.finished = False
-            self.pingpong.reset()
-            self.state = GameState.PLAYING
-            try:
-                if pygame.mixer.get_init():
-                    pygame.mixer.music.stop()
-            except Exception:
-                pass
-            self._pending_pingpong_result = None
-            if pingpong_result == "win":
-                self._begin_oscar_win_dialogue()
+
+            # If in coop and they lost, retry immediately!
+            if self.multiplayer and getattr(self, "_pending_pingpong_result", None) == "lose":
+                self.pingpong.reset()
+                self.pingpong.show_menu = True
+                self.pingpong.player_score = 0
+                self.pingpong.opponent_score = 0
+                self.pingpong.active = True
+                self.pingpong.finished = False
+                self.pingpong.waiting_for_dismiss = False
+                self._pending_pingpong_result = None
+            # If in coop and they won, transition to live spectating mode!
+            elif self.multiplayer and getattr(self, "_pending_pingpong_result", None) == "win":
+                self._spectating_pingpong = True
+                self.pingpong.finished = False
+                self.pingpong.waiting_for_dismiss = False
+                self._pending_pingpong_result = None
+            else:
+                # Single-player exit or default clean up
+                pingpong_result = getattr(self, "_pending_pingpong_result", None)
+                self.pingpong.reset()
+                self._spectating_pingpong = False
+                self._pingpong_match_won = False
+                self._remote_pingpong_match_won = False
+                self.state = GameState.PLAYING
+                try:
+                    if pygame.mixer.get_init():
+                        pygame.mixer.music.stop()
+                except Exception:
+                    pass
+                self._pending_pingpong_result = None
+                if pingpong_result == "win":
+                    self._begin_oscar_win_dialogue()
 
         if getattr(self.basketball, 'finished', False):
             self.basketball.finished = False
@@ -2982,6 +3083,8 @@ class Game:
         
         # Add locked doors to collision walls
         if floor:
+            if self._is_smile_club_room_locked():
+                self._set_smile_club_room_locked(True)
             for door in floor.doors:
                 if door.locked:
                     walls.append(door.rect)
@@ -3060,6 +3163,7 @@ class Game:
             if getattr(_npc, 'is_hostile', False) and _npc.health > 0:
                 dist = math.hypot(_npc.rect.centerx - self.player.rect.centerx, _npc.rect.centery - self.player.rect.centery)
                 if _npc.id in getattr(self, "_final_smile_ids", ()) and getattr(self, "_final_reveal_finished", False):
+                    _npc.is_hostile = True
                     self._keep_npc_in_smile_room(_npc)
                     _npc.target_pos = self.player.rect.center
                     _npc.ai_enabled = True
@@ -3189,6 +3293,8 @@ class Game:
         
         # Add locked doors to NPC walls to block them too
         if floor:
+            if self._is_smile_club_room_locked():
+                self._set_smile_club_room_locked(True)
             for door in floor.doors:
                 if door.locked:
                     npc_walls.append(door.rect)
@@ -3229,6 +3335,7 @@ class Game:
                 npc = self.npc_manager.get_npc_by_id(npc_id)
                 if npc:
                     npc.current_floor = FLOOR_BASEMENT
+                    npc.is_hostile = True
                     self._keep_npc_in_smile_room(npc)
 
         # NPC-NPC collision separation inside the cafeteria
@@ -3288,6 +3395,8 @@ class Game:
                 npc = self.npc_manager.get_npc_by_id(npc_id)
                 if npc:
                     self._keep_npc_in_smile_room(npc)
+                    if npc.health > 0:
+                        npc.is_hostile = True
 
         # Day timer (use current_dt for faster phase transitions)
         self.day_timer += current_dt
@@ -4236,12 +4345,55 @@ class Game:
             
             # Host: also send NPC data for synchronization (skip in BASKETBALL state to save bandwidth & CPU)
             if self.is_host and self.state != GameState.BASKETBALL:
-                npcs = self.npc_manager.get_npcs_on_floor(self.current_floor)
-                # Pack minimal NPC data to save bandwidth
+                npcs = list(self.npc_manager.npcs.values())
+                # Pack minimal NPC data including current_floor to save bandwidth
                 player_data["npc_sync"] = [
-                    (n.id, n.rect.x, n.rect.y, n.direction.value, n.state) 
+                    (n.id, n.rect.x, n.rect.y, n.direction.value, n.state, n.current_floor) 
                     for n in npcs
                 ]
+
+            if self.state == GameState.PINGPONG or self._spectating_pingpong:
+                pp_dict = {
+                    "player_score": self.pingpong.player_score,
+                    "opponent_score": self.pingpong.opponent_score,
+                    "player_x": self.pingpong.player_x,
+                    "player_y": self.pingpong.player_y,
+                    "opp_x": self.pingpong.opp_x,
+                    "opp_y": self.pingpong.opp_y,
+                    "ball_cx": self.pingpong.ball.centerx,
+                    "ball_cy": self.pingpong.ball.centery,
+                    "ball_z": self.pingpong.ball_z,
+                    "ball_color": self.pingpong.ball_color,
+                    "ball_trail_color": self.pingpong.ball_trail_color,
+                    "ball_dash_timer": self.pingpong.ball_dash_timer,
+                    "super_points_spent": self.pingpong.super_points_spent,
+                    "countdown_active": self.pingpong.countdown_active,
+                    "countdown_timer": self.pingpong.countdown_timer,
+                    "countdown_go_shown": getattr(self.pingpong, "countdown_go_shown", False),
+                    "show_menu": self.pingpong.show_menu,
+                    "waiting_for_dismiss": self.pingpong.waiting_for_dismiss,
+                    "end_message": self.pingpong.end_message,
+                    "extra_balls": [
+                        {
+                            "cx": b["rect"].centerx,
+                            "cy": b["rect"].centery,
+                            "z": b.get("z", 0.0),
+                            "trail_color": b.get("trail_color", (255, 140, 0)),
+                            "dash_timer": b.get("dash_timer", 0.0),
+                            "vel": b.get("vel", [0.0, 0.0])
+                        }
+                        for b in self.pingpong.extra_balls
+                    ]
+                }
+                player_data["pp_data"] = pp_dict
+
+            # Pack ping pong match won & cheers
+            player_data["pp_match_won"] = self._pingpong_match_won
+            if self._pending_pp_cheer:
+                player_data["pp_cheer"] = self._pending_pp_cheer
+                self._pending_pp_cheer = False
+            else:
+                player_data["pp_cheer"] = None
 
             self.network.send_player_update(player_data)
             remote = self.network.get_remote_data()
@@ -4258,6 +4410,10 @@ class Game:
                 # Auto teleport to basketball (only client follows host)
                 if not self.is_host and r_state == GameState.BASKETBALL.value and self.state != GameState.BASKETBALL:
                     self._apply_dialogue_result({"start_basketball": True})
+
+                # Auto teleport to pingpong (only client follows host)
+                if not self.is_host and r_state == GameState.PINGPONG.value and self.state != GameState.PINGPONG and not self._pingpong_match_won and not self._spectating_pingpong:
+                    self._apply_dialogue_result({"start_pingpong": True})
                 
                 # Auto exit basketball (client follows host out of the game)
                 if not self.is_host and self.state == GameState.BASKETBALL and r_state != GameState.BASKETBALL.value:
@@ -4390,6 +4546,18 @@ class Game:
                 self.remote_player.update_remote(remote, dt, trail_decay=decay)
                 rf = remote.get("floor", 1)
                 self.remote_player.current_floor = rf
+
+                # Auto teleport Client to Host's floor to keep them in perfect sync
+                if not self.is_host and self.state not in (GameState.PINGPONG, GameState.BASKETBALL):
+                    if rf != self.current_floor:
+                        self._go_to_floor(rf, self.player.rect.centerx, self.player.rect.centery)
+
+                # Unpack ping pong sync data
+                self._remote_pingpong_match_won = remote.get("pp_match_won", False)
+                self._remote_pp_data = remote.get("pp_data")
+                r_cheer = remote.get("pp_cheer")
+                if r_cheer and (self.state == GameState.PINGPONG or self._spectating_pingpong):
+                    self.pingpong.spawn_cheer(r_cheer, is_local=False)
                 
                 # Update WorldMap with remote player position
                 if hasattr(self, "world_map"):
@@ -4401,7 +4569,12 @@ class Game:
 
                 # Client: Apply NPC updates from host
                 if not self.is_host and "npc_sync" in remote:
-                    for nid, nx, ny, ndir, nstate in remote["npc_sync"]:
+                    for item in remote["npc_sync"]:
+                        if len(item) == 6:
+                            nid, nx, ny, ndir, nstate, nfloor = item
+                        else:
+                            nid, nx, ny, ndir, nstate = item
+                            nfloor = None
                         npc = self.npc_manager.get_npc_by_id(nid)
                         if npc:
                             # Use simple LERP for NPCs too to keep them smooth
@@ -4413,6 +4586,8 @@ class Game:
                             except ValueError:
                                 pass
                             npc.state = nstate
+                            if nfloor is not None:
+                                npc.current_floor = nfloor
         except Exception:
             pass
 
@@ -4429,7 +4604,7 @@ class Game:
             GameState.HACKING:           lambda: self.hacking_game.draw(self.screen),
             GameState.DIALOGUE:          lambda: (self._draw_world(), self.dialogue_system.draw(self.screen)),
             GameState.SOCIAL_INTERACTION: lambda: (self._draw_world(), self.social_ui.draw(self.screen)),
-            GameState.PINGPONG:          lambda: self.pingpong.draw(self.screen),
+            GameState.PINGPONG:          lambda: self.pingpong.draw(self.screen, remote_pp_data=(self._remote_pp_data if self._spectating_pingpong else None)),
             GameState.BASKETBALL:        lambda: (self._draw_world(), self.basketball.draw(self.screen, self.camera)),
             GameState.TRADING:           lambda: (self._draw_world(), self.trade_system.draw(self.screen)),
             GameState.PAUSED:            lambda: (
@@ -5491,6 +5666,24 @@ class Game:
         floor = self.school_map.get_floor(FLOOR_BASEMENT)
         return floor.rooms.get("b_smile_club") if floor else None
 
+    def _set_smile_club_room_locked(self, locked: bool):
+        floor = self.school_map.get_floor(FLOOR_BASEMENT)
+        if not floor:
+            return
+        for door in floor.doors:
+            if getattr(door, "id", "") == "door_b_smile_terminal":
+                door.locked = locked
+                door.open_ratio = 0.0
+                door.close_timer = 0.0
+                break
+
+    def _is_smile_club_room_locked(self) -> bool:
+        return bool(
+            self.current_floor == FLOOR_BASEMENT
+            and getattr(self, "_final_reveal_started", False)
+            and not getattr(self, "_final_office_started", False)
+        )
+
     def _load_sprite_sheet_for_npc(self, npc, path: str):
         if not npc or not os.path.exists(path):
             return
@@ -5557,7 +5750,31 @@ class Game:
         room = self._get_smile_club_room()
         if not room or not npc:
             return
-        npc.rect.clamp_ip(room.rect.inflate(-30, -30))
+        arena = room.rect.inflate(-110, -90)
+        npc.rect.clamp_ip(arena)
+
+    def _set_final_hostiles(self):
+        room = self._get_smile_club_room()
+        arena = room.rect.inflate(-120, -100) if room else None
+        anchor_positions = [
+            (room.rect.centerx - 95, room.rect.centery - 10) if room else None,
+            (room.rect.centerx, room.rect.centery + 30) if room else None,
+            (room.rect.centerx + 95, room.rect.centery - 10) if room else None,
+        ]
+        for npc_id, anchor in zip(self._final_smile_ids, anchor_positions):
+            npc = self.npc_manager.get_npc_by_id(npc_id)
+            if not npc:
+                continue
+            npc.current_floor = FLOOR_BASEMENT
+            npc.is_hostile = True
+            npc.ai_enabled = True
+            npc.ignore_schedule = True
+            npc.stop_at_target = False
+            npc.health = npc.max_health
+            npc.bound_rect = arena
+            if anchor and arena and not arena.collidepoint(npc.rect.center):
+                npc.rect.center = anchor
+            self._keep_npc_in_smile_room(npc)
 
     def _keep_player_in_smile_room(self):
         room = self._get_smile_club_room()
@@ -5588,6 +5805,7 @@ class Game:
 
     def _start_final_reveal(self):
         self._setup_smile_club_room()
+        self._set_smile_club_room_locked(True)
         self._final_reveal_started = True
         self._final_reveal_active = True
         self._final_reveal_phase = "pan"
@@ -5637,15 +5855,7 @@ class Game:
             self._final_reveal_finished = True
             self._current_main_mission_text = "Attack Ava, Marcus, and Noah"
             self.ui.show_notification("Attack them! Use your punch combat controls.", NOTIF_WARNING, 4.0)
-            for npc_id in self._final_smile_ids:
-                npc = self.npc_manager.get_npc_by_id(npc_id)
-                if npc:
-                    npc.is_hostile = True
-                    npc.ai_enabled = True
-                    npc.ignore_schedule = True
-                    npc.stop_at_target = False
-                    npc.health = npc.max_health
-                    self._keep_npc_in_smile_room(npc)
+            self._set_final_hostiles()
 
     def _check_final_fight_complete(self):
         if not getattr(self, "_final_reveal_finished", False) or getattr(self, "_final_office_started", False):
@@ -5656,6 +5866,7 @@ class Game:
     def _start_final_office_scene(self):
         self._final_office_started = True
         self._final_office_active = True
+        self._set_smile_club_room_locked(False)
         self._final_office_index = 0
         self.current_floor = FLOOR_2F
         floor = self.school_map.get_floor(FLOOR_2F)
