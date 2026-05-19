@@ -2800,7 +2800,6 @@ class Game:
             # Handle spectating inputs & updates
             if self._spectating_pingpong:
                 # ── Spectator inputs for cheering ──
-                import pygame
                 keys = pygame.key.get_pressed()
                 if not hasattr(self, "_cheer_cooldown"):
                     self._cheer_cooldown = 0.0
