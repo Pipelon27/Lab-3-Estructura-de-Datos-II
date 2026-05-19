@@ -108,9 +108,11 @@ class MissionObjective:
         self.required    = amount
         self.progress    = 0
         self.completed   = False
+        self.host_completed = False
+        self.client_completed = False
 
     def check(self, player, npc_manager, reputation, inventory,
-              current_zone: int | None = None) -> bool:
+              current_zone: int | None = None, manager: MissionManager | None = None) -> bool:
         """Evaluate whether the objective is met.  Returns *True*
         when newly completed."""
         if self.completed:
@@ -132,16 +134,45 @@ class MissionObjective:
         # talk_to, hack_target, win_combat are event-driven
         # and set externally via advance_objective()
 
-        if done:
-            self.progress  = self.required
-            self.completed = True
-        return done
+        multiplayer = getattr(manager, "multiplayer", False)
+        is_host = getattr(manager, "is_host", True)
 
-    def advance(self, amount: int = 1):
+        if done:
+            if multiplayer:
+                if is_host:
+                    self.host_completed = True
+                else:
+                    self.client_completed = True
+                
+                if self.host_completed and self.client_completed:
+                    self.progress  = self.required
+                    self.completed = True
+                    return True
+            else:
+                self.progress  = self.required
+                self.completed = True
+                return True
+        return False
+
+    def advance(self, amount: int = 1, manager: MissionManager | None = None):
         """Manually advance progress (used for event-driven objectives)."""
-        self.progress += amount
-        if self.progress >= self.required:
-            self.completed = True
+        multiplayer = getattr(manager, "multiplayer", False)
+        is_host = getattr(manager, "is_host", True)
+
+        if multiplayer:
+            if is_host:
+                self.host_completed = True
+            else:
+                self.client_completed = True
+            
+            if self.host_completed and self.client_completed:
+                self.progress += amount
+                if self.progress >= self.required:
+                    self.completed = True
+        else:
+            self.progress += amount
+            if self.progress >= self.required:
+                self.completed = True
 
     def to_dict(self) -> dict:
         return {
@@ -149,6 +180,8 @@ class MissionObjective:
             "description": self.description,
             "required": self.required, "progress": self.progress,
             "completed": self.completed,
+            "host_completed": self.host_completed,
+            "client_completed": self.client_completed,
         }
 
     @classmethod
@@ -157,6 +190,8 @@ class MissionObjective:
                   d.get("required", 1))
         obj.progress  = d.get("progress", 0)
         obj.completed = d.get("completed", False)
+        obj.host_completed = d.get("host_completed", False)
+        obj.client_completed = d.get("client_completed", False)
         return obj
 
 
@@ -197,11 +232,11 @@ class Mission:
         """Return *True* when all prerequisite missions are finished."""
         return all(pid in completed_ids for pid in self.prerequisites)
 
-    def advance_objective(self, obj_type: str, target: str, amount: int = 1):
+    def advance_objective(self, obj_type: str, target: str, amount: int = 1, manager: MissionManager | None = None):
         """Advance the first matching incomplete objective."""
         for obj in self.objectives:
             if not obj.completed and obj.type == obj_type and obj.target == target:
-                obj.advance(amount)
+                obj.advance(amount, manager=manager)
                 return
 
     def to_dict(self) -> dict:
@@ -352,7 +387,7 @@ class MissionManager:
             if m.status != MissionStatus.ACTIVE:
                 continue
             for obj in m.objectives:
-                obj.check(player, npc_manager, reputation, inventory, current_zone)
+                obj.check(player, npc_manager, reputation, inventory, current_zone, manager=self)
             if m.is_complete():
                 newly_completed.append(m.id)
         return newly_completed
@@ -361,7 +396,7 @@ class MissionManager:
         """Called by game events (talk, hack, combat win)."""
         for m in self.missions.values():
             if m.status == MissionStatus.ACTIVE:
-                m.advance_objective(obj_type, target)
+                m.advance_objective(obj_type, target, manager=self)
 
     # ── queries ───────────────────────────────────────────────
 

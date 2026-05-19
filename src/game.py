@@ -440,6 +440,8 @@ class Game:
     def _init_systems(self):
         self.reputation      = ReputationSystem()
         self.mission_manager = MissionManager()
+        self.mission_manager.multiplayer = self.multiplayer
+        self.mission_manager.is_host = self.is_host
         self.mission_manager.load_missions_from_json()
         self.combat_system   = CombatSystem()
         self.hacking_game    = HackingMinigame()
@@ -2849,44 +2851,55 @@ class Game:
                         # Client waits for host state transition
                         pass
                 
-                # Squelch regular updates
-                return
+                if not self.is_host and getattr(self, "_remote_game_state", None) == GameState.PLAYING.value:
+                    self.pingpong.finished = False
+                    self.pingpong.reset()
+                    self._spectating_pingpong = False
+                    self._pingpong_match_won = False
+                    self._remote_pingpong_match_won = False
+                    self.state = GameState.PLAYING
+                    try:
+                        if pygame.mixer.get_init():
+                            pygame.mixer.music.stop()
+                    except Exception:
+                        pass
 
-            result = self.pingpong.update(dt)
-            # 'settings' from the pause menu — exit minigame cleanly for now
-            if result == 'settings':
-                self.pingpong.finished = False
-                self.pingpong.reset()
-                self.state = GameState.PLAYING
-                try:
-                    if pygame.mixer.get_init():
-                        pygame.mixer.music.stop()
-                except Exception:
-                    pass
-                self.ui.show_notification("Settings not yet available in-game.", NOTIF_INFO)
-            # When a match result arrives, show end-screen and apply reputation changes
-            elif result is not None and not getattr(self.pingpong, 'waiting_for_dismiss', False):
-                if result == "win":
-                    if self.multiplayer:
-                        self._pingpong_match_won = True
-                        self.pingpong.end_message = "Match Won!\nSpectating Ally..."
-                        self._pending_pingpong_result = "win"
-                    else:
-                        self.reputation.reputation_score = min(100, self.reputation.reputation_score + 20)
-                        self.pingpong.end_message = "Win Match\n+20 Reputation"
-                        self._pending_pingpong_result = "win"
-                elif result == "lose":
-                    if self.multiplayer:
-                        self._pending_pingpong_result = "lose"
-                        self.pingpong.end_message = "Match Lost!\nPress SPACE/A to Retry"
-                    else:
-                        self._pending_pingpong_result = "lose"
-                        if self.reputation.reputation_score > 0:
-                            self.reputation.reputation_score = max(0, self.reputation.reputation_score - 10)
-                            self.pingpong.end_message = "Lose Match\n-10 Reputation"
+            else:
+                result = self.pingpong.update(dt)
+                # 'settings' from the pause menu — exit minigame cleanly for now
+                if result == 'settings':
+                    self.pingpong.finished = False
+                    self.pingpong.reset()
+                    self.state = GameState.PLAYING
+                    try:
+                        if pygame.mixer.get_init():
+                            pygame.mixer.music.stop()
+                    except Exception:
+                        pass
+                    self.ui.show_notification("Settings not yet available in-game.", NOTIF_INFO)
+                # When a match result arrives, show end-screen and apply reputation changes
+                elif result is not None and not getattr(self.pingpong, 'waiting_for_dismiss', False):
+                    if result == "win":
+                        if self.multiplayer:
+                            self._pingpong_match_won = True
+                            self.pingpong.end_message = "Match Won!\nSpectating Ally..."
+                            self._pending_pingpong_result = "win"
                         else:
-                            self.pingpong.end_message = "Lose Match"
-                self.pingpong.waiting_for_dismiss = True
+                            self.reputation.reputation_score = min(100, self.reputation.reputation_score + 20)
+                            self.pingpong.end_message = "Win Match\n+20 Reputation"
+                            self._pending_pingpong_result = "win"
+                    elif result == "lose":
+                        if self.multiplayer:
+                            self._pending_pingpong_result = "lose"
+                            self.pingpong.end_message = "Match Lost!\nPress SPACE/A to Retry"
+                        else:
+                            self._pending_pingpong_result = "lose"
+                            if self.reputation.reputation_score > 0:
+                                self.reputation.reputation_score = max(0, self.reputation.reputation_score - 10)
+                                self.pingpong.end_message = "Lose Match\n-10 Reputation"
+                            else:
+                                self.pingpong.end_message = "Lose Match"
+                    self.pingpong.waiting_for_dismiss = True
 
         elif self.state == GameState.BASKETBALL:
             # Fix camera to the center of the court (476 + 424, 258 + 347)
@@ -4333,7 +4346,15 @@ class Game:
                 for m_id, m in self.mission_manager.missions.items():
                     mission_data[m_id] = {
                         "status": m.status.value,
-                        "objectives": [{"progress": o.progress, "completed": o.completed} for o in m.objectives]
+                        "objectives": [
+                            {
+                                "progress": o.progress,
+                                "completed": o.completed,
+                                "host_completed": o.host_completed,
+                                "client_completed": o.client_completed
+                            }
+                            for o in m.objectives
+                        ]
                     }
                 player_data["mission_data"] = mission_data
 
@@ -4386,6 +4407,14 @@ class Game:
                 }
                 player_data["pp_data"] = pp_dict
 
+            # Pack client mission progress to host
+            if not self.is_host:
+                client_mission_progress = {}
+                for m_id, m in self.mission_manager.missions.items():
+                    if m.status.value == "active":
+                        client_mission_progress[m_id] = [o.client_completed for o in m.objectives]
+                player_data["client_mission_progress"] = client_mission_progress
+
             # Pack ping pong match won & cheers
             player_data["pp_match_won"] = self._pingpong_match_won
             if self._pending_pp_cheer:
@@ -4398,6 +4427,16 @@ class Game:
             remote = self.network.get_remote_data()
             
             if remote and self.remote_player:
+                if self.is_host:
+                    c_m_progress = remote.get("client_mission_progress")
+                    if c_m_progress:
+                        for m_id, m_objectives in c_m_progress.items():
+                            m = self.mission_manager.missions.get(m_id)
+                            if m and m.status.value == "active":
+                                for idx, val in enumerate(m_objectives):
+                                    if idx < len(m.objectives):
+                                        m.objectives[idx].client_completed = val
+
                 r_state = remote.get("game_state")
                 
                 # Update remote votes
@@ -4499,11 +4538,34 @@ class Game:
                             m = self.mission_manager.missions.get(m_id)
                             if m:
                                 from settings import MissionStatus
+                                old_status = m.status
                                 m.status = MissionStatus(m_state["status"])
                                 for idx, obj_state in enumerate(m_state["objectives"]):
                                     if idx < len(m.objectives):
                                         m.objectives[idx].progress = obj_state["progress"]
                                         m.objectives[idx].completed = obj_state["completed"]
+                                        # Keep local client_completed if we already did it, until host merges it
+                                        if obj_state.get("client_completed"):
+                                            m.objectives[idx].client_completed = True
+                                        m.objectives[idx].host_completed = obj_state.get("host_completed", False)
+                                
+                                if old_status == MissionStatus.ACTIVE and m.status == MissionStatus.COMPLETED:
+                                    self.mission_manager.completed_ids.add(m_id)
+                                    self.mission_manager._refresh_availability()
+                                    rewards = m.rewards
+                                    if rewards:
+                                        self._apply_rewards(rewards)
+                                        msg = self.mission_manager.get_motivational_message()
+                                        self.ui.show_notification(f"✅ Mission complete! {msg}", NOTIF_SUCCESS, 5.0)
+                                        # Auto-activate newly available missions
+                                        for new_m in self.mission_manager.get_available():
+                                            self.mission_manager.activate_mission(new_m.id)
+                                            if new_m.id == "mission_talk_ava_rooftop":
+                                                self._current_main_mission_text = "Mission 11: Find Ava Thompson at the rooftop party."
+                                            elif new_m.id == "mission_check_ava_phone":
+                                                self._current_main_mission_text = "Mission 12: Check Ava's phone before she comes back! (15 seconds)"
+                                            elif new_m.id == "mission_final_showdown":
+                                                self._current_main_mission_text = "Mission 13: Go to the Basement and see what they're plotting!"
                                         
                     # Sync intro cinematic variables
                     self._cine_phase = remote.get("cine_phase", self._cine_phase)
@@ -4549,7 +4611,7 @@ class Game:
                 # Auto teleport Client to Host's floor to keep them in perfect sync
                 if not self.is_host and self.state not in (GameState.PINGPONG, GameState.BASKETBALL):
                     if rf != self.current_floor:
-                        self._go_to_floor(rf, self.player.rect.centerx, self.player.rect.centery)
+                        self._go_to_floor(rf, remote.get("x", self.player.rect.centerx), remote.get("y", self.player.rect.centery))
 
                 # Unpack ping pong sync data
                 self._remote_pingpong_match_won = remote.get("pp_match_won", False)
