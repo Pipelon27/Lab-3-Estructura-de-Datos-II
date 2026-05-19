@@ -2070,6 +2070,10 @@ class Game:
         for npc in npcs:
             if skip_siblings and npc.id in ("npc_aiden", "npc_lena"):
                 continue
+            if (npc.id in getattr(self, "_final_smile_ids", ())
+                    and (getattr(self, "_is_final_showdown_active", lambda: False)()
+                         or getattr(self, "_final_reveal_started", False))):
+                continue
             if npc.id == "npc_noah_carter":
                 continue
             d = ((npc.rect.centerx - px)**2 + (npc.rect.centery - py)**2) ** 0.5
@@ -2960,6 +2964,8 @@ class Game:
         
         # Add locked doors to collision walls
         if floor:
+            if self._is_smile_club_room_locked():
+                self._set_smile_club_room_locked(True)
             for door in floor.doors:
                 if door.locked:
                     walls.append(door.rect)
@@ -3038,6 +3044,7 @@ class Game:
             if getattr(_npc, 'is_hostile', False) and _npc.health > 0:
                 dist = math.hypot(_npc.rect.centerx - self.player.rect.centerx, _npc.rect.centery - self.player.rect.centery)
                 if _npc.id in getattr(self, "_final_smile_ids", ()) and getattr(self, "_final_reveal_finished", False):
+                    _npc.is_hostile = True
                     self._keep_npc_in_smile_room(_npc)
                     _npc.target_pos = self.player.rect.center
                     _npc.ai_enabled = True
@@ -3167,6 +3174,8 @@ class Game:
         
         # Add locked doors to NPC walls to block them too
         if floor:
+            if self._is_smile_club_room_locked():
+                self._set_smile_club_room_locked(True)
             for door in floor.doors:
                 if door.locked:
                     npc_walls.append(door.rect)
@@ -3207,6 +3216,7 @@ class Game:
                 npc = self.npc_manager.get_npc_by_id(npc_id)
                 if npc:
                     npc.current_floor = FLOOR_BASEMENT
+                    npc.is_hostile = True
                     self._keep_npc_in_smile_room(npc)
 
         # NPC-NPC collision separation inside the cafeteria
@@ -3266,6 +3276,8 @@ class Game:
                 npc = self.npc_manager.get_npc_by_id(npc_id)
                 if npc:
                     self._keep_npc_in_smile_room(npc)
+                    if npc.health > 0:
+                        npc.is_hostile = True
 
         # Day timer (use current_dt for faster phase transitions)
         self.day_timer += current_dt
@@ -5423,6 +5435,24 @@ class Game:
         floor = self.school_map.get_floor(FLOOR_BASEMENT)
         return floor.rooms.get("b_smile_club") if floor else None
 
+    def _set_smile_club_room_locked(self, locked: bool):
+        floor = self.school_map.get_floor(FLOOR_BASEMENT)
+        if not floor:
+            return
+        for door in floor.doors:
+            if getattr(door, "id", "") == "door_b_smile_terminal":
+                door.locked = locked
+                door.open_ratio = 0.0
+                door.close_timer = 0.0
+                break
+
+    def _is_smile_club_room_locked(self) -> bool:
+        return bool(
+            self.current_floor == FLOOR_BASEMENT
+            and getattr(self, "_final_reveal_started", False)
+            and not getattr(self, "_final_office_started", False)
+        )
+
     def _load_sprite_sheet_for_npc(self, npc, path: str):
         if not npc or not os.path.exists(path):
             return
@@ -5489,7 +5519,31 @@ class Game:
         room = self._get_smile_club_room()
         if not room or not npc:
             return
-        npc.rect.clamp_ip(room.rect.inflate(-30, -30))
+        arena = room.rect.inflate(-110, -90)
+        npc.rect.clamp_ip(arena)
+
+    def _set_final_hostiles(self):
+        room = self._get_smile_club_room()
+        arena = room.rect.inflate(-120, -100) if room else None
+        anchor_positions = [
+            (room.rect.centerx - 95, room.rect.centery - 10) if room else None,
+            (room.rect.centerx, room.rect.centery + 30) if room else None,
+            (room.rect.centerx + 95, room.rect.centery - 10) if room else None,
+        ]
+        for npc_id, anchor in zip(self._final_smile_ids, anchor_positions):
+            npc = self.npc_manager.get_npc_by_id(npc_id)
+            if not npc:
+                continue
+            npc.current_floor = FLOOR_BASEMENT
+            npc.is_hostile = True
+            npc.ai_enabled = True
+            npc.ignore_schedule = True
+            npc.stop_at_target = False
+            npc.health = npc.max_health
+            npc.bound_rect = arena
+            if anchor and arena and not arena.collidepoint(npc.rect.center):
+                npc.rect.center = anchor
+            self._keep_npc_in_smile_room(npc)
 
     def _keep_player_in_smile_room(self):
         room = self._get_smile_club_room()
@@ -5520,6 +5574,7 @@ class Game:
 
     def _start_final_reveal(self):
         self._setup_smile_club_room()
+        self._set_smile_club_room_locked(True)
         self._final_reveal_started = True
         self._final_reveal_active = True
         self._final_reveal_phase = "pan"
@@ -5569,15 +5624,7 @@ class Game:
             self._final_reveal_finished = True
             self._current_main_mission_text = "Attack Ava, Marcus, and Noah"
             self.ui.show_notification("Attack them! Use your punch combat controls.", NOTIF_WARNING, 4.0)
-            for npc_id in self._final_smile_ids:
-                npc = self.npc_manager.get_npc_by_id(npc_id)
-                if npc:
-                    npc.is_hostile = True
-                    npc.ai_enabled = True
-                    npc.ignore_schedule = True
-                    npc.stop_at_target = False
-                    npc.health = npc.max_health
-                    self._keep_npc_in_smile_room(npc)
+            self._set_final_hostiles()
 
     def _check_final_fight_complete(self):
         if not getattr(self, "_final_reveal_finished", False) or getattr(self, "_final_office_started", False):
@@ -5588,6 +5635,7 @@ class Game:
     def _start_final_office_scene(self):
         self._final_office_started = True
         self._final_office_active = True
+        self._set_smile_club_room_locked(False)
         self._final_office_index = 0
         self.current_floor = FLOOR_2F
         floor = self.school_map.get_floor(FLOOR_2F)
