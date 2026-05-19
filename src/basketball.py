@@ -86,6 +86,10 @@ class BasketballGame:
         self.last_shot_x = None
         self.last_shot_y = None
         self.last_shot_team = None
+        self.shake_timer = 0.0
+        self.shake_intensity = 0
+        self.target_ball_x = 0.0
+        self.target_ball_y = 0.0
         
         self.player_shoot_anim = -1.0
         self.opp_shoot_anim = -1.0
@@ -96,6 +100,7 @@ class BasketballGame:
 
         # Pass state
         self.pass_in_flight = False
+        self.pass_requested = False
         self.pass_start_x = 0.0
         self.pass_start_y = 0.0
         self.pass_target_entity = None  # 'ally' or 'player'
@@ -115,6 +120,13 @@ class BasketballGame:
         self.ai_shoot_chance = 0.025
         self.ai_block_chance = 0.04
         self.ai_steal_range = 35
+        
+        # AI restructuring variables
+        self.opp_ai_goal = 'drive'
+        self.opp2_ai_goal = 'shoot_3'
+        self.opp_ai_target = (580, 605)
+        self.opp2_ai_target = (700, 605)
+        self.opp_pass_cooldown = 0.0
         
         # Load custom ball sprite
         import os
@@ -158,6 +170,9 @@ class BasketballGame:
         self.finished = False
         self.end_message = None
         self.waiting_for_dismiss = False
+        self.ball_trail = []
+        self.opp_pass_cooldown = 0.0
+        self.select_offensive_goals()
 
     def reset_positions(self):
         # Place player on left, opp on right
@@ -214,6 +229,8 @@ class BasketballGame:
             # Host receives client inputs
             if "z" in bb_data and self.ally:
                 self.ally_z = bb_data["z"]
+            if bb_data.get("pass_request", False):
+                self._initiate_pass('ally', 'player')
             if "shooting" in bb_data:
                 # The ally's shooting state is the client's shooting state
                 if bb_data["shooting"]:
@@ -223,29 +240,88 @@ class BasketballGame:
                 else:
                     if getattr(self, "ally_shooting", False):
                         self.ally_shooting = False
-                        self._shoot_ball('ally', bb_data.get("shoot_bar", 0.0))
+                        self.ally_shoot_anim = 0.0
+                        self.ally_pending_shot = bb_data.get("shoot_bar", 0.0)
         else:
             # Client receives authoritative state from Host
-            self.ball_x = bb_data.get("ball_x", self.ball_x)
-            self.ball_y = bb_data.get("ball_y", self.ball_y)
+            self.target_ball_x = bb_data.get("ball_x", self.ball_x)
+            self.target_ball_y = bb_data.get("ball_y", self.ball_y)
             self.ball_z = bb_data.get("ball_z", self.ball_z)
-            self.ball_held_by = bb_data.get("ball_held_by", self.ball_held_by)
+            
+            raw_held = bb_data.get("ball_held_by", self.ball_held_by)
+            if raw_held == 'player':
+                self.ball_held_by = 'ally'
+            elif raw_held == 'ally':
+                self.ball_held_by = 'player'
+            else:
+                self.ball_held_by = raw_held
+
+            raw_possession = bb_data.get("possession", self.possession)
+            if raw_possession == 'player':
+                self.possession = 'ally'
+            elif raw_possession == 'ally':
+                self.possession = 'player'
+            else:
+                self.possession = raw_possession
+
             self.pass_in_flight = bb_data.get("pass_in_flight", self.pass_in_flight)
             
             self.opp_z = bb_data.get("opp_z", self.opp_z)
             if self.opponent:
-                self.opponent.rect.centerx = bb_data.get("opp_x", self.opponent.rect.centerx)
-                self.opponent.rect.centery = bb_data.get("opp_y", self.opponent.rect.centery)
+                tx = bb_data.get("opp_x", self.opponent.rect.centerx)
+                ty = bb_data.get("opp_y", self.opponent.rect.centery)
+                self.opponent.rect.centerx += int((tx - self.opponent.rect.centerx) * 0.4)
+                self.opponent.rect.centery += int((ty - self.opponent.rect.centery) * 0.4)
             self.opp_shooting = bb_data.get("opp_shooting", False)
             
             if self.opp2:
                 self.opp2_z = bb_data.get("opp2_z", self.opp2_z)
-                self.opp2.rect.centerx = bb_data.get("opp2_x", self.opp2.rect.centerx)
-                self.opp2.rect.centery = bb_data.get("opp2_y", self.opp2.rect.centery)
+                tx2 = bb_data.get("opp2_x", self.opp2.rect.centerx)
+                ty2 = bb_data.get("opp2_y", self.opp2.rect.centery)
+                self.opp2.rect.centerx += int((tx2 - self.opp2.rect.centerx) * 0.4)
+                self.opp2.rect.centery += int((ty2 - self.opp2.rect.centery) * 0.4)
                 self.opp2_shooting = bb_data.get("opp2_shooting", False)
                 
-            self.player_score = bb_data.get("p_score", self.player_score)
-            self.opp_score = bb_data.get("o_score", self.opp_score)
+            # Score and swish effect triggering on Client
+            new_p_score = bb_data.get("p_score", self.player_score)
+            new_o_score = bb_data.get("o_score", self.opp_score)
+            
+            if new_p_score > self.player_score:
+                diff = new_p_score - self.player_score
+                self.swish_effect = {
+                    "x": self.right_rim[0],
+                    "y": self.right_rim[1],
+                    "text": "SWISH!" if diff == 3 else "2 PTS!",
+                    "text_y": float(self.right_rim[1] - 40),
+                    "color": (255, 215, 0) if diff == 3 else (100, 255, 100),
+                    "particles": [{"x": self.right_rim[0] + random.uniform(-15, 15), "y": self.right_rim[1] - 30, "vx": random.uniform(-40, 40), "vy": random.uniform(80, 200), "life": 0.8} for _ in range(18)],
+                    "timer": 1.0
+                }
+                self.shake_timer = 0.3
+                self.shake_intensity = 8
+                
+            if new_o_score > self.opp_score:
+                diff = new_o_score - self.opp_score
+                self.swish_effect = {
+                    "x": self.left_rim[0],
+                    "y": self.left_rim[1],
+                    "text": "SWISH!" if diff == 3 else "2 PTS!",
+                    "text_y": float(self.left_rim[1] - 40),
+                    "color": (255, 69, 0),
+                    "particles": [{"x": self.left_rim[0] + random.uniform(-15, 15), "y": self.left_rim[1] - 30, "vx": random.uniform(-40, 40), "vy": random.uniform(80, 200), "life": 0.8} for _ in range(18)],
+                    "timer": 1.0
+                }
+                self.shake_timer = 0.3
+                self.shake_intensity = 8
+                
+            self.player_score = new_p_score
+            self.opp_score = new_o_score
+            
+            # Sync screen shake from Host
+            h_shake = bb_data.get("shake_timer", 0.0)
+            if h_shake > self.shake_timer:
+                self.shake_timer = h_shake
+                self.shake_intensity = bb_data.get("shake_intensity", 0)
             
             # Client ally is the Host
             if "z" in bb_data and self.ally:
@@ -258,7 +334,8 @@ class BasketballGame:
                 else:
                     if getattr(self, "ally_shooting", False):
                         self.ally_shooting = False
-                        self._shoot_ball('ally', bb_data.get("shoot_bar", 0.0))
+                        self.ally_shoot_anim = 0.0
+                        self.ally_pending_shot = bb_data.get("shoot_bar", 0.0)
 
     def handle_input(self, event: pygame.event.Event):
         if self.paused:
@@ -388,6 +465,9 @@ class BasketballGame:
 
     def _initiate_pass(self, from_entity, to_entity):
         """Start a pass from from_entity to to_entity."""
+        if not self.is_host and from_entity == 'player':
+            self.pass_requested = True
+            
         if from_entity == 'player':
             sx, sy = self.player.rect.centerx, self.player.rect.centery
         elif from_entity == 'ally' and self.ally:
@@ -414,6 +494,8 @@ class BasketballGame:
         self.last_shot_team = shooter
         
         target_quality = 0.8
+        is_perfect = (shooter in ('player', 'ally') and abs(power_bar - target_quality) < 0.02)
+        
         if shooter == 'player':
             self.last_shot_x = self.player.rect.centerx
             self.last_shot_y = self.player.rect.centery
@@ -421,7 +503,7 @@ class BasketballGame:
             dist = math.hypot(self.last_shot_x - target_x, self.last_shot_y - target_y)
             is_3pt = dist > self.three_point_radius
             spread = 4.0 if is_3pt else 2.0
-            quality = 1.0 - abs(power_bar - target_quality) * spread
+            quality = 1.0 if is_perfect else (1.0 - abs(power_bar - target_quality) * spread)
             start_x = self.player.rect.centerx
             start_y = self.player.rect.centery
             start_z = self.player_z + 40
@@ -431,7 +513,7 @@ class BasketballGame:
             target_x, target_y = self.right_rim
             dist = math.hypot(self.last_shot_x - target_x, self.last_shot_y - target_y)
             is_3pt = dist > self.three_point_radius
-            quality = 1.0 - abs(power_bar - target_quality) * 2.5
+            quality = 1.0 if is_perfect else (1.0 - abs(power_bar - target_quality) * 2.5)
             start_x = self.ally.rect.centerx
             start_y = self.ally.rect.centery
             start_z = self.ally_z + 40
@@ -471,7 +553,7 @@ class BasketballGame:
         vz = (self.hoop_z - start_z - 0.5 * self.gravity * time_to_target**2) / time_to_target
         
         # Add error based on quality
-        if quality < 0.8:
+        if not is_perfect and quality < 0.8:
             error_x = random.uniform(-100, 100) * (1.0 - quality)
             error_y = random.uniform(-100, 100) * (1.0 - quality)
             vx += error_x
@@ -481,9 +563,63 @@ class BasketballGame:
         self.ball_vy = vy
         self.ball_vz = vz
 
+        if is_perfect:
+            self.swish_effect = {
+                "x": start_x,
+                "y": start_y,
+                "text": "PERFECT RELEASE!",
+                "text_y": float(start_y - 60),
+                "color": (50, 255, 50),
+                "particles": [{"x": start_x + random.uniform(-10, 10), "y": start_y - 10, "vx": random.uniform(-60, 60), "vy": random.uniform(-120, -40), "life": 0.6} for _ in range(12)],
+                "timer": 0.8
+            }
+            self.shake_timer = 0.2
+            self.shake_intensity = 4
+
+    def get_ai_position_target(self, goal, entity):
+        # Left rim is (530, 605)
+        rx, ry = self.left_rim
+        if goal == 'drive':
+            # Target close to the hoop for a layup/dunk or close shot
+            tx = rx + random.uniform(30, 70)
+            ty = ry + random.uniform(-40, 40)
+        elif goal == 'shoot_3':
+            # Target outside 3pt line (three_point_radius is 150)
+            tx = rx + self.three_point_radius + random.uniform(20, 50)
+            ty = ry + random.uniform(-100, 100)
+        else: # mid_range
+            # Target between hoop and 3pt line
+            tx = rx + random.uniform(80, 120)
+            ty = ry + random.uniform(-60, 60)
+        return (tx, ty)
+
+    def select_offensive_goals(self):
+        # Decide goals for both opponents
+        self.opp_ai_goal = random.choice(['drive', 'shoot_3', 'mid_range'])
+        if self.is_coop and self.opp2:
+            if self.opp_ai_goal == 'drive':
+                self.opp2_ai_goal = random.choice(['shoot_3', 'mid_range'])
+            elif self.opp_ai_goal == 'shoot_3':
+                self.opp2_ai_goal = random.choice(['drive', 'mid_range'])
+            else:
+                self.opp2_ai_goal = random.choice(['drive', 'shoot_3'])
+        
+        self.opp_ai_target = self.get_ai_position_target(self.opp_ai_goal, 'opp')
+        if self.is_coop and self.opp2:
+            self.opp2_ai_target = self.get_ai_position_target(self.opp2_ai_goal, 'opp2')
+
     def update(self, dt: float):
         if not self.active or self.show_menu or self.waiting_for_dismiss:
             return {"status": "running"}
+            
+        # Update ball trail
+        if self.ball_held_by is None or getattr(self, "pass_in_flight", False):
+            self.ball_trail.append((self.ball_x, self.ball_y, self.ball_z))
+            if len(self.ball_trail) > 8:
+                self.ball_trail.pop(0)
+        else:
+            if self.ball_trail:
+                self.ball_trail.pop(0)
             
         if self.reset_timer > 0:
             self.reset_timer -= dt
@@ -517,6 +653,15 @@ class BasketballGame:
             elif self.opp_shoot_anim >= 3.0 and self.opp_pending_shot is not None:
                 self._shoot_ball('opp', self.opp_pending_shot)
                 self.opp_pending_shot = None
+
+        # Ally Shooting Animation logic
+        if self.ally_shoot_anim >= 0:
+            self.ally_shoot_anim += dt * 10.0
+            if self.ally_shoot_anim >= 6.0:
+                self.ally_shoot_anim = -1.0
+            elif self.ally_shoot_anim >= 3.0 and getattr(self, "ally_pending_shot", None) is not None:
+                self._shoot_ball('ally', self.ally_pending_shot)
+                self.ally_pending_shot = None
         
         # Player Movement (using top-down WASD logic from player)
         # To reuse animations and collisions:
@@ -543,13 +688,36 @@ class BasketballGame:
 
         # AI and Physics are authoritative on the Host
         if self.is_host:
-            # Opponent AI (Top-Down Chase)
+            # Decrement pass cooldown
+            if getattr(self, "opp_pass_cooldown", 0.0) > 0.0:
+                self.opp_pass_cooldown -= dt
+
+            # Opponent AI (Restructured offensive movement & positioning)
             target_x = self.ball_x
             target_y = self.ball_y
+            
             if self.ball_held_by == 'opp':
-                target_x, target_y = self.left_rim
+                # Opponent has the ball -> move to assigned offensive target zone
+                target_x, target_y = self.opp_ai_target
+                
+                # Check for passing to teammate (coop mode)
+                if self.is_coop and self.opp2 and getattr(self, "opp_pass_cooldown", 0.0) <= 0.0 and not getattr(self, "opp_shooting", False):
+                    def_dist = math.hypot(self.opponent.rect.centerx - self.player.rect.centerx, self.opponent.rect.centery - self.player.rect.centery)
+                    if self.ally:
+                        def_dist = min(def_dist, math.hypot(self.opponent.rect.centerx - self.ally.rect.centerx, self.opponent.rect.centery - self.ally.rect.centery))
+                    tm_def_dist = math.hypot(self.opp2.rect.centerx - self.player.rect.centerx, self.opp2.rect.centery - self.player.rect.centery)
+                    if self.ally:
+                        tm_def_dist = min(tm_def_dist, math.hypot(self.opp2.rect.centerx - self.ally.rect.centerx, self.opp2.rect.centery - self.ally.rect.centery))
+                    
+                    if def_dist < 70 and tm_def_dist > 100 and random.random() < 0.05:
+                        self._initiate_pass('opp', 'opp2')
+                        self.opp_pass_cooldown = 2.0
+                        self.select_offensive_goals()
+            elif self.ball_held_by == 'opp2' and self.opp2:
+                # Teammate has ball -> off-ball movement to clear space/cut
+                target_x, target_y = self.opp_ai_target
             elif self.ball_held_by in ('player', 'ally'):
-                # Defend the player or ally depending on who has the ball
+                # Defense: Defend the player or ally depending on who has the ball
                 p = self.player if self.ball_held_by == 'player' else self.ally
                 if p:
                     target_x = p.rect.centerx - 40
@@ -581,7 +749,24 @@ class BasketballGame:
                 o2_target_x = self.ball_x
                 o2_target_y = self.ball_y
                 if self.ball_held_by == 'opp2':
-                    o2_target_x, o2_target_y = self.left_rim
+                    o2_target_x, o2_target_y = self.opp2_ai_target
+                    
+                    # Check for passing to teammate
+                    if getattr(self, "opp_pass_cooldown", 0.0) <= 0.0 and not getattr(self, "opp2_shooting", False):
+                        def_dist = math.hypot(self.opp2.rect.centerx - self.player.rect.centerx, self.opp2.rect.centery - self.player.rect.centery)
+                        if self.ally:
+                            def_dist = min(def_dist, math.hypot(self.opp2.rect.centerx - self.ally.rect.centerx, self.opp2.rect.centery - self.ally.rect.centery))
+                        tm_def_dist = math.hypot(self.opponent.rect.centerx - self.player.rect.centerx, self.opponent.rect.centery - self.player.rect.centery)
+                        if self.ally:
+                            tm_def_dist = min(tm_def_dist, math.hypot(self.opponent.rect.centerx - self.ally.rect.centerx, self.opponent.rect.centery - self.ally.rect.centery))
+                        
+                        if def_dist < 70 and tm_def_dist > 100 and random.random() < 0.05:
+                            self._initiate_pass('opp2', 'opp')
+                            self.opp_pass_cooldown = 2.0
+                            self.select_offensive_goals()
+                elif self.ball_held_by == 'opp':
+                    # Teammate has ball -> off-ball movement to clear space/cut
+                    o2_target_x, o2_target_y = self.opp2_ai_target
                 elif self.ball_held_by in ('player', 'ally'):
                     # Opp2 defends whoever the opponent is NOT defending
                     p = self.ally if self.ball_held_by == 'player' else self.player
@@ -618,10 +803,11 @@ class BasketballGame:
                     self.opp2_z = 0
                     self.opp2_vz = 0
             
-            # Opponent AI Shooting/Blocking
+            # Opponent AI Shooting
             if self.ball_held_by == 'opp':
                 if not self.opp_shooting:
-                    if random.random() < self.ai_shoot_chance:
+                    dist_to_target = math.hypot(self.opponent.rect.centerx - self.opp_ai_target[0], self.opponent.rect.centery - self.opp_ai_target[1])
+                    if (dist_to_target < 40 or random.random() < 0.015) and not getattr(self, "pass_in_flight", False):
                         self.opp_shooting = True
                         self.opp_shoot_bar = 0.0
                         self.opp_shoot_dir = 1
@@ -643,7 +829,8 @@ class BasketballGame:
             # Opp2 AI Shooting
             if self.is_coop and self.opp2 and self.ball_held_by == 'opp2':
                 if not getattr(self, "opp2_shooting", False):
-                    if random.random() < self.ai_shoot_chance:
+                    dist_to_target2 = math.hypot(self.opp2.rect.centerx - self.opp2_ai_target[0], self.opp2.rect.centery - self.opp2_ai_target[1])
+                    if (dist_to_target2 < 40 or random.random() < 0.015) and not getattr(self, "pass_in_flight", False):
                         self.opp2_shooting = True
                         self.opp2_shoot_bar = 0.0
                         self.opp2_shoot_dir = 1
@@ -723,6 +910,21 @@ class BasketballGame:
             frames = self.opponent.animations.get(anim_key, [])
             if frames:
                 self.opponent.image = frames[0]
+
+        # Ally Image Override for Shooting
+        if self.is_coop and self.ally:
+            if self.ally_shoot_anim >= 0:
+                self.ally.state = "shoot"
+                anim_key = f"shoot_{self.ally.direction.value}"
+                frames = self.ally.animations.get(anim_key, [])
+                if frames:
+                    self.ally.image = frames[min(int(self.ally_shoot_anim), len(frames)-1)]
+            elif getattr(self, 'ally_shooting', False):
+                self.ally.state = "shoot"
+                anim_key = f"shoot_{self.ally.direction.value}"
+                frames = self.ally.animations.get(anim_key, [])
+                if frames:
+                    self.ally.image = frames[0]
 
         # Shooting bar logic
         if self.shooting:
@@ -858,23 +1060,27 @@ class BasketballGame:
                     was_held_by_player = (self.ball_held_by == 'player')
                     self.ball_held_by = 'opp'
                     self.possession = 'opp'
+                    self.select_offensive_goals()
                 elif self.is_coop and self.ally and math.hypot(self.ball_x - self.ally.rect.centerx, self.ball_y - self.ally.rect.centery) < 40 and abs(self.ball_z - self.ally_z) < 50 and self.possession != 'ally':
                     self.ball_held_by = 'ally'
                     self.possession = 'ally'
                 elif self.is_coop and self.opp2 and math.hypot(self.ball_x - self.opp2.rect.centerx, self.ball_y - self.opp2.rect.centery) < 40 and abs(self.ball_z - self.opp2_z) < 50 and self.possession != 'opp2':
                     self.ball_held_by = 'opp2'
                     self.possession = 'opp2'
+                    self.select_offensive_goals()
     
-                # Scoring (Check 2.5D intersection with hoop rim area)
+                 # Scoring (Check 2.5D intersection with hoop rim area)
                 # We assume the ball falls THROUGH the hoop (vz < 0) near the rim coordinates
                 if self.ball_vz < 0 and abs(self.ball_z - self.hoop_z) < 20:
                     dist_right = math.hypot(self.ball_x - self.right_rim[0], self.ball_y - self.right_rim[1])
                     dist_left = math.hypot(self.ball_x - self.left_rim[0], self.ball_y - self.left_rim[1])
                     
                     if dist_right < 20 and self.reset_timer <= 0:
-                        pts = 3 if (self.last_shot_team == 'player' and math.hypot(self.last_shot_x - self.right_rim[0], self.last_shot_y - self.right_rim[1]) > self.three_point_radius) else 2
+                        pts = 3 if (self.last_shot_team in ('player', 'ally') and math.hypot(self.last_shot_x - self.right_rim[0], self.last_shot_y - self.right_rim[1]) > self.three_point_radius) else 2
                         self.player_score += pts
                         self.reset_timer = 1.0 # Wait 1 second before resetting
+                        self.shake_timer = 0.3
+                        self.shake_intensity = 8
                         self.swish_effect = {
                             "x": self.right_rim[0],
                             "y": self.right_rim[1],
@@ -889,9 +1095,11 @@ class BasketballGame:
                         if controller.connected and getattr(controller, "last_input_method", "keyboard") == "controller":
                             controller.rumble(0.8, 0.8, 300)
                     elif dist_left < 20 and self.reset_timer <= 0:
-                        pts = 3 if (self.last_shot_team == 'opp' and math.hypot(self.last_shot_x - self.left_rim[0], self.left_rim[1] - 605) > self.three_point_radius) else 2
+                        pts = 3 if (self.last_shot_team in ('opp', 'opp2') and math.hypot(self.last_shot_x - self.left_rim[0], self.left_rim[1] - 605) > self.three_point_radius) else 2
                         self.opp_score += pts
                         self.reset_timer = 1.0
+                        self.shake_timer = 0.3
+                        self.shake_intensity = 8
                         self.swish_effect = {
                             "x": self.left_rim[0],
                             "y": self.left_rim[1],
@@ -905,6 +1113,15 @@ class BasketballGame:
                         controller = get_controller()
                         if controller.connected and getattr(controller, "last_input_method", "keyboard") == "controller":
                             controller.rumble(0.8, 0.2, 400)
+
+        else:
+            # Client smoothly LERPs the ball position
+            self.ball_x += (getattr(self, "target_ball_x", self.ball_x) - self.ball_x) * 0.4
+            self.ball_y += (getattr(self, "target_ball_y", self.ball_y) - self.ball_y) * 0.4
+
+        # Update screen shake
+        if getattr(self, "shake_timer", 0.0) > 0.0:
+            self.shake_timer -= dt
 
         # Update swish effect
         if self.swish_effect:
@@ -1016,6 +1233,18 @@ class BasketballGame:
                 screen.blit(self.floor._right_hoop_surface, camera.apply_rect(rect))
         
         def draw_ball():
+            # Draw trail first
+            if getattr(self, "ball_trail", None):
+                for idx, (tx, ty, tz) in enumerate(self.ball_trail):
+                    bx_t, by_t = camera.apply_pos(tx, ty - tz)
+                    alpha = int(120 * (idx + 1) / len(self.ball_trail))
+                    trail_color = (255, 165, 0, alpha)
+                    trail_surf = pygame.Surface((30, 30), pygame.SRCALPHA)
+                    radius = int(8 * (idx + 1) / len(self.ball_trail))
+                    radius = max(2, radius)
+                    pygame.draw.circle(trail_surf, trail_color, (15, 15), radius)
+                    screen.blit(trail_surf, (bx_t - 15, by_t - 15))
+            
             bx, by = camera.apply_pos(self.ball_x, self.ball_y - self.ball_z)
             if hasattr(self, 'ball_img') and self.ball_img:
                 screen.blit(self.ball_img, (bx - self.ball_img.get_width()//2, by - self.ball_img.get_height()//2))
