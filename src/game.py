@@ -1872,7 +1872,6 @@ class Game:
             self._day1_story_complete = True
         if target_id == "mission_final_showdown":
             self.inventory.add_item("Basement Key", ItemCategory.KEY, "Opens the door to the school basement")
-        from src.inventory import ItemCategory
         if target_id in ("mission_return_tech_lab", "mission_high_school_mainframe", "mission_helping_mia", "mission_server_room", "mission_rooftop_party", "mission_final_showdown"):
             if not self.inventory.has_item("Hacked Credentials"):
                 self.inventory.add_item("Hacked Credentials", ItemCategory.NOTE, "Hacked high school system credentials provided by Alan Chen.")
@@ -3825,7 +3824,6 @@ class Game:
                         obj.completed = True
                         obj.progress = obj.required
                     self.mission_manager.completed_ids.add("mission_tech_club_rep")
-                from src.inventory import ItemCategory
                 if not self.inventory.has_item("Hacked Credentials"):
                     self.inventory.add_item(
                         "Hacked Credentials", ItemCategory.NOTE,
@@ -3891,13 +3889,21 @@ class Game:
         if "start_basketball" in result and result["start_basketball"]:
             opponent = self.npc_manager.get_npc_by_id("npc_marcus_green")
             
+            is_coop = getattr(self, "multiplayer", False)
+            ally = None
+            opp2 = None
+            
+            if is_coop:
+                ally = getattr(self, "remote_player", None)
+                opp2 = self.npc_manager.get_npc_by_id("npc_zachary_cole")
+
             # Clear other NPCs from the court
             try:
                 floor = self.school_map.get_floor(self.current_floor)
                 if floor and hasattr(floor, "basketball_court"):
                     bc = floor.basketball_court
                     for npc in self.npc_manager.get_npcs_on_floor(self.current_floor):
-                        if npc != opponent and npc.rect.colliderect(bc):
+                        if npc not in (opponent, ally, opp2) and npc.rect.colliderect(bc):
                             # Teleport out of the court safely (to the left of it)
                             npc.rect.right = bc.left - 20
                             npc.target_pos = None
@@ -3905,7 +3911,7 @@ class Game:
             except Exception:
                 pass
 
-            self.basketball.start(self.player, opponent, floor)
+            self.basketball.start(self.player, opponent, floor, is_coop=is_coop, ally=ally, opp2=opp2)
             self.state = GameState.BASKETBALL
 
     # ── network ───────────────────────────────────────────────
@@ -3916,6 +3922,34 @@ class Game:
         try:
             player_data = self.player.to_dict()
             player_data["floor"] = self.current_floor
+            player_data["state"] = self.state.value
+            
+            if self.state == GameState.BASKETBALL:
+                bb_data = {
+                    "z": self.basketball.player_z,
+                    "shoot_bar": self.basketball.shoot_bar,
+                    "shooting": self.basketball.shooting,
+                    "blocking": self.basketball.blocking,
+                }
+                if self.is_host:
+                    bb_data.update({
+                        "ball_x": self.basketball.ball_x,
+                        "ball_y": self.basketball.ball_y,
+                        "ball_z": self.basketball.ball_z,
+                        "ball_held_by": self.basketball.ball_held_by,
+                        "pass_in_flight": getattr(self.basketball, "pass_in_flight", False),
+                        "opp_x": self.basketball.opponent.rect.centerx if self.basketball.opponent else 0,
+                        "opp_y": self.basketball.opponent.rect.centery if self.basketball.opponent else 0,
+                        "opp_z": self.basketball.opp_z,
+                        "opp_shooting": getattr(self.basketball, "opp_shooting", False),
+                        "opp2_x": self.basketball.opp2.rect.centerx if getattr(self.basketball, "opp2", None) else 0,
+                        "opp2_y": self.basketball.opp2.rect.centery if getattr(self.basketball, "opp2", None) else 0,
+                        "opp2_z": getattr(self.basketball, "opp2_z", 0),
+                        "opp2_shooting": getattr(self.basketball, "opp2_shooting", False),
+                        "p_score": self.basketball.player_score,
+                        "o_score": self.basketball.opp_score,
+                    })
+                player_data["bb_data"] = bb_data
             
             # Host: also send NPC data for synchronization
             if self.is_host:
@@ -3930,6 +3964,16 @@ class Game:
             remote = self.network.get_remote_data()
             
             if remote and self.remote_player:
+                r_state = remote.get("state")
+                
+                # Auto teleport to basketball
+                if r_state == GameState.BASKETBALL.value and self.state != GameState.BASKETBALL:
+                    self._handle_interaction_result({"start_basketball": True})
+                
+                if self.state == GameState.BASKETBALL and "bb_data" in remote:
+                    if hasattr(self, "basketball"):
+                        self.basketball.sync_state(remote["bb_data"], self.is_host)
+                
                 # Apply floor-specific decay for remote player
                 in_main_building = self.current_floor in (FLOOR_1F, FLOOR_2F)
                 decay = 2 if in_main_building else 1
@@ -4132,8 +4176,12 @@ class Game:
 
         for npc in self.npc_manager.get_npcs_on_floor(self.current_floor):
             if self._is_npc_on_camera(npc):
-                if self.state == GameState.BASKETBALL and hasattr(self.basketball, "opponent") and npc == self.basketball.opponent:
-                    continue
+                if self.state == GameState.BASKETBALL:
+                    if hasattr(self.basketball, "opponent") and npc == self.basketball.opponent:
+                        continue
+                    if getattr(self.basketball, "is_coop", False):
+                        if npc == getattr(self.basketball, "ally", None) or npc == getattr(self.basketball, "opp2", None):
+                            continue
                 drawables.append({
                     "type": "npc",
                     "obj": npc,
