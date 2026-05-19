@@ -2014,7 +2014,7 @@ class Game:
 
         npc = self._nearest_npc(NPC_INTERACTION_RANGE)
         if npc and npc.health > 0:
-            if npc.id == "npc_marcus_green" and self.current_floor != FLOOR_CAMPUS:
+            if npc.id == "npc_marcus_green" and self.current_floor != FLOOR_COLISEUM_INTERIOR:
                 self.ui.show_notification("Marcus Green is not in the Sports Arena right now.", NOTIF_WARNING)
                 return
 
