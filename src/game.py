@@ -119,6 +119,32 @@ class Game:
         self._marcus_win_dialogue_completed: bool = False
         self._marcus_win_dialogue_lines: list[tuple[str, str]] = []
 
+        # ── Day 4: Rooftop party scene state ──
+        self._day4_npcs_placed: bool = False              # Ava/Marcus/Noah on rooftop
+        self._ava_rooftop_dialogue_active: bool = False   # Talking to Ava at party
+        self._ava_rooftop_dialogue_index: int = 0
+        self._ava_rooftop_dialogue_lines: list[tuple[str, str]] = []
+        self._ava_rooftop_dialogue_completed: bool = False
+        # Cinematic: Marcus & Noah walk to stairs
+        self._party_exit_cinematic_active: bool = False
+        self._party_exit_phase: str = ""    # "pan_to_npcs" | "npcs_walking" | "pan_back" | "done"
+        self._party_exit_timer: float = 0.0
+        self._party_exit_cam_target: tuple = (0, 0)
+        self._party_exit_cam_origin: tuple = (0, 0)
+        # Phone spy mechanic (Mission 12)
+        self._ava_phone_on_chair: bool = False            # Phone visible on chair
+        self._ava_phone_chair_pos: tuple = (1485, 770)    # World pos of the chair (east chair)
+        self._ava_phone_prompt_active: bool = False       # "Press ENTER to check phone"
+        self._ava_phone_spying: bool = False              # Player is viewing Ava's phone
+        self._ava_phone_timer: float = 15.0              # Countdown timer
+        self._ava_phone_timer_active: bool = False        # Countdown running
+        self._ava_phone_completed: bool = False           # Mission 12 done
+        self._ava_phone_found_chat: bool = False          # Group chat discovered
+        # Coop: Lena talks to NPCs to add time
+        self._coop_time_bonus_npcs: set = set()           # NPCs Lena has talked to
+        # Post-phone narrative
+        self._player_bad_feeling_shown: bool = False      # "bad feeling" monologue shown
+
         # Day-cycle
         self.day_number     = 1
         self.event_queue    = EventQueue()
@@ -227,6 +253,12 @@ class Game:
     # ──────────────────────────────────────────────────────────
     #  INITIALISATION HELPERS
     # ──────────────────────────────────────────────────────────
+
+    def _get_parked_vehicle_rects(self) -> list[pygame.Rect]:
+        """Collision boxes for every visible vehicle in the campus parking lot."""
+        rects = [self._parked_car_rect]
+        rects.extend(rect for rect, _, _ in self._extra_parked_cars)
+        return rects
 
     def _init_map(self):
         self.school_map    = SchoolMap()
@@ -458,6 +490,9 @@ class Game:
 
     def _place_ava_for_story(self):
         self._place_alan_chen_for_story()
+        # On Day 4 Ava is on the Rooftop — don't override her position
+        if self.day_number >= 4:
+            return
         ava = self.npc_manager.get_npc_by_id("npc_ava_thompson")
         floor1 = self.school_map.get_floor(FLOOR_1F)
         if not ava or not floor1:
@@ -834,6 +869,32 @@ class Game:
                 elif event.type == pygame.MOUSEBUTTONDOWN:
                     self._advance_marcus_win_dialogue()
                 continue
+            if getattr(self, "_ava_rooftop_dialogue_active", False):
+                if event.type == pygame.KEYDOWN and event.key in (pygame.K_SPACE, pygame.K_RETURN):
+                    self._advance_ava_rooftop_dialogue()
+                elif event.type == pygame.MOUSEBUTTONDOWN:
+                    self._advance_ava_rooftop_dialogue()
+                continue
+            if getattr(self, "_bad_feeling_active", False):
+                if event.type == pygame.KEYDOWN and event.key in (pygame.K_SPACE, pygame.K_RETURN):
+                    self._advance_bad_feeling()
+                elif event.type == pygame.MOUSEBUTTONDOWN:
+                    self._advance_bad_feeling()
+                continue
+            if getattr(self, "_ava_phone_spying", False):
+                if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_ESCAPE:
+                        if getattr(self, "_ava_phone_active_chat", None) is not None:
+                            self._ava_phone_active_chat = None
+                        else:
+                            self._ava_phone_spying = False
+                            self._ava_phone_timer_active = False
+                elif event.type == pygame.MOUSEBUTTONDOWN:
+                    for rect, key in getattr(self, "_ava_phone_chat_rects", []):
+                        if rect.collidepoint(event.pos):
+                            self._ava_phone_active_chat = key
+                            break
+                continue
             if getattr(self, 'phone', None) and self.phone.is_visible:
                 if self.phone.handle_input(event):
                     continue
@@ -944,6 +1005,25 @@ class Game:
         if getattr(self, "_oscar_win_dialogue_active", False):
             if controller.is_confirm_pressed() or controller.is_interact_pressed():
                 self._advance_oscar_win_dialogue()
+            return
+
+        if getattr(self, "_ava_rooftop_dialogue_active", False):
+            if controller.is_confirm_pressed() or controller.is_interact_pressed():
+                self._advance_ava_rooftop_dialogue()
+            return
+
+        if getattr(self, "_bad_feeling_active", False):
+            if controller.is_confirm_pressed() or controller.is_interact_pressed():
+                self._advance_bad_feeling()
+            return
+
+        if getattr(self, "_ava_phone_spying", False):
+            if controller.is_cancel_pressed():
+                if getattr(self, "_ava_phone_active_chat", None) is not None:
+                    self._ava_phone_active_chat = None
+                else:
+                    self._ava_phone_spying = False
+                    self._ava_phone_timer_active = False
             return
 
         # During the ping pong minigame, delegate all controller input (including
@@ -1175,6 +1255,9 @@ class Game:
                 if getattr(self, '_computer_prompt_active', False):
                     self._start_mainframe_login()
                     return
+                if getattr(self, "_ava_phone_prompt_active", False):
+                    self._try_interact()
+                    return
                 npc = self._nearest_npc(NPC_INTERACTION_RANGE)
                 if npc:
                     self._try_interact()
@@ -1270,7 +1353,17 @@ class Game:
                 groups = ["Athletes", "Tech Club", "Populars", "Academics", "Rebels", "Outsiders"]
                 cur_idx = groups.index(self.selected_yearbook_group) if self.selected_yearbook_group in groups else 0
                 self.selected_yearbook_group = groups[(cur_idx + move_v) % len(groups)]
+                self.yearbook_scroll_offset = 0
                 print(f"[Yearbook] Controller cycled group to: {self.selected_yearbook_group}")
+
+            # Page UP/DOWN inside the active Yearbook group's NPC list using LB and RB
+            from src.controller import XBOX_LB, XBOX_RB
+            if controller.is_button_pressed(XBOX_LB):
+                self.yearbook_scroll_offset = max(0, self.yearbook_scroll_offset - 1)
+                print(f"[Yearbook] Controller scrolled UP. Offset: {self.yearbook_scroll_offset}")
+            elif controller.is_button_pressed(XBOX_RB):
+                self.yearbook_scroll_offset += 1
+                print(f"[Yearbook] Controller scrolled DOWN. Offset: {self.yearbook_scroll_offset}")
 
     def _handle_controller_map(self, controller):
         """Handle controller input during MAP state."""
@@ -1575,6 +1668,11 @@ class Game:
                 self._start_mainframe_login()
                 return
             
+            # Priority 1.5: Phone Check
+            if getattr(self, "_ava_phone_prompt_active", False):
+                self._try_interact()
+                return
+
             # Priority 2: Building Entrance
             if self._try_building_entry_confirm():
                 return
@@ -1655,8 +1753,9 @@ class Game:
             ("mission_high_school_mainframe", 2, "Day 2: High School Mainframe", "Mission 8: Switch to Lena, go to the computer marked with X in the Tech Lab and extract information."),
             ("mission_server_room", 3, "Day 3: Talk to Marcus Green", "Mission 9: Talk to Marcus Green in the Athletic Coliseum."),
             ("mission_rooftop_party", 4, "Day 4: Rooftop Party", "Mission 10: Go to the Rooftop party and hang out with the populars."),
-            ("mission_helping_mia", 3, "Day 3: Helping Mia", "Side Mission: Talk to Mia Nakamura and confront Ava Patel."),
-            ("mission_final_showdown", 4, "Day 4: Final Showdown", "Mission 11: Enter Basement, disable Smile Club server, confront Director Walsh.")
+            ("mission_talk_ava_rooftop", 4, "Day 4: Find Ava at the Rooftop Party", "Mission 11: Talk to Ava Thompson at the rooftop party."),
+            ("mission_check_ava_phone", 4, "Day 4: Check Ava's Phone", "Mission 12: Check Ava Thompson's phone before she comes back (15 seconds!)."),
+            ("mission_final_showdown", 4, "Day 4: Final Showdown", "Mission 13: Enter Basement, disable Smile Club server, confront Director Walsh.")
         ]
 
     def _get_current_mission_index(self) -> int:
@@ -1779,6 +1878,21 @@ class Game:
                 self.inventory.add_item("Hacked Credentials", ItemCategory.NOTE, "Hacked high school system credentials provided by Alan Chen.")
         if target_id == "mission_high_school_mainframe":
             self._ava_needs_to_walk_to_computer = True
+        if target_id in ("mission_rooftop_party", "mission_talk_ava_rooftop", "mission_check_ava_phone"):
+            self._place_day4_rooftop_npcs()
+            if target_id == "mission_talk_ava_rooftop":
+                # Mission 10 already done
+                m10 = self.mission_manager.missions.get("mission_rooftop_party")
+                if m10:
+                    m10.status = MissionStatus.COMPLETED
+                    self.mission_manager.completed_ids.add("mission_rooftop_party")
+            if target_id == "mission_check_ava_phone":
+                # Missions 10+11 done, Ava's phone already on chair
+                self._ava_rooftop_dialogue_completed = True
+                self._ava_phone_on_chair = True
+                self._bad_feeling_active = False
+                self._player_bad_feeling_shown = True
+
 
         self.player.rect.center = (2000, 2700)
         self.current_floor = FLOOR_CAMPUS
@@ -1841,9 +1955,27 @@ class Game:
         return None
 
     def _try_interact(self):
-        """Interact with nearest NPC."""
+        """Interact with nearest NPC or with Ava's phone on rooftop."""
+        # Check phone on chair first (proximity ENTER)
+        if (self.current_floor == FLOOR_ROOFTOP
+                and getattr(self, "_ava_phone_on_chair", False)
+                and getattr(self, "_ava_phone_prompt_active", False)
+                and not getattr(self, "_ava_phone_spying", False)):
+            self._start_ava_phone_check()
+            return
+
         npc = self._nearest_npc(NPC_INTERACTION_RANGE)
         if npc and npc.health > 0:
+            # Day 4: Ava at rooftop party — use custom cinematic dialogue
+            if (self.current_floor == FLOOR_ROOFTOP
+                    and npc.id == "npc_ava_thompson"
+                    and self.day_number >= 4
+                    and not getattr(self, "_ava_rooftop_dialogue_completed", False)):
+                self._begin_ava_rooftop_dialogue()
+                self.player.vx = 0
+                self.player.vy = 0
+                return
+
             if npc.id == "npc_gordon":
                 self.previous_state = self.state
                 self.state = GameState.SKILL_TREE_SCREEN
@@ -1865,6 +1997,14 @@ class Game:
                 self.player.vy = 0
                 self.player._dashing = False
             else:
+                # Co-op: Lena talks to party NPCs to add time to phone timer
+                if (self.multiplayer and self.current_floor == FLOOR_ROOFTOP
+                        and getattr(self, "_ava_phone_timer_active", False)
+                        and npc.id not in getattr(self, "_coop_time_bonus_npcs", set())):
+                    self._coop_time_bonus_npcs.add(npc.id)
+                    self._ava_phone_timer = min(15.0, self._ava_phone_timer + 3.0)
+                    self.ui.show_notification(f"{npc.name} is keeping Ava busy! +3s", NOTIF_SUCCESS, 2.5)
+
                 # Use new social dialogue system for regular NPCs
                 if self.social_dialogue_manager.try_start(npc, self.player):
                     self.state = GameState.SOCIAL_INTERACTION
@@ -2397,6 +2537,8 @@ class Game:
             npc_walls = list(floor.walls) if floor else []
             if self._player_spawned:
                 npc_walls.append(self.player.rect)
+            if self.current_floor == FLOOR_CAMPUS:
+                npc_walls.extend(self._get_parked_vehicle_rects())
             if floor:
                 for door in floor.doors:
                     if door.locked:
@@ -2598,8 +2740,24 @@ class Game:
         self._tick_time(current_dt)
         self._update_class_schedule()
         
-        # Update rooftop party for Day 3 event
+        # Update rooftop party for Day 4 event
         self.rooftop_party.update(dt, self.day_number)
+
+        # Day 4 party cinematic state machine
+        if getattr(self, "_party_exit_cinematic_active", False):
+            self._update_party_exit_cinematic(dt)
+
+        # Ava phone proximity check + countdown
+        if self.current_floor == FLOOR_ROOFTOP and getattr(self, "_ava_phone_on_chair", False):
+            px, py = self.player.rect.center
+            cx, cy = self._ava_phone_chair_pos
+            dist = ((px - cx) ** 2 + (py - cy) ** 2) ** 0.5
+            self._ava_phone_prompt_active = dist < 80 and not self._ava_phone_spying
+        else:
+            self._ava_phone_prompt_active = False
+
+        if getattr(self, "_ava_phone_timer_active", False):
+            self._update_ava_phone_timer(dt)
         
         # Transition cooldown
         if self._transition_cooldown > 0:
@@ -2653,9 +2811,7 @@ class Game:
 
         # Parked car is solid on campus
         if self.current_floor == FLOOR_CAMPUS:
-            walls.append(self._parked_car_rect)
-            for rect, _, _ in self._extra_parked_cars:
-                walls.append(rect)
+            walls.extend(self._get_parked_vehicle_rects())
         
         # Rooftop party collisions
         if self.current_floor == FLOOR_ROOFTOP and self.day_number >= 3:
@@ -2823,6 +2979,8 @@ class Game:
         # NPC AI — only update NPCs on current floor
         npc_walls = list(floor.walls) if floor else []
         npc_walls.append(self.player.rect)
+        if self.current_floor == FLOOR_CAMPUS:
+            npc_walls.extend(self._get_parked_vehicle_rects())
         
         # Add locked doors to NPC walls to block them too
         if floor:
@@ -2933,8 +3091,12 @@ class Game:
                 # Auto-activate newly available missions
                 for m in self.mission_manager.get_available():
                     self.mission_manager.activate_mission(m.id)
-                    if m.id == "mission_final_showdown":
-                        self._current_main_mission_text = "Mission 11: Enter the Basement, disable the Smile Club server, and confront Director Walsh."
+                    if m.id == "mission_talk_ava_rooftop":
+                        self._current_main_mission_text = "Mission 11: Find Ava Thompson at the rooftop party."
+                    elif m.id == "mission_check_ava_phone":
+                        self._current_main_mission_text = "Mission 12: Check Ava's phone before she comes back! (15 seconds)"
+                    elif m.id == "mission_final_showdown":
+                        self._current_main_mission_text = "Mission 13: Enter the Basement, disable the Smile Club server, and confront Director Walsh."
 
         # Update markers for key NPCs
         self._update_minimap_markers()
@@ -3902,6 +4064,12 @@ class Game:
             self._draw_oscar_win_dialogue()
         if getattr(self, "_marcus_win_dialogue_active", False):
             self._draw_marcus_win_dialogue()
+        if getattr(self, "_ava_rooftop_dialogue_active", False):
+            self._draw_rooftop_party_dialogue()
+        if getattr(self, "_bad_feeling_active", False):
+            self._draw_rooftop_party_dialogue(feeling=True)
+        if getattr(self, "_ava_phone_spying", False):
+            self._draw_ava_phone_spy_ui()
 
         # ── Fullscreen overlays (drawn on top of everything) ──
         if self._day_transition_active:
@@ -4026,6 +4194,10 @@ class Game:
         # Basement lighting overlay (covers walls, NPCs, everything)
         if self.current_floor == FLOOR_BASEMENT and floor:
              floor._draw_basement_lighting(target_surf, self.camera, self.player)
+
+        # Draw Ava's phone sitting on a chair (Rooftop, Day 4)
+        if self.current_floor == FLOOR_ROOFTOP:
+            self._draw_ava_phone_on_chair(target_surf, self.camera)
             
         if self.camera.zoom != 1.0:
             # Scale up to screen size and blit
@@ -4461,6 +4633,489 @@ class Game:
         self.ui.trigger_announcement("DAY 3 COMPLETE", message)
         self.ui.show_notification(message, NOTIF_SUCCESS, 8.0)
 
+    # ──────────────────────────────────────────────────────────
+    #  DAY 4 — ROOFTOP PARTY SCENE
+    # ──────────────────────────────────────────────────────────
+
+    def _place_day4_rooftop_npcs(self):
+        """Place Ava, Marcus, Noah and the sibling on the Rooftop for Day 4."""
+        rooftop = self.school_map.get_floor(FLOOR_ROOFTOP)
+        if not rooftop:
+            return
+
+        placements = [
+            ("npc_ava_thompson",  (1520, 770),  "dlg_ava_rooftop_party"),
+            ("npc_marcus_green",  (1280, 860),  None),
+            ("npc_noah_carter",   (1280, 920),  None),
+        ]
+        for npc_id, pos, dlg in placements:
+            npc = self.npc_manager.get_npc_by_id(npc_id)
+            if not npc:
+                continue
+            npc.current_floor = FLOOR_ROOFTOP
+            npc.rect.center   = pos
+            npc.ai_enabled    = False
+            npc.ignore_schedule = True
+            npc.stop_at_target  = False
+            npc.target_pos      = None
+            npc.target_queue    = []
+            npc.show_name       = True
+            if dlg:
+                npc.dialogue_ids = {"aiden": dlg, "lena": dlg}
+
+        # Sibling also attends the party
+        sib = getattr(self, "sibling_npc", None)
+        if sib:
+            sib.current_floor = FLOOR_ROOFTOP
+            sib.rect.center   = (1900, 880)
+            sib.ai_enabled    = True
+            sib.ignore_schedule = True
+            sib.bound_rect    = pygame.Rect(1250, 560, 1100, 900)
+
+        self._day4_npcs_placed = True
+
+    def _begin_ava_rooftop_dialogue(self):
+        """Start Mission 11: greeting conversation with Ava at the rooftop."""
+        if getattr(self, "_ava_rooftop_dialogue_completed", False):
+            return
+        pname = self.player.character.value.capitalize()
+        self._ava_rooftop_dialogue_lines = [
+            ("Ava Thompson", "Hey! You made it! I'm so glad you came."),
+            (pname, "This place is incredible. I've never been up here before."),
+            ("Ava Thompson", "Right? The view is perfect. Marcus throws the best parties."),
+            (pname, "Where is Marcus, actually?"),
+            ("Ava Thompson", "He's right over there with Noah... wait, where are they going?"),
+        ]
+        self._ava_rooftop_dialogue_index  = 0
+        self._ava_rooftop_dialogue_active = True
+        self._ava_rooftop_dialogue_part2_active = False
+
+    def _begin_ava_rooftop_dialogue_part2(self):
+        pname = self.player.character.value.capitalize()
+        self._ava_rooftop_dialogue_lines = [
+            ("Ava Thompson", "That's weird... Anyway, let me go grab us some drinks..."),
+            ("Ava Thompson", "Actually — I'll be right back. Don't go anywhere!"),
+        ]
+        self._ava_rooftop_dialogue_index = 0
+        self._ava_rooftop_dialogue_active = True
+        self._ava_rooftop_dialogue_part2_active = True
+
+    def _advance_ava_rooftop_dialogue(self):
+        if not self._ava_rooftop_dialogue_active:
+            return
+        self._ava_rooftop_dialogue_index += 1
+        if self._ava_rooftop_dialogue_index >= len(self._ava_rooftop_dialogue_lines):
+            self._finish_ava_rooftop_dialogue()
+
+    def _finish_ava_rooftop_dialogue(self):
+        self._ava_rooftop_dialogue_active = False
+        
+        if getattr(self, "_ava_rooftop_dialogue_part2_active", False):
+            self._ava_rooftop_dialogue_part2_active = False
+            self._ava_rooftop_dialogue_completed = True
+
+            # Complete Mission 11
+            m = self.mission_manager.missions.get("mission_talk_ava_rooftop")
+            if m:
+                m.status = MissionStatus.COMPLETED
+                for obj in m.objectives:
+                    obj.completed = True
+                    obj.progress  = obj.required
+                self.mission_manager.completed_ids.add("mission_talk_ava_rooftop")
+
+            # Ava disappears (walks off)
+            ava = self.npc_manager.get_npc_by_id("npc_ava_thompson")
+            if ava:
+                ava.ai_enabled   = True
+                ava.target_pos   = (1784, 400)   # walk north toward backstage
+                ava.stop_at_target = True
+
+            # Show Ava's phone on the chair
+            self._ava_phone_on_chair = True
+            # Show "bad feeling" monologue
+            self._show_bad_feeling_monologue()
+        else:
+            # Start Marcus + Noah exit cinematic
+            self._start_party_exit_cinematic()
+
+    def _start_party_exit_cinematic(self):
+        """Cinematic: camera pans to Marcus & Noah walking to the stairs."""
+        marcus = self.npc_manager.get_npc_by_id("npc_marcus_green")
+        noah   = self.npc_manager.get_npc_by_id("npc_noah_carter")
+
+        if marcus:
+            marcus.ai_enabled    = True
+            marcus.stop_at_target = True
+            marcus.target_pos    = (1200, 900)
+            marcus.target_queue  = [(1050, 120), (800, 150), "SWITCH_TO_F1", (1500, 500)]
+            marcus.speed_multiplier = 3.5
+        if noah:
+            noah.ai_enabled      = True
+            noah.stop_at_target  = True
+            noah.target_pos      = (1200, 900)
+            noah.target_queue    = [(1050, 120), (800, 150), "SWITCH_TO_F1", (1500, 500)]
+            noah.speed_multiplier = 3.5
+
+        # Camera pan target = midpoint of Marcus & Noah
+        if marcus:
+            self._party_exit_cam_target = marcus.rect.center
+        self._party_exit_cam_origin = (self.camera.offset.x, self.camera.offset.y)
+        self._party_exit_timer         = 0.0
+        self._party_exit_phase         = "pan_to_npcs"
+        self._party_exit_cinematic_active = True
+
+    def _update_party_exit_cinematic(self, dt: float):
+        """State machine for the Marcus/Noah exit cinematic."""
+        if not self._party_exit_cinematic_active:
+            return
+
+        if self._party_exit_phase == "pan_to_npcs":
+            self._party_exit_timer += dt
+            # Smooth pan to Marcus over 1.5 s
+            t = min(1.0, self._party_exit_timer / 1.5)
+            t_ease = t * t * (3 - 2 * t)
+            marcus = self.npc_manager.get_npc_by_id("npc_marcus_green")
+            if marcus:
+                tx = marcus.rect.centerx - SCREEN_WIDTH  // 2
+                ty = marcus.rect.centery - SCREEN_HEIGHT // 2
+                ox, oy = self._party_exit_cam_origin
+                self.camera.offset.x = ox + (tx - ox) * t_ease
+                self.camera.offset.y = oy + (ty - oy) * t_ease
+            if self._party_exit_timer >= 1.5:
+                self._party_exit_phase = "npcs_walking"
+                self._party_exit_timer = 0.0
+
+        elif self._party_exit_phase == "npcs_walking":
+            self._party_exit_timer += dt
+            marcus = self.npc_manager.get_npc_by_id("npc_marcus_green")
+            if marcus:
+                # Follow Marcus with camera as he walks to the stairs
+                tx = marcus.rect.centerx - SCREEN_WIDTH  // 2
+                ty = marcus.rect.centery - SCREEN_HEIGHT // 2
+                self.camera.offset.x = tx
+                self.camera.offset.y = ty
+
+            reached = (not marcus) or (marcus.current_floor != FLOOR_ROOFTOP) or self._party_exit_timer > 5.0
+            if reached:
+                # Remove Marcus & Noah from rooftop if timer exceeded
+                for nid in ("npc_marcus_green", "npc_noah_carter"):
+                    npc = self.npc_manager.get_npc_by_id(nid)
+                    if npc and npc.current_floor == FLOOR_ROOFTOP:
+                        npc.current_floor = FLOOR_1F
+                        npc.rect.center   = (1500, 500)
+                        npc.ai_enabled    = False
+                self._party_exit_phase = "pan_back"
+                self._party_exit_timer = 0.0
+                # Save camera origin for pan-back
+                self._party_exit_cam_origin = (self.camera.offset.x, self.camera.offset.y)
+
+        elif self._party_exit_phase == "pan_back":
+            self._party_exit_timer += dt
+            t = min(1.0, self._party_exit_timer / 1.5)
+            t_ease = t * t * (3 - 2 * t)
+            px = self.player.rect.centerx - SCREEN_WIDTH  // 2
+            py = self.player.rect.centery - SCREEN_HEIGHT // 2
+            ox, oy = self._party_exit_cam_origin
+            self.camera.offset.x = ox + (px - ox) * t_ease
+            self.camera.offset.y = oy + (py - oy) * t_ease
+            if self._party_exit_timer >= 1.5:
+                self._party_exit_phase         = "done"
+                self._party_exit_cinematic_active = False
+                # Start part 2 of dialogue
+                self._begin_ava_rooftop_dialogue_part2()
+
+    def _show_bad_feeling_monologue(self):
+        """Narrative text box: player senses something is wrong."""
+        pname = self.player.character.value.capitalize()
+        self._bad_feeling_lines = [
+            (pname, "...Everyone left at the same time. That's weird."),
+            (pname, "Marcus and Noah were whispering before they walked off."),
+            (pname, "And Ava just... disappeared. Is something going on?"),
+            (pname, "Wait — she left her phone on that chair."),
+            (pname, "I know I shouldn't... but something doesn't feel right about all this."),
+        ]
+        self._bad_feeling_index  = 0
+        self._bad_feeling_active = True
+
+    def _advance_bad_feeling(self):
+        if not getattr(self, '_bad_feeling_active', False):
+            return
+        self._bad_feeling_index += 1
+        if self._bad_feeling_index >= len(self._bad_feeling_lines):
+            self._bad_feeling_active = False
+            self._player_bad_feeling_shown = True
+            # Unlock Mission 12
+            self.mission_manager.unlock_mission("mission_check_ava_phone")
+            self.mission_manager.activate_mission("mission_check_ava_phone")
+            self.mission_manager._refresh_availability()
+            self._current_main_mission_text = "Mission 12: Check Ava's phone before she comes back! (15 seconds)"
+            self.ui.show_notification("New mission! Check Ava's phone — you have 15 seconds!", NOTIF_WARNING, 5.0)
+
+    def _start_ava_phone_check(self):
+        """Player presses ENTER near the phone — start the spy mechanic."""
+        self._ava_phone_spying      = True
+        self._ava_phone_timer       = 15.0
+        self._ava_phone_timer_active = True
+        self._ava_phone_prompt_active = False
+        # Build Ava's phone messages
+        self._build_ava_phone_messages()
+
+    def _build_ava_phone_messages(self):
+        """Populate Ava's fake phone with lots of chats (including the secret group chat)."""
+        import uuid
+        msgs = {}
+
+        def add(npc_id, name, lines):
+            msgs[npc_id] = []
+            for sender, text in lines:
+                msgs[npc_id].append({
+                    "sender": sender if sender != "ava" else "Ava Thompson",
+                    "text": text,
+                    "is_player": sender == "ava"
+                })
+
+        # Decoy chats
+        add("npc_mia", "Mia Nakamura", [
+            ("Mia Nakamura", "Hey Ava! Are you coming to the art fair next week?"),
+            ("ava", "I'll try! It depends on the party this weekend."),
+            ("Mia Nakamura", "Hope to see you there! 🎨"),
+        ])
+        add("npc_sophie", "Sophie Chen", [
+            ("Sophie Chen", "Did you finish the chem assignment?"),
+            ("ava", "Almost. The last problem is killing me lol"),
+            ("Sophie Chen", "Same!! Let me know if you figure it out"),
+        ])
+        add("npc_dylan", "Dylan Brooks", [
+            ("Dylan Brooks", "Party tonight was epic btw"),
+            ("ava", "Right?! Best one yet."),
+            ("Dylan Brooks", "We have to do this again next month."),
+        ])
+        add("npc_rnd_01", "Jayden Mills", [
+            ("Jayden Mills", "Ava do you have the biology notes from Monday?"),
+            ("ava", "Check the shared drive, I uploaded them."),
+            ("Jayden Mills", "You're a lifesaver!!"),
+        ])
+        add("npc_rnd_02", "Camila Torres", [
+            ("Camila Torres", "Hey, are you good? You seemed stressed at lunch."),
+            ("ava", "Yeah just a lot going on. I'll explain later."),
+            ("Camila Torres", "Okay, I'm here for you! 💜"),
+        ])
+        add("npc_rnd_03", "Ethan Ross", [
+            ("Ethan Ross", "Love the fit today btw"),
+            ("ava", "Thank you!! New jacket 😊"),
+        ])
+        add("npc_rnd_04", "Priya Sharma", [
+            ("Priya Sharma", "Did you see what they posted on the school feed?"),
+            ("ava", "No?? what happened"),
+            ("Priya Sharma", "Drama as always lol. Someone got called out."),
+            ("ava", "Of course."),
+        ])
+        add("npc_rnd_05", "Coach Reyes", [
+            ("Coach Reyes", "Reminder: sports day registration closes Friday."),
+            ("ava", "Got it, thanks Coach."),
+        ])
+        # THE SECRET GROUP CHAT — must be found by player
+        chat_key = "group_smile_club"
+        msgs[chat_key] = [
+            {"sender": "Marcus Green",  "text": "Everything set for tonight?", "is_player": False},
+            {"sender": "Noah Carter",   "text": "Yep. Files are ready to upload.", "is_player": False},
+            {"sender": "Ava Thompson",  "text": "Perfect. Nobody suspects anything.", "is_player": True},
+            {"sender": "Marcus Green",  "text": "Meet in the basement at midnight. Use the side stairs so no one sees.", "is_player": False},
+            {"sender": "Noah Carter",   "text": "The new data on the populars should finish them. This is it.", "is_player": False},
+            {"sender": "Ava Thompson",  "text": "Don't be late. We expose everything tonight.", "is_player": True},
+        ]
+
+        self._ava_phone_messages = msgs
+        self._ava_phone_chats    = list(msgs.keys())
+        self._ava_phone_active_chat = None
+        self._ava_phone_scroll   = 0
+
+    def _update_ava_phone_timer(self, dt: float):
+        """Tick the 15-second countdown for Mission 12."""
+        if not self._ava_phone_timer_active:
+            return
+        self._ava_phone_timer -= dt
+        # Cooperative bonus: Lena talks to party NPCs → +3s each
+        if self.multiplayer:
+            sib = getattr(self, "remote_player", None)
+            # remote_player talks to rooftop NPCs
+            # (handled in _handle_interaction_press for sibling side)
+            pass
+        if self._ava_phone_timer <= 0.0:
+            self._ava_phone_timer       = 0.0
+            self._ava_phone_timer_active = False
+            self._ava_phone_spying       = False
+            # Ava returns → mission fail
+            self.ui.show_notification("Ava came back! You didn't have enough time...", NOTIF_ERROR, 5.0)
+            self._ava_phone_on_chair = False
+            # Respawn Ava
+            ava = self.npc_manager.get_npc_by_id("npc_ava_thompson")
+            if ava:
+                ava.current_floor = FLOOR_ROOFTOP
+                ava.rect.center   = (1784, 800)
+                ava.ai_enabled    = False
+
+    def _complete_ava_phone_mission(self):
+        """Player found the secret chat — Mission 12 complete."""
+        self._ava_phone_found_chat   = True
+        self._ava_phone_completed    = True
+        self._ava_phone_spying       = False
+        self._ava_phone_timer_active = False
+        self._ava_phone_on_chair     = False
+
+        m = self.mission_manager.missions.get("mission_check_ava_phone")
+        if m:
+            m.status = MissionStatus.COMPLETED
+            for obj in m.objectives:
+                obj.completed = True
+                obj.progress  = obj.required
+            self.mission_manager.completed_ids.add("mission_check_ava_phone")
+
+        self.mission_manager.unlock_mission("mission_final_showdown")
+        self.mission_manager.activate_mission("mission_final_showdown")
+        self.mission_manager._refresh_availability()
+        self._current_main_mission_text = "Mission 13: Enter the Basement and confront the Smile Club!"
+        self.ui.trigger_announcement("EVIDENCE FOUND!", "They're meeting in the basement tonight!")
+        self.ui.show_notification("Marcus, Noah, and Ava are planning something in the Basement!", NOTIF_WARNING, 8.0)
+
+    def _draw_ava_phone_spy_ui(self):
+        """Draw Ava's phone overlay with pink background, chat list, and countdown bar."""
+        sw, sh = self.screen.get_width(), self.screen.get_height()
+
+        # Dim background
+        ov = pygame.Surface((sw, sh), pygame.SRCALPHA)
+        ov.fill((0, 0, 0, 180))
+        self.screen.blit(ov, (0, 0))
+
+        # Phone frame (pink)
+        from settings import VT323_PATH
+        ph_w, ph_h = 340, 560
+        ph_x = (sw - ph_w) // 2
+        ph_y = (sh - ph_h) // 2
+
+        pygame.draw.rect(self.screen, (30, 10, 20), (ph_x, ph_y, ph_w, ph_h), border_radius=20)
+        pygame.draw.rect(self.screen, (255, 100, 180), (ph_x, ph_y, ph_w, ph_h), 3, border_radius=20)
+
+        # Status bar
+        fnt_sm = pygame.font.Font(VT323_PATH, 14)
+        fnt_md = pygame.font.Font(VT323_PATH, 16)
+        fnt_lg = pygame.font.Font(VT323_PATH, 18)
+
+        bar_surf = pygame.Surface((ph_w, 24), pygame.SRCALPHA)
+        bar_surf.fill((255, 100, 180, 80))
+        self.screen.blit(bar_surf, (ph_x, ph_y + 4))
+        owner_lbl = fnt_sm.render("📱  Ava Thompson's Phone", True, (255, 200, 230))
+        self.screen.blit(owner_lbl, (ph_x + 8, ph_y + 7))
+
+        # Countdown bar
+        bar_y = ph_y + 30
+        bar_total_w = ph_w - 16
+        ratio = max(0.0, self._ava_phone_timer / 15.0)
+        bar_color = (
+            int(255 * (1 - ratio)),
+            int(220 * ratio),
+            60
+        )
+        pygame.draw.rect(self.screen, (40, 20, 30), (ph_x + 8, bar_y, bar_total_w, 12), border_radius=6)
+        pygame.draw.rect(self.screen, bar_color, (ph_x + 8, bar_y, int(bar_total_w * ratio), 12), border_radius=6)
+        time_lbl = fnt_sm.render(f"{self._ava_phone_timer:.1f}s", True, bar_color)
+        self.screen.blit(time_lbl, (ph_x + ph_w - 40, bar_y - 1))
+
+        content_y = bar_y + 18
+
+        if self._ava_phone_active_chat is None:
+            # Chat list
+            header = fnt_md.render("Messages", True, (255, 200, 230))
+            self.screen.blit(header, (ph_x + 10, content_y))
+            content_y += 22
+
+            chat_names = {
+                "npc_mia":      "Mia Nakamura",
+                "npc_sophie":   "Sophie Chen",
+                "npc_dylan":    "Dylan Brooks",
+                "npc_rnd_01":   "Jayden Mills",
+                "npc_rnd_02":   "Camila Torres",
+                "npc_rnd_03":   "Ethan Ross",
+                "npc_rnd_04":   "Priya Sharma",
+                "npc_rnd_05":   "Coach Reyes",
+                "group_smile_club": "📍 Group Chat",
+            }
+            self._ava_phone_chat_rects = []
+            for key, label in chat_names.items():
+                row_rect = pygame.Rect(ph_x + 6, content_y, ph_w - 12, 34)
+                col = (70, 20, 50) if key == "group_smile_club" else (40, 15, 30)
+                bd  = (255, 80, 160) if key == "group_smile_club" else (80, 30, 60)
+                pygame.draw.rect(self.screen, col, row_rect, border_radius=6)
+                pygame.draw.rect(self.screen, bd, row_rect, 1, border_radius=6)
+                lbl = fnt_md.render(label, True, (255, 200, 230) if key == "group_smile_club" else (200, 160, 190))
+                self.screen.blit(lbl, (row_rect.x + 8, row_rect.y + 8))
+                self._ava_phone_chat_rects.append((row_rect, key))
+                content_y += 38
+                if content_y > ph_y + ph_h - 30:
+                    break
+
+            hint = fnt_sm.render("Click a chat to open  |  ESC close", True, (120, 80, 110))
+            self.screen.blit(hint, (ph_x + 8, ph_y + ph_h - 20))
+
+        else:
+            # Open chat view
+            key = self._ava_phone_active_chat
+            is_secret = key == "group_smile_club"
+            chat_names = {
+                "npc_mia": "Mia Nakamura", "npc_sophie": "Sophie Chen",
+                "npc_dylan": "Dylan Brooks", "npc_rnd_01": "Jayden Mills",
+                "npc_rnd_02": "Camila Torres", "npc_rnd_03": "Ethan Ross",
+                "npc_rnd_04": "Priya Sharma", "npc_rnd_05": "Coach Reyes",
+                "group_smile_club": "Group Chat",
+            }
+            header = fnt_md.render(f"← {chat_names.get(key, key)}", True, (255, 180, 220))
+            self.screen.blit(header, (ph_x + 8, content_y))
+            content_y += 24
+
+            msgs = self._ava_phone_messages.get(key, [])
+            for msg in msgs:
+                is_p = msg.get("is_player", False)
+                bubble_col = (60, 20, 50) if is_p else (35, 15, 35)
+                text = fnt_sm.render(f"{msg['sender']}: {msg['text']}", True, (230, 180, 210))
+                tw = min(text.get_width() + 12, ph_w - 20)
+                bx = ph_x + ph_w - tw - 10 if is_p else ph_x + 10
+                pygame.draw.rect(self.screen, bubble_col, (bx - 4, content_y - 2, tw + 4, 20), border_radius=4)
+                self.screen.blit(text, (bx, content_y))
+                content_y += 22
+                if content_y > ph_y + ph_h - 35:
+                    break
+
+            back_hint = fnt_sm.render("ESC: back to chat list", True, (120, 80, 110))
+            self.screen.blit(back_hint, (ph_x + 8, ph_y + ph_h - 20))
+
+            # If secret chat opened → complete mission
+            if is_secret and not self._ava_phone_completed:
+                self._complete_ava_phone_mission()
+
+    def _draw_ava_phone_on_chair(self, target_surf, camera):
+        """Draw the phone icon on the chair world position."""
+        if not self._ava_phone_on_chair:
+            return
+        cx, cy = camera.apply_pos(*self._ava_phone_chair_pos)
+        sw, sh = target_surf.get_width(), target_surf.get_height()
+        if not (-20 < cx < sw + 20 and -20 < cy < sh + 20):
+            return
+        # Phone shadow
+        pygame.draw.ellipse(target_surf, (0, 0, 0, 80), (cx - 10, cy + 14, 20, 6))
+        # Phone body
+        pygame.draw.rect(target_surf, (30, 10, 25), (cx - 8, cy - 14, 16, 28), border_radius=3)
+        pygame.draw.rect(target_surf, (255, 100, 180), (cx - 8, cy - 14, 16, 28), 2, border_radius=3)
+        # Screen
+        pygame.draw.rect(target_surf, (200, 60, 140), (cx - 5, cy - 11, 10, 18), border_radius=1)
+        # Pulsing prompt if in range
+        import math, time
+        pulse = abs(math.sin(time.time() * 3))
+        if self._ava_phone_prompt_active:
+            from settings import VT323_PATH
+            fnt = pygame.font.Font(VT323_PATH, 13)
+            lbl = fnt.render("ENTER: Check phone", True, (255, int(150 + 100 * pulse), 200))
+            target_surf.blit(lbl, (cx - lbl.get_width() // 2, cy - 30))
+
     def _start_noah_guide(self):
         """Set up Noah Carter's walking route through the school."""
         self._noah_guide_active = True
@@ -4673,6 +5328,7 @@ class Game:
             "Noah Carter": "npc_noah_carter",
             "Oscar Jimenez": "npc_oscar",
             "Marcus Green": "npc_marcus_green",
+            "Ava Thompson": "npc_ava_thompson",
             "Aiden": "npc_aiden",
             "Lena": "npc_lena",
             "Aiden Parker": "npc_aiden",
@@ -4740,6 +5396,29 @@ class Game:
         hint = font_hint.render(msg, True, (160, 160, 160))
         self.screen.blit(hint, hint.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT - 30)))
 
+    def _draw_rooftop_party_dialogue(self, feeling: bool = False):
+        """Draw Ava's rooftop greeting OR the bad-feeling monologue with cinematic style."""
+        if feeling:
+            lines = getattr(self, "_bad_feeling_lines", [])
+            idx   = getattr(self, "_bad_feeling_index", 0)
+        else:
+            lines = self._ava_rooftop_dialogue_lines
+            idx   = self._ava_rooftop_dialogue_index
+        if not lines:
+            return
+        idx = min(idx, len(lines) - 1)
+        speaker, text = lines[idx]
+        dim = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+        dim.fill((0, 0, 0, 65))
+        self.screen.blit(dim, (0, 0))
+        self._draw_cinematic_dialogue(text, speaker)
+        font_hint = pygame.font.Font(VT323_PATH, 16)
+        is_ctrl = bool(self.controller and self.controller.connected
+                       and getattr(self.controller, "last_input_method", "keyboard") == "controller")
+        msg = "Press A to continue" if is_ctrl else "Press SPACE to continue"
+        hint = font_hint.render(msg, True, (160, 160, 160))
+        self.screen.blit(hint, hint.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT - 30)))
+
     def _draw_cinematic_wrapped_text(self, text: str, font, colour, x: int, y: int, max_w: int):
         """Render text with simple word-wrap for cinematic dialogue."""
         words = text.split()
@@ -4754,6 +5433,7 @@ class Game:
             else:
                 line = test
         if line:
+
             self.screen.blit(font.render(line, True, colour), (x, y))
 
     def _draw_mission_box(self, mission_text: str):
@@ -4830,6 +5510,18 @@ class Game:
             self.mission_manager.activate_mission("mission_rooftop_party")
             self.mission_manager._refresh_availability()
             self._current_main_mission_text = "Mission 10: Go to the Rooftop party and hang out with the populars."
+            # Place key NPCs on the rooftop for Day 4
+            self._place_day4_rooftop_npcs()
+            # Reset party scene state
+            self._ava_rooftop_dialogue_completed = False
+            self._ava_phone_on_chair = False
+            self._ava_phone_spying = False
+            self._ava_phone_timer = 15.0
+            self._ava_phone_timer_active = False
+            self._ava_phone_completed = False
+            self._ava_phone_found_chat = False
+            self._party_bad_feeling_shown = False
+            self._coop_time_bonus_npcs = set()
         if hasattr(self, 'schedule_manager'):
             self.schedule_manager.reset_day()
         
@@ -4917,10 +5609,8 @@ class Game:
 
     def _draw_parked_car(self, surface=None):
         surface = surface or self.screen
-        """Draw the parked car in the campus parking lot (facing left)."""
+        """Draw the parking-lot school bus rotated to match its collision box."""
         car_surf = self._build_car_surface()
-        # Flip horizontally so the car faces left
-        car_surf = pygame.transform.flip(car_surf, True, False)
 
         if self._car_departure_active and self._car_depart_phase == "drive_away":
             sx, sy = self.camera.apply_pos(self._car_depart_wx, self._car_depart_wy)
@@ -4928,6 +5618,7 @@ class Game:
             surface.blit(car_surf, rect)
         else:
             cr = self.camera.apply_rect(self._parked_car_rect)
+            car_surf = pygame.transform.flip(car_surf, True, False)
             surface.blit(car_surf, (cr.x, cr.y - 10))
 
     def _build_regular_car_surface(self, color: tuple) -> pygame.Surface:
