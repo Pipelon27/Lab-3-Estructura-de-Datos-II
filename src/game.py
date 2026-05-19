@@ -1270,7 +1270,17 @@ class Game:
                 groups = ["Athletes", "Tech Club", "Populars", "Academics", "Rebels", "Outsiders"]
                 cur_idx = groups.index(self.selected_yearbook_group) if self.selected_yearbook_group in groups else 0
                 self.selected_yearbook_group = groups[(cur_idx + move_v) % len(groups)]
+                self.yearbook_scroll_offset = 0
                 print(f"[Yearbook] Controller cycled group to: {self.selected_yearbook_group}")
+
+            # Page UP/DOWN inside the active Yearbook group's NPC list using LB and RB
+            from src.controller import XBOX_LB, XBOX_RB
+            if controller.is_button_pressed(XBOX_LB):
+                self.yearbook_scroll_offset = max(0, self.yearbook_scroll_offset - 1)
+                print(f"[Yearbook] Controller scrolled UP. Offset: {self.yearbook_scroll_offset}")
+            elif controller.is_button_pressed(XBOX_RB):
+                self.yearbook_scroll_offset += 1
+                print(f"[Yearbook] Controller scrolled DOWN. Offset: {self.yearbook_scroll_offset}")
 
     def _handle_controller_map(self, controller):
         """Handle controller input during MAP state."""
