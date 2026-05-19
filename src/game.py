@@ -2660,6 +2660,13 @@ class Game:
                     self.rect.centery = 605
             self.camera.update(_CourtTarget())
             
+            # Apply screen shake to camera offset in basketball mode
+            if hasattr(self, "basketball") and getattr(self.basketball, "shake_timer", 0.0) > 0.0:
+                intensity = getattr(self.basketball, "shake_intensity", 5)
+                import random
+                self.camera.offset.x += random.randint(-intensity, intensity)
+                self.camera.offset.y += random.randint(-intensity, intensity)
+            
             result = self.basketball.update(dt)
             if getattr(self.basketball, 'finished', False):
                 self.basketball.finished = False
@@ -3952,6 +3959,8 @@ class Game:
                         "opp2_shooting": getattr(self.basketball, "opp2_shooting", False),
                         "p_score": self.basketball.player_score,
                         "o_score": self.basketball.opp_score,
+                        "shake_timer": getattr(self.basketball, "shake_timer", 0.0),
+                        "shake_intensity": getattr(self.basketball, "shake_intensity", 0),
                     })
                 player_data["bb_data"] = bb_data
             

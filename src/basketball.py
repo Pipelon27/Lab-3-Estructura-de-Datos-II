@@ -86,6 +86,10 @@ class BasketballGame:
         self.last_shot_x = None
         self.last_shot_y = None
         self.last_shot_team = None
+        self.shake_timer = 0.0
+        self.shake_intensity = 0
+        self.target_ball_x = 0.0
+        self.target_ball_y = 0.0
         
         self.player_shoot_anim = -1.0
         self.opp_shoot_anim = -1.0
@@ -230,8 +234,8 @@ class BasketballGame:
                         self.ally_pending_shot = bb_data.get("shoot_bar", 0.0)
         else:
             # Client receives authoritative state from Host
-            self.ball_x = bb_data.get("ball_x", self.ball_x)
-            self.ball_y = bb_data.get("ball_y", self.ball_y)
+            self.target_ball_x = bb_data.get("ball_x", self.ball_x)
+            self.target_ball_y = bb_data.get("ball_y", self.ball_y)
             self.ball_z = bb_data.get("ball_z", self.ball_z)
             
             raw_held = bb_data.get("ball_held_by", self.ball_held_by)
@@ -254,18 +258,60 @@ class BasketballGame:
             
             self.opp_z = bb_data.get("opp_z", self.opp_z)
             if self.opponent:
-                self.opponent.rect.centerx = bb_data.get("opp_x", self.opponent.rect.centerx)
-                self.opponent.rect.centery = bb_data.get("opp_y", self.opponent.rect.centery)
+                tx = bb_data.get("opp_x", self.opponent.rect.centerx)
+                ty = bb_data.get("opp_y", self.opponent.rect.centery)
+                self.opponent.rect.centerx += int((tx - self.opponent.rect.centerx) * 0.4)
+                self.opponent.rect.centery += int((ty - self.opponent.rect.centery) * 0.4)
             self.opp_shooting = bb_data.get("opp_shooting", False)
             
             if self.opp2:
                 self.opp2_z = bb_data.get("opp2_z", self.opp2_z)
-                self.opp2.rect.centerx = bb_data.get("opp2_x", self.opp2.rect.centerx)
-                self.opp2.rect.centery = bb_data.get("opp2_y", self.opp2.rect.centery)
+                tx2 = bb_data.get("opp2_x", self.opp2.rect.centerx)
+                ty2 = bb_data.get("opp2_y", self.opp2.rect.centery)
+                self.opp2.rect.centerx += int((tx2 - self.opp2.rect.centerx) * 0.4)
+                self.opp2.rect.centery += int((ty2 - self.opp2.rect.centery) * 0.4)
                 self.opp2_shooting = bb_data.get("opp2_shooting", False)
                 
-            self.player_score = bb_data.get("p_score", self.player_score)
-            self.opp_score = bb_data.get("o_score", self.opp_score)
+            # Score and swish effect triggering on Client
+            new_p_score = bb_data.get("p_score", self.player_score)
+            new_o_score = bb_data.get("o_score", self.opp_score)
+            
+            if new_p_score > self.player_score:
+                diff = new_p_score - self.player_score
+                self.swish_effect = {
+                    "x": self.right_rim[0],
+                    "y": self.right_rim[1],
+                    "text": "SWISH!" if diff == 3 else "2 PTS!",
+                    "text_y": float(self.right_rim[1] - 40),
+                    "color": (255, 215, 0) if diff == 3 else (100, 255, 100),
+                    "particles": [{"x": self.right_rim[0] + random.uniform(-15, 15), "y": self.right_rim[1] - 30, "vx": random.uniform(-40, 40), "vy": random.uniform(80, 200), "life": 0.8} for _ in range(18)],
+                    "timer": 1.0
+                }
+                self.shake_timer = 0.3
+                self.shake_intensity = 8
+                
+            if new_o_score > self.opp_score:
+                diff = new_o_score - self.opp_score
+                self.swish_effect = {
+                    "x": self.left_rim[0],
+                    "y": self.left_rim[1],
+                    "text": "SWISH!" if diff == 3 else "2 PTS!",
+                    "text_y": float(self.left_rim[1] - 40),
+                    "color": (255, 69, 0),
+                    "particles": [{"x": self.left_rim[0] + random.uniform(-15, 15), "y": self.left_rim[1] - 30, "vx": random.uniform(-40, 40), "vy": random.uniform(80, 200), "life": 0.8} for _ in range(18)],
+                    "timer": 1.0
+                }
+                self.shake_timer = 0.3
+                self.shake_intensity = 8
+                
+            self.player_score = new_p_score
+            self.opp_score = new_o_score
+            
+            # Sync screen shake from Host
+            h_shake = bb_data.get("shake_timer", 0.0)
+            if h_shake > self.shake_timer:
+                self.shake_timer = h_shake
+                self.shake_intensity = bb_data.get("shake_intensity", 0)
             
             # Client ally is the Host
             if "z" in bb_data and self.ally:
@@ -438,6 +484,8 @@ class BasketballGame:
         self.last_shot_team = shooter
         
         target_quality = 0.8
+        is_perfect = (shooter in ('player', 'ally') and abs(power_bar - target_quality) < 0.02)
+        
         if shooter == 'player':
             self.last_shot_x = self.player.rect.centerx
             self.last_shot_y = self.player.rect.centery
@@ -445,7 +493,7 @@ class BasketballGame:
             dist = math.hypot(self.last_shot_x - target_x, self.last_shot_y - target_y)
             is_3pt = dist > self.three_point_radius
             spread = 4.0 if is_3pt else 2.0
-            quality = 1.0 - abs(power_bar - target_quality) * spread
+            quality = 1.0 if is_perfect else (1.0 - abs(power_bar - target_quality) * spread)
             start_x = self.player.rect.centerx
             start_y = self.player.rect.centery
             start_z = self.player_z + 40
@@ -455,7 +503,7 @@ class BasketballGame:
             target_x, target_y = self.right_rim
             dist = math.hypot(self.last_shot_x - target_x, self.last_shot_y - target_y)
             is_3pt = dist > self.three_point_radius
-            quality = 1.0 - abs(power_bar - target_quality) * 2.5
+            quality = 1.0 if is_perfect else (1.0 - abs(power_bar - target_quality) * 2.5)
             start_x = self.ally.rect.centerx
             start_y = self.ally.rect.centery
             start_z = self.ally_z + 40
@@ -495,7 +543,7 @@ class BasketballGame:
         vz = (self.hoop_z - start_z - 0.5 * self.gravity * time_to_target**2) / time_to_target
         
         # Add error based on quality
-        if quality < 0.8:
+        if not is_perfect and quality < 0.8:
             error_x = random.uniform(-100, 100) * (1.0 - quality)
             error_y = random.uniform(-100, 100) * (1.0 - quality)
             vx += error_x
@@ -504,6 +552,19 @@ class BasketballGame:
         self.ball_vx = vx
         self.ball_vy = vy
         self.ball_vz = vz
+
+        if is_perfect:
+            self.swish_effect = {
+                "x": start_x,
+                "y": start_y,
+                "text": "PERFECT RELEASE!",
+                "text_y": float(start_y - 60),
+                "color": (50, 255, 50),
+                "particles": [{"x": start_x + random.uniform(-10, 10), "y": start_y - 10, "vx": random.uniform(-60, 60), "vy": random.uniform(-120, -40), "life": 0.6} for _ in range(12)],
+                "timer": 0.8
+            }
+            self.shake_timer = 0.2
+            self.shake_intensity = 4
 
     def update(self, dt: float):
         if not self.active or self.show_menu or self.waiting_for_dismiss:
@@ -913,16 +974,18 @@ class BasketballGame:
                     self.ball_held_by = 'opp2'
                     self.possession = 'opp2'
     
-                # Scoring (Check 2.5D intersection with hoop rim area)
+                 # Scoring (Check 2.5D intersection with hoop rim area)
                 # We assume the ball falls THROUGH the hoop (vz < 0) near the rim coordinates
                 if self.ball_vz < 0 and abs(self.ball_z - self.hoop_z) < 20:
                     dist_right = math.hypot(self.ball_x - self.right_rim[0], self.ball_y - self.right_rim[1])
                     dist_left = math.hypot(self.ball_x - self.left_rim[0], self.ball_y - self.left_rim[1])
                     
                     if dist_right < 20 and self.reset_timer <= 0:
-                        pts = 3 if (self.last_shot_team == 'player' and math.hypot(self.last_shot_x - self.right_rim[0], self.last_shot_y - self.right_rim[1]) > self.three_point_radius) else 2
+                        pts = 3 if (self.last_shot_team in ('player', 'ally') and math.hypot(self.last_shot_x - self.right_rim[0], self.last_shot_y - self.right_rim[1]) > self.three_point_radius) else 2
                         self.player_score += pts
                         self.reset_timer = 1.0 # Wait 1 second before resetting
+                        self.shake_timer = 0.3
+                        self.shake_intensity = 8
                         self.swish_effect = {
                             "x": self.right_rim[0],
                             "y": self.right_rim[1],
@@ -937,9 +1000,11 @@ class BasketballGame:
                         if controller.connected and getattr(controller, "last_input_method", "keyboard") == "controller":
                             controller.rumble(0.8, 0.8, 300)
                     elif dist_left < 20 and self.reset_timer <= 0:
-                        pts = 3 if (self.last_shot_team == 'opp' and math.hypot(self.last_shot_x - self.left_rim[0], self.left_rim[1] - 605) > self.three_point_radius) else 2
+                        pts = 3 if (self.last_shot_team in ('opp', 'opp2') and math.hypot(self.last_shot_x - self.left_rim[0], self.left_rim[1] - 605) > self.three_point_radius) else 2
                         self.opp_score += pts
                         self.reset_timer = 1.0
+                        self.shake_timer = 0.3
+                        self.shake_intensity = 8
                         self.swish_effect = {
                             "x": self.left_rim[0],
                             "y": self.left_rim[1],
@@ -953,6 +1018,15 @@ class BasketballGame:
                         controller = get_controller()
                         if controller.connected and getattr(controller, "last_input_method", "keyboard") == "controller":
                             controller.rumble(0.8, 0.2, 400)
+
+        else:
+            # Client smoothly LERPs the ball position
+            self.ball_x += (getattr(self, "target_ball_x", self.ball_x) - self.ball_x) * 0.4
+            self.ball_y += (getattr(self, "target_ball_y", self.ball_y) - self.ball_y) * 0.4
+
+        # Update screen shake
+        if getattr(self, "shake_timer", 0.0) > 0.0:
+            self.shake_timer -= dt
 
         # Update swish effect
         if self.swish_effect:
