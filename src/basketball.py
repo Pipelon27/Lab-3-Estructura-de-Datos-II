@@ -83,7 +83,7 @@ class BasketballGame:
         ball_path = os.path.join(base_dir, "assets", "ball.png")
         if os.path.exists(ball_path):
             self.ball_img = pygame.image.load(ball_path).convert_alpha()
-            self.ball_img = pygame.transform.scale(self.ball_img, (16, 16))
+            self.ball_img = pygame.transform.scale(self.ball_img, (40, 40))
         else:
             self.ball_img = None
 
