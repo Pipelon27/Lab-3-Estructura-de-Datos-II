@@ -161,9 +161,9 @@
     {
       "id": "mission_final_showdown",
       "title": "Final Showdown",
-      "description": "This is it. Enter the Basement and explore the labyrinth to find the Smile Club.",
+      "description": "This is it. Enter the Basement and explore the labyrinth.",
       "objectives": [
-        {"type": "go_to_zone", "target": "6", "description": "Explore the labyrinth", "required": 1},
+        {"type": "go_to_zone", "target": "6", "description": "Explore the Labyrinth", "required": 1},
         {"type": "win_combat", "target": "npc_ava_thompson", "description": "Knock out Ava Thompson", "required": 1},
         {"type": "win_combat", "target": "npc_marcus_green", "description": "Knock out Marcus Green", "required": 1},
         {"type": "win_combat", "target": "npc_noah_carter", "description": "Knock out Noah Carter", "required": 1}

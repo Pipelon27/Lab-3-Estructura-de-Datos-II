@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import random
 import math
+import os
 import pygame
 from collections import deque
 
@@ -147,6 +148,23 @@ class Game:
         self._post_phone_lines: list = []
         self._post_phone_index: int = 0
         self._player_bad_feeling_shown: bool = False      # "bad feeling" monologue shown
+        # Day 4 finale: Smile Club reveal, contained fight, and office resolution
+        self._final_smile_ids: tuple[str, str, str] = (
+            "npc_ava_thompson", "npc_marcus_green", "npc_noah_carter"
+        )
+        self._final_smile_room_ready: bool = False
+        self._final_reveal_started: bool = False
+        self._final_reveal_finished: bool = False
+        self._final_reveal_active: bool = False
+        self._final_reveal_phase: str = "pan"
+        self._final_reveal_timer: float = 0.0
+        self._final_reveal_index: int = 0
+        self._final_reveal_lines: list[tuple[str, str]] = []
+        self._final_office_active: bool = False
+        self._final_office_index: int = 0
+        self._final_office_lines: list[tuple[str, str]] = []
+        self._final_office_started: bool = False
+        self._final_real_names: dict[str, str] = {}
 
         # Day-cycle
         self.day_number     = 1
@@ -904,6 +922,18 @@ class Game:
                 elif event.type == pygame.MOUSEBUTTONDOWN:
                     self._advance_post_phone()
                 continue
+            if getattr(self, "_final_reveal_active", False):
+                if event.type == pygame.KEYDOWN and event.key in (pygame.K_SPACE, pygame.K_RETURN, pygame.K_e):
+                    self._advance_final_reveal()
+                elif event.type == pygame.MOUSEBUTTONDOWN and getattr(self, "_final_reveal_phase", "") == "dialogue":
+                    self._advance_final_reveal()
+                continue
+            if getattr(self, "_final_office_active", False):
+                if event.type == pygame.KEYDOWN and event.key in (pygame.K_SPACE, pygame.K_RETURN, pygame.K_e):
+                    self._advance_final_office_scene()
+                elif event.type == pygame.MOUSEBUTTONDOWN:
+                    self._advance_final_office_scene()
+                continue
             if getattr(self, "_ava_phone_spying", False):
                 if event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_ESCAPE:
@@ -1045,6 +1075,14 @@ class Game:
         if getattr(self, "_post_phone_active", False):
             if controller.is_confirm_pressed() or controller.is_interact_pressed():
                 self._advance_post_phone()
+            return
+        if getattr(self, "_final_reveal_active", False):
+            if controller.is_confirm_pressed() or controller.is_interact_pressed():
+                self._advance_final_reveal()
+            return
+        if getattr(self, "_final_office_active", False):
+            if controller.is_confirm_pressed() or controller.is_interact_pressed():
+                self._advance_final_office_scene()
             return
 
         if getattr(self, "_ava_phone_spying", False):
@@ -1735,7 +1773,8 @@ class Game:
             if hackable:
                 self.hacking_game.start(hackable, self.player)
                 self.state = GameState.HACKING
-        elif event.key == KEY_LIGHT_ATTACK and self.character == Character.AIDEN:
+        elif (event.key == KEY_LIGHT_ATTACK
+              and (self.character == Character.AIDEN or getattr(self, "_final_reveal_finished", False))):
             self.player.start_attack()
         
 
@@ -1905,6 +1944,13 @@ class Game:
             self._day1_story_complete = True
         if target_id == "mission_final_showdown":
             self.inventory.add_item("Basement Key", ItemCategory.KEY, "Opens the door to the school basement")
+            self._final_smile_room_ready = False
+            self._final_reveal_started = False
+            self._final_reveal_finished = False
+            self._final_office_started = False
+            self._final_reveal_active = False
+            self._final_office_active = False
+            self._setup_smile_club_room()
         if target_id in ("mission_return_tech_lab", "mission_high_school_mainframe", "mission_helping_mia", "mission_server_room", "mission_rooftop_party", "mission_final_showdown"):
             if not self.inventory.has_item("Hacked Credentials"):
                 self.inventory.add_item("Hacked Credentials", ItemCategory.NOTE, "Hacked high school system credentials provided by Alan Chen.")
@@ -2798,6 +2844,13 @@ class Game:
             self._sync_network(dt)
 
     def _update_playing(self, dt: float):
+        if getattr(self, "_final_reveal_active", False):
+            self._update_final_reveal(dt)
+            return
+        if getattr(self, "_final_office_active", False):
+            self._update_final_office_scene(dt)
+            return
+
         # ── Fast Forward Detection ──
         mouse_pos = pygame.mouse.get_pos()
         mouse_ff = (
@@ -2832,6 +2885,9 @@ class Game:
 
         if getattr(self, "_ava_phone_timer_active", False):
             self._update_ava_phone_timer(dt)
+        self._update_final_showdown(dt)
+        if getattr(self, "_final_reveal_active", False) or getattr(self, "_final_office_active", False):
+            return
         
         # Transition cooldown
         if self._transition_cooldown > 0:
@@ -2904,6 +2960,10 @@ class Game:
         self._enforce_cafeteria_access(floor, previous_rect, dt)
         self._enforce_tech_lab_access(floor, previous_rect, dt)
         self._enforce_library_access(floor, previous_rect, dt)
+        if (self.current_floor == FLOOR_BASEMENT
+                and getattr(self, "_final_reveal_finished", False)
+                and not getattr(self, "_final_office_started", False)):
+            self._keep_player_in_smile_room()
         if getattr(self, '_basement_block_timer', 0) > 0:
             self._basement_block_timer -= dt
         if getattr(self, '_rooftop_block_timer', 0) > 0:
@@ -2925,6 +2985,7 @@ class Game:
                                 _npc.health = 0
                                 _npc.knockout_timer = 120.0
                                 _npc.is_hostile = False
+                                self.mission_manager.advance_objective_event("win_combat", _npc.id)
                                 self.reputation.modify(_npc.group.value, -5)
                                 self.ui.show_notification(f"Knocked out {_npc.name}! -5 reputation with {_npc.group.value.title()}", NOTIF_ERROR)
                             else:
@@ -2935,7 +2996,11 @@ class Game:
         for _npc in npcs_on_floor:
             if getattr(_npc, 'is_hostile', False) and _npc.health > 0:
                 dist = math.hypot(_npc.rect.centerx - self.player.rect.centerx, _npc.rect.centery - self.player.rect.centery)
-                if dist > 400:
+                if _npc.id in getattr(self, "_final_smile_ids", ()) and getattr(self, "_final_reveal_finished", False):
+                    self._keep_npc_in_smile_room(_npc)
+                    _npc.target_pos = self.player.rect.center
+                    _npc.ai_enabled = True
+                elif dist > 400:
                     _npc.is_hostile = False
                     _npc.target_pos = None
                 else:
@@ -2952,6 +3017,9 @@ class Game:
                                 controller.rumble(0.5, 0.5, 200)
 
         # ── Player pushes NPCs on contact ──────────────────────────────────
+        self._check_final_fight_complete()
+        if getattr(self, "_final_office_active", False):
+            return
         # Stationary NPCs = heavy resistance (1px nudge), moving NPCs = light push
         from settings import NPC_SIZE
         floor1_ref = self.school_map.get_floor(FLOOR_1F)
@@ -3091,6 +3159,14 @@ class Game:
                 restricted_rooms=restricted,
                 is_visible=self._is_npc_on_camera
             )
+        if (self.current_floor == FLOOR_BASEMENT
+                and getattr(self, "_final_reveal_finished", False)
+                and not getattr(self, "_final_office_started", False)):
+            for npc_id in self._final_smile_ids:
+                npc = self.npc_manager.get_npc_by_id(npc_id)
+                if npc:
+                    npc.current_floor = FLOOR_BASEMENT
+                    self._keep_npc_in_smile_room(npc)
 
         # NPC-NPC collision separation inside the cafeteria
         floor1_ref = self.school_map.get_floor(FLOOR_1F)
@@ -3141,6 +3217,15 @@ class Game:
                                     if any(a.rect.colliderect(w) for w in floor1_ref.walls):
                                         a.rect.y -= 1
 
+        if (self.current_floor == FLOOR_BASEMENT
+                and getattr(self, "_final_reveal_finished", False)
+                and not getattr(self, "_final_office_started", False)):
+            self._keep_player_in_smile_room()
+            for npc_id in self._final_smile_ids:
+                npc = self.npc_manager.get_npc_by_id(npc_id)
+                if npc:
+                    self._keep_npc_in_smile_room(npc)
+
         # Day timer (use current_dt for faster phase transitions)
         self.day_timer += current_dt
         if self.day_timer >= self.phase_duration:
@@ -3170,7 +3255,7 @@ class Game:
                     elif m.id == "mission_check_ava_phone":
                         self._current_main_mission_text = "Mission 12: Check Ava's phone before she comes back! (15 seconds)"
                     elif m.id == "mission_final_showdown":
-                        self._current_main_mission_text = "Mission 13: Enter the Basement, disable the Smile Club server, and confront Director Walsh."
+                        self._current_main_mission_text = "Mission 13: Go to the Basement and see what they're plotting!"
 
         # Update markers for key NPCs
         self._update_minimap_markers()
@@ -3519,10 +3604,18 @@ class Game:
         for nid, (label, col) in key_npcs.items():
             npc = self.npc_manager.get_npc_by_id(nid)
             if npc:
+                if (nid in getattr(self, "_final_smile_ids", ())
+                        and getattr(self, "_is_final_showdown_active", lambda: False)()
+                        and not getattr(self, "_final_reveal_finished", False)):
+                    label = "Smile Club Member"
+                    col = (245, 245, 245)
                 self.world_map.set_marker(
                     label, npc.current_floor, 
                     npc.rect.centerx, npc.rect.centery, col
                 )
+        if getattr(self, "_is_final_showdown_active", lambda: False)() and not getattr(self, "_final_reveal_finished", False):
+            for old_label in ("Ava Thompson", "Marcus Green", "Noah Carter"):
+                self.world_map.clear_marker(old_label)
 
     def _get_cafeteria_seat(self) -> tuple[int, int]:
         """Return the next unique seat from the shuffled pool."""
@@ -4197,6 +4290,10 @@ class Game:
             self._draw_rooftop_party_dialogue(feeling=True)
         if getattr(self, "_post_phone_active", False):
             self._draw_rooftop_party_dialogue(post_phone=True)
+        if getattr(self, "_final_reveal_active", False) and getattr(self, "_final_reveal_phase", "") == "dialogue":
+            self._draw_final_reveal_dialogue()
+        if getattr(self, "_final_office_active", False):
+            self._draw_final_office_dialogue()
         if getattr(self, "_ava_phone_spying", False):
             self._draw_ava_phone_spy_ui()
 
@@ -4321,7 +4418,7 @@ class Game:
             floor.draw_top_layer(target_surf, self.camera)
             
         # Basement lighting overlay (covers walls, NPCs, everything)
-        if self.current_floor == FLOOR_BASEMENT and floor:
+        if self.current_floor == FLOOR_BASEMENT and floor and not self._should_disable_basement_lighting():
              floor._draw_basement_lighting(target_surf, self.camera, self.player)
 
         # Draw Ava's phone sitting on a chair (Rooftop, Day 4)
@@ -5147,7 +5244,256 @@ class Game:
             self.mission_manager.activate_mission("mission_final_showdown")
             self.mission_manager._refresh_availability()
             self._current_main_mission_text = "Mission 13: Go to the Basement and see what they're plotting!"
+            self._setup_smile_club_room()
             self.ui.show_notification("New Mission: Go to the Basement!", NOTIF_WARNING, 5.0)
+
+    def _is_final_showdown_active(self) -> bool:
+        m = self.mission_manager.missions.get("mission_final_showdown")
+        return bool(m and m.status == MissionStatus.ACTIVE)
+
+    def _get_smile_club_room(self):
+        floor = self.school_map.get_floor(FLOOR_BASEMENT)
+        return floor.rooms.get("b_smile_club") if floor else None
+
+    def _load_sprite_sheet_for_npc(self, npc, path: str):
+        if not npc or not os.path.exists(path):
+            return
+        sheet = pygame.image.load(path).convert_alpha()
+        frame_w, frame_h = 32, 64
+
+        def frames(row: int, start: int):
+            return [
+                sheet.subsurface(pygame.Rect(col * frame_w, row * frame_h, frame_w, frame_h)).copy()
+                for col in range(start, start + 6)
+            ]
+
+        npc.animations = {
+            "idle_right": frames(1, 0), "idle_up": frames(1, 6),
+            "idle_left": frames(1, 12), "idle_down": frames(1, 18),
+            "walk_right": frames(2, 0), "walk_up": frames(2, 6),
+            "walk_left": frames(2, 12), "walk_down": frames(2, 18),
+        }
+        npc.state = "idle"
+        npc.frame_index = 0
+        npc.animation_timer = 0.0
+        npc.image = npc.animations["idle_down"][0]
+
+    def _setup_smile_club_room(self):
+        if getattr(self, "_final_smile_room_ready", False):
+            return
+        room = self._get_smile_club_room()
+        if not room:
+            return
+        positions = [(room.rect.centerx - 110, room.rect.centery), (room.rect.centerx, room.rect.centery - 25), (room.rect.centerx + 110, room.rect.centery)]
+        member_sprites = ["member1.png", "member2.png", "member3.png"]
+        base_dir = os.path.dirname(os.path.dirname(__file__))
+        base = os.path.join(base_dir, "assets", "Characters BEHIND THE SMILE", "smileclubmember")
+        for npc_id, pos, sprite_name in zip(self._final_smile_ids, positions, member_sprites):
+            npc = self.npc_manager.get_npc_by_id(npc_id)
+            if not npc:
+                continue
+            self._final_real_names.setdefault(npc_id, npc.name)
+            npc.name = "Smile Club Member"
+            npc.current_floor = FLOOR_BASEMENT
+            npc.rect.center = pos
+            npc.direction = Direction.DOWN
+            npc.ai_enabled = False
+            npc.ignore_schedule = True
+            npc.stop_at_target = True
+            npc.target_pos = None
+            npc.target_queue = []
+            npc.is_hostile = False
+            npc.health = max(npc.health, npc.max_health)
+            npc.knockout_timer = 0.0
+            npc.show_name = False
+            self._load_sprite_sheet_for_npc(npc, os.path.join(base, sprite_name))
+        self._final_smile_room_ready = True
+
+    def _reveal_smile_club_identities(self):
+        for npc_id in self._final_smile_ids:
+            npc = self.npc_manager.get_npc_by_id(npc_id)
+            if npc:
+                npc.name = self._final_real_names.get(npc_id, npc.name)
+                npc.show_name = True
+                npc._load_sprites()
+
+    def _keep_npc_in_smile_room(self, npc):
+        room = self._get_smile_club_room()
+        if not room or not npc:
+            return
+        npc.rect.clamp_ip(room.rect.inflate(-30, -30))
+
+    def _keep_player_in_smile_room(self):
+        room = self._get_smile_club_room()
+        if room:
+            self.player.rect.clamp_ip(room.rect.inflate(-24, -24))
+
+    def _should_disable_basement_lighting(self) -> bool:
+        if self.current_floor != FLOOR_BASEMENT:
+            return False
+        room = self._get_smile_club_room()
+        if not room:
+            return False
+        if room.rect.collidepoint(self.player.rect.center):
+            return True
+        return bool(getattr(self, "_final_reveal_active", False) or getattr(self, "_final_reveal_finished", False))
+
+    def _update_final_showdown(self, dt: float):
+        if not self._is_final_showdown_active() or getattr(self, "_final_office_started", False):
+            return
+        if not getattr(self, "_final_reveal_started", False):
+            self._setup_smile_club_room()
+        if self.current_floor == FLOOR_BASEMENT:
+            if not getattr(self, "_final_reveal_finished", False):
+                self._current_main_mission_text = "Explore the Labyrinth"
+            room = self._get_smile_club_room()
+            if room and room.rect.collidepoint(self.player.rect.center) and not getattr(self, "_final_reveal_started", False):
+                self._start_final_reveal()
+
+    def _start_final_reveal(self):
+        self._setup_smile_club_room()
+        self._final_reveal_started = True
+        self._final_reveal_active = True
+        self._final_reveal_phase = "pan"
+        self._final_reveal_timer = 0.0
+        self._final_reveal_index = 0
+        self.player.vx = self.player.vy = 0
+        self.player._dashing = False
+        self._final_reveal_lines = [
+            ("Smile Club Member", "Yeah... we are the Smile Club."),
+            ("Smile Club Member", "Not a rumor. Not a warning. Us."),
+            ("Smile Club Member", "Every message, every setup, every scared whisper in the halls... we pushed it from here."),
+            ("Smile Club Member", "You kept looking for a secret group hidden somewhere in the school."),
+            ("Smile Club Member", "The joke is that you already knew us."),
+            ("Smile Club Member", "So let's stop pretending."),
+            ("Ava Thompson", "Ava planned the leaks. I used trust and attention to move people where we needed them."),
+            ("Noah Carter", "And I made sure you trusted the wrong faces from the first day."),
+            ("Marcus Green", "I used my popularity to spread rumors and keep everyone looking the other way."),
+            ("Ava Thompson", "We were behind everything: the meetings, the phone messages, the pressure campaigns."),
+            ("Marcus Green", "Nobody else is taking the blame for us."),
+            ("Noah Carter", "You want this to end? Then make us stop."),
+        ]
+
+    def _update_final_reveal(self, dt: float):
+        room = self._get_smile_club_room()
+        if not room:
+            self._final_reveal_active = False
+            return
+        for npc_id in self._final_smile_ids:
+            npc = self.npc_manager.get_npc_by_id(npc_id)
+            if npc:
+                npc._advance_animation(dt)
+        target = type("_CamTarget", (), {"rect": pygame.Rect(room.rect.centerx - 10, room.rect.centery - 10, 20, 20)})()
+        self.camera.update(target)
+        if self._final_reveal_phase == "pan":
+            self._final_reveal_timer += dt
+            if self._final_reveal_timer >= 1.7:
+                self._final_reveal_phase = "dialogue"
+
+    def _advance_final_reveal(self):
+        if not getattr(self, "_final_reveal_active", False) or self._final_reveal_phase != "dialogue":
+            return
+        self._final_reveal_index += 1
+        if self._final_reveal_index == 6:
+            self._reveal_smile_club_identities()
+        if self._final_reveal_index >= len(self._final_reveal_lines):
+            self._final_reveal_active = False
+            self._final_reveal_finished = True
+            self._current_main_mission_text = "Attack Ava, Marcus, and Noah"
+            self.ui.show_notification("Attack them! Use your punch combat controls.", NOTIF_WARNING, 4.0)
+            for npc_id in self._final_smile_ids:
+                npc = self.npc_manager.get_npc_by_id(npc_id)
+                if npc:
+                    npc.is_hostile = True
+                    npc.ai_enabled = True
+                    npc.ignore_schedule = True
+                    npc.stop_at_target = False
+                    npc.health = npc.max_health
+                    self._keep_npc_in_smile_room(npc)
+
+    def _check_final_fight_complete(self):
+        if not getattr(self, "_final_reveal_finished", False) or getattr(self, "_final_office_started", False):
+            return
+        if all((self.npc_manager.get_npc_by_id(nid) and self.npc_manager.get_npc_by_id(nid).health <= 0) for nid in self._final_smile_ids):
+            self._start_final_office_scene()
+
+    def _start_final_office_scene(self):
+        self._final_office_started = True
+        self._final_office_active = True
+        self._final_office_index = 0
+        self.current_floor = FLOOR_2F
+        floor = self.school_map.get_floor(FLOOR_2F)
+        if floor:
+            self._floor_w = floor.width
+            self._floor_h = floor.height
+            self.camera.set_bounds(floor.width, floor.height)
+        self.player.rect.center = (2660, 360)
+        placements = {
+            "npc_director": (2660, 150),
+            "npc_ava_thompson": (2470, 320),
+            "npc_marcus_green": (2585, 320),
+            "npc_noah_carter": (2700, 320),
+        }
+        for npc_id, pos in placements.items():
+            npc = self.npc_manager.get_npc_by_id(npc_id)
+            if npc:
+                npc.current_floor = FLOOR_2F
+                npc.rect.center = pos
+                npc.direction = Direction.DOWN if npc_id == "npc_director" else Direction.UP
+                npc.ai_enabled = False
+                npc.ignore_schedule = True
+                npc.is_hostile = False
+                npc.health = max(1, npc.max_health)
+                npc.knockout_timer = 0.0
+                npc.show_name = True
+                if npc_id in self._final_smile_ids:
+                    npc._load_sprites()
+        self.camera.update(self.player)
+        pname = self.player.character.value.capitalize()
+        self._final_office_lines = [
+            ("Director Walsh", "Start at the beginning. No masks, no excuses."),
+            ("Ava Thompson", "It was us. We built the Smile Club operation and used it to control the school."),
+            ("Marcus Green", "I recruited people, spread rumors, and helped keep everyone scared enough to stay quiet."),
+            ("Noah Carter", "I lied to you from the first morning. I made myself look safe so nobody would suspect me."),
+            ("Ava Thompson", "The messages, the meetings, the pressure, everything that happened... we take responsibility."),
+            (pname, "Then the Smile Club is finished."),
+            ("Director Walsh", "It is. This ends now, and the three of you will answer for all of it."),
+        ]
+        self._current_main_mission_text = "Smile Club resolved"
+
+    def _update_final_office_scene(self, dt: float):
+        self.player.vx = self.player.vy = 0
+        self.player._dashing = False
+        self.camera.update(self.player)
+        for npc_id in ("npc_director",) + self._final_smile_ids:
+            npc = self.npc_manager.get_npc_by_id(npc_id)
+            if npc:
+                npc._advance_animation(dt)
+
+    def _advance_final_office_scene(self):
+        if not getattr(self, "_final_office_active", False):
+            return
+        self._final_office_index += 1
+        if self._final_office_index >= len(self._final_office_lines):
+            self._final_office_active = False
+            m = self.mission_manager.missions.get("mission_final_showdown")
+            if m:
+                m.status = MissionStatus.COMPLETED
+                for obj in m.objectives:
+                    obj.completed = True
+                    obj.progress = obj.required
+                self.mission_manager.completed_ids.add("mission_final_showdown")
+            self.ui.show_notification("Smile Club storyline resolved.", NOTIF_SUCCESS, 5.0)
+
+    def _draw_final_reveal_dialogue(self):
+        if self._final_reveal_index < len(self._final_reveal_lines):
+            speaker, text = self._final_reveal_lines[self._final_reveal_index]
+            self._draw_cinematic_dialogue(text, speaker)
+
+    def _draw_final_office_dialogue(self):
+        if self._final_office_index < len(self._final_office_lines):
+            speaker, text = self._final_office_lines[self._final_office_index]
+            self._draw_cinematic_dialogue(text, speaker)
 
     def _draw_ava_phone_spy_ui(self):
         """Draw Ava's phone overlay with pink background, chat list, and countdown bar."""
