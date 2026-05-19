@@ -1783,7 +1783,6 @@ class Game:
             self._day1_story_complete = True
         if target_id == "mission_final_showdown":
             self.inventory.add_item("Basement Key", ItemCategory.KEY, "Opens the door to the school basement")
-        from src.inventory import ItemCategory
         if target_id in ("mission_return_tech_lab", "mission_high_school_mainframe", "mission_helping_mia", "mission_server_room", "mission_rooftop_party", "mission_final_showdown"):
             if not self.inventory.has_item("Hacked Credentials"):
                 self.inventory.add_item("Hacked Credentials", ItemCategory.NOTE, "Hacked high school system credentials provided by Alan Chen.")
@@ -3657,7 +3656,6 @@ class Game:
                         obj.completed = True
                         obj.progress = obj.required
                     self.mission_manager.completed_ids.add("mission_tech_club_rep")
-                from src.inventory import ItemCategory
                 if not self.inventory.has_item("Hacked Credentials"):
                     self.inventory.add_item(
                         "Hacked Credentials", ItemCategory.NOTE,
