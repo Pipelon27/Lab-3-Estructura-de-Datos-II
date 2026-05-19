@@ -160,6 +160,20 @@ class DialogueTree:
     def reset(self):
         self.current = self.root
 
+    def find_node_by_id(self, node: DialogueNode, target_id: str) -> DialogueNode | None:
+        if node.id == target_id:
+            return node
+        for child in node.children:
+            res = self.find_node_by_id(child, target_id)
+            if res:
+                return res
+        return None
+
+    def set_current_by_id(self, target_id: str):
+        found = self.find_node_by_id(self.root, target_id)
+        if found:
+            self.current = found
+
 
 # ══════════════════════════════════════════════════════════════
 #  DIALOGUE SYSTEM  (manages active dialogue + drawing)
@@ -299,17 +313,23 @@ class DialogueSystem:
             elif event.key in (pygame.K_DOWN, pygame.K_s):
                 self._choice_index = min(len(choices) - 1, self._choice_index + 1)
             elif event.key in (pygame.K_RETURN, pygame.K_SPACE):
-                cons = self.active_tree.make_choice(self._choice_index)
-                if cons:
-                    self._all_consequences.append(cons)
-                self._choice_index = 0
-                if not self.active_tree.advance(self._all_consequences):
-                    self._finish()
+                if getattr(self, "game", None) and self.game.multiplayer:
+                    self.game.dialogue_continue_voted = True
+                else:
+                    cons = self.active_tree.make_choice(self._choice_index)
+                    if cons:
+                        self._all_consequences.append(cons)
+                    self._choice_index = 0
+                    if not self.active_tree.advance(self._all_consequences):
+                        self._finish()
         else:
             # No choices — advance on any key
             if event.key in (pygame.K_RETURN, pygame.K_SPACE):
-                if not self.active_tree.advance(self._all_consequences):
-                    self._finish()
+                if getattr(self, "game", None) and self.game.multiplayer:
+                    self.game.dialogue_continue_voted = True
+                else:
+                    if not self.active_tree.advance(self._all_consequences):
+                        self._finish()
 
     def handle_controller(self, controller):
         """Handle Xbox controller input for dialogue navigation.
@@ -332,17 +352,23 @@ class DialogueSystem:
 
             # A button to confirm
             if controller.is_confirm_pressed():
-                cons = self.active_tree.make_choice(self._choice_index)
-                if cons:
-                    self._all_consequences.append(cons)
-                self._choice_index = 0
-                if not self.active_tree.advance(self._all_consequences):
-                    self._finish()
+                if getattr(self, "game", None) and self.game.multiplayer:
+                    self.game.dialogue_continue_voted = True
+                else:
+                    cons = self.active_tree.make_choice(self._choice_index)
+                    if cons:
+                        self._all_consequences.append(cons)
+                    self._choice_index = 0
+                    if not self.active_tree.advance(self._all_consequences):
+                        self._finish()
         else:
             # No choices — A button to advance
             if controller.is_confirm_pressed():
-                if not self.active_tree.advance(self._all_consequences):
-                    self._finish()
+                if getattr(self, "game", None) and self.game.multiplayer:
+                    self.game.dialogue_continue_voted = True
+                else:
+                    if not self.active_tree.advance(self._all_consequences):
+                        self._finish()
 
     def _finish(self):
         """End the dialogue, merging all consequences."""
@@ -496,6 +522,29 @@ class DialogueSystem:
                 screen.blit(font_choice.render(f"{prefix} {ch.text}", True, col),
                             (box.x + 30, cy))
                 cy += 26
+
+        # Co-op Continue Counter
+        if getattr(self, "game", None) and self.game.multiplayer:
+            total_votes = (1 if self.game.dialogue_continue_voted else 0) + (1 if getattr(self.game, "remote_dialogue_continue", False) else 0)
+            pill_w, pill_h = 110, 24
+            pill_x = box.right - pill_w - 12
+            pill_y = box.bottom - pill_h - 12
+            pill_rect = pygame.Rect(pill_x, pill_y, pill_w, pill_h)
+            
+            # Semi-transparent backing
+            pill_surf = pygame.Surface((pill_w, pill_h), pygame.SRCALPHA)
+            pill_surf.fill((20, 25, 35, 180))
+            screen.blit(pill_surf, (pill_x, pill_y))
+            
+            # Border: Green if someone has voted, amber/accent otherwise
+            b_col = (50, 255, 120) if total_votes == 2 else ((50, 200, 100) if total_votes == 1 else UI_ACCENT)
+            pygame.draw.rect(screen, b_col, pill_rect, 1.5, border_radius=6)
+            
+            # Text
+            font_pill = pygame.font.Font(VT323_PATH, 14)
+            p_text = f"Continue {total_votes}/2"
+            p_surf = font_pill.render(p_text, True, b_col)
+            screen.blit(p_surf, p_surf.get_rect(center=pill_rect.center))
 
         # Subtitle bar (always visible — accessibility)
         sub_bar = pygame.Rect(0, SCREEN_HEIGHT - 18, SCREEN_WIDTH, 18)
