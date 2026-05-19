@@ -478,6 +478,8 @@ class Game:
         self._pingpong_match_won = False
         self._remote_pingpong_match_won = False
         self._spectating_pingpong = False
+        self._pingpong_exit_voted = False
+        self._remote_pingpong_exit_voted = False
         self._pending_pp_cheer = False
         
         # Rooftop Party (Day 3 event)
@@ -2816,6 +2818,42 @@ class Game:
                     self.ui.show_notification("You were knocked out…", NOTIF_ERROR)
                     self.player.health = self.player.max_health // 2
         elif self.state == GameState.PINGPONG:
+            # Check coop exit consensus voting
+            if self.multiplayer and self._pingpong_exit_voted and self._remote_pingpong_exit_voted:
+                self.pingpong.finished = False
+                self.pingpong.reset()
+                self._spectating_pingpong = False
+                self._pingpong_match_won = False
+                self._remote_pingpong_match_won = False
+                self._pingpong_exit_voted = False
+                self._remote_pingpong_exit_voted = False
+                self.state = GameState.PLAYING
+                try:
+                    if pygame.mixer.get_init():
+                        pygame.mixer.music.stop()
+                except Exception:
+                    pass
+                self._pending_pingpong_result = None
+                if self.is_host:
+                    self._begin_oscar_win_dialogue()
+
+            # Client fallback: transition if Host transitions to PLAYING
+            if self.multiplayer and not self.is_host and getattr(self, "_remote_game_state", None) == GameState.PLAYING.value:
+                self.pingpong.finished = False
+                self.pingpong.reset()
+                self._spectating_pingpong = False
+                self._pingpong_match_won = False
+                self._remote_pingpong_match_won = False
+                self._pingpong_exit_voted = False
+                self._remote_pingpong_exit_voted = False
+                self.state = GameState.PLAYING
+                try:
+                    if pygame.mixer.get_init():
+                        pygame.mixer.music.stop()
+                except Exception:
+                    pass
+                self._pending_pingpong_result = None
+
             # Handle spectating inputs & updates
             if self._spectating_pingpong:
                 # ── Spectator inputs for cheering ──
@@ -2849,37 +2887,12 @@ class Game:
                     self.pingpong.spawn_cheer(txt, is_local=True)
                     self._pending_pp_cheer = txt
 
-                # Check coop victory consensus exit
-                if self._pingpong_match_won and self._remote_pingpong_match_won:
-                    if self.is_host:
-                        self.pingpong.finished = False
-                        self.pingpong.reset()
-                        self._spectating_pingpong = False
-                        self._pingpong_match_won = False
-                        self._remote_pingpong_match_won = False
-                        self.state = GameState.PLAYING
-                        try:
-                            if pygame.mixer.get_init():
-                                pygame.mixer.music.stop()
-                        except Exception:
-                            pass
-                        self._begin_oscar_win_dialogue()
-                    else:
-                        # Client waits for host state transition
-                        pass
-                
-                if not self.is_host and getattr(self, "_remote_game_state", None) == GameState.PLAYING.value:
-                    self.pingpong.finished = False
-                    self.pingpong.reset()
+                # Check if ally won to stop spectating and show dismiss exit screen
+                if self._remote_pingpong_match_won:
                     self._spectating_pingpong = False
-                    self._pingpong_match_won = False
-                    self._remote_pingpong_match_won = False
-                    self.state = GameState.PLAYING
-                    try:
-                        if pygame.mixer.get_init():
-                            pygame.mixer.music.stop()
-                    except Exception:
-                        pass
+                    self.pingpong.waiting_for_dismiss = True
+                    self.pingpong.end_message = "All Matches Won!\nPress SPACE/A to Exit"
+                    self._pending_pingpong_result = "win"
 
             else:
                 result = self.pingpong.update(dt)
@@ -2899,7 +2912,10 @@ class Game:
                     if result == "win":
                         if self.multiplayer:
                             self._pingpong_match_won = True
-                            self.pingpong.end_message = "Match Won!\nSpectating Ally..."
+                            if self._remote_pingpong_match_won:
+                                self.pingpong.end_message = "All Matches Won!\nPress SPACE/A to Exit"
+                            else:
+                                self.pingpong.end_message = "Match Won!\nPress SPACE/A to Spectate"
                             self._pending_pingpong_result = "win"
                         else:
                             self.reputation.reputation_score = min(100, self.reputation.reputation_score + 20)
@@ -3003,24 +3019,16 @@ class Game:
                 self.pingpong.finished = False
                 self.pingpong.waiting_for_dismiss = False
                 self._pending_pingpong_result = None
-            # If in coop and they won, transition to live spectating mode!
+            # If in coop and they won:
             elif self.multiplayer and getattr(self, "_pending_pingpong_result", None) == "win":
                 if self._remote_pingpong_match_won:
-                    # Both have won! No need to spectate. Exit the minigame cleanly.
+                    # Both have won! Vote to exit.
+                    self._pingpong_exit_voted = True
+                    self.pingpong.end_message = "Waiting for Ally..."
+                    self.pingpong.waiting_for_dismiss = True
                     self.pingpong.finished = False
-                    self.pingpong.reset()
-                    self._spectating_pingpong = False
-                    self._pingpong_match_won = True  # Keep True so host can see it!
-                    self.state = GameState.PLAYING
-                    try:
-                        if pygame.mixer.get_init():
-                            pygame.mixer.music.stop()
-                    except Exception:
-                        pass
-                    self._pending_pingpong_result = None
-                    if self.is_host:
-                        self._begin_oscar_win_dialogue()
                 else:
+                    # Transition to spectating
                     self._spectating_pingpong = True
                     self.pingpong.finished = False
                     self.pingpong.waiting_for_dismiss = False
@@ -3032,6 +3040,8 @@ class Game:
                 self._spectating_pingpong = False
                 self._pingpong_match_won = False
                 self._remote_pingpong_match_won = False
+                self._pingpong_exit_voted = False
+                self._remote_pingpong_exit_voted = False
                 self.state = GameState.PLAYING
                 try:
                     if pygame.mixer.get_init():
@@ -3048,11 +3058,13 @@ class Game:
             self._stop_basketball_music()
             self.state = GameState.PLAYING
 
-        # Reset pingpong match won flags in PLAYING state once remote state is also PLAYING
-        if self.multiplayer and self.state == GameState.PLAYING and self._pingpong_match_won:
+        # Reset pingpong match won/exit flags in PLAYING state once remote state is also PLAYING
+        if self.multiplayer and self.state == GameState.PLAYING and (self._pingpong_match_won or self._pingpong_exit_voted):
             if getattr(self, "_remote_game_state", None) == GameState.PLAYING.value:
                 self._pingpong_match_won = False
                 self._remote_pingpong_match_won = False
+                self._pingpong_exit_voted = False
+                self._remote_pingpong_exit_voted = False
 
         # Network sync
         if self.multiplayer and self.network:
@@ -4458,6 +4470,7 @@ class Game:
 
             # Pack ping pong match won & cheers
             player_data["pp_match_won"] = self._pingpong_match_won
+            player_data["pp_exit_voted"] = self._pingpong_exit_voted
             if self._pending_pp_cheer:
                 player_data["pp_cheer"] = self._pending_pp_cheer
                 self._pending_pp_cheer = False
@@ -4660,6 +4673,7 @@ class Game:
 
                 # Unpack ping pong sync data
                 self._remote_pingpong_match_won = remote.get("pp_match_won", False)
+                self._remote_pingpong_exit_voted = remote.get("pp_exit_voted", False)
                 self._remote_pp_data = remote.get("pp_data")
                 r_cheer = remote.get("pp_cheer")
                 if r_cheer and (self.state == GameState.PINGPONG or self._spectating_pingpong):
