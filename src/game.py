@@ -3880,12 +3880,7 @@ class Game:
             opp2 = None
             
             if is_coop:
-                from settings import Character
-                sibling_char = Character.LENA if self.player.character == Character.AIDEN else Character.AIDEN
-                for npc in self.npc_manager.npcs.values():
-                    if npc.id == f"npc_{sibling_char.value}":
-                        ally = npc
-                        break
+                ally = getattr(self, "remote_player", None)
                 opp2 = self.npc_manager.get_npc_by_id("npc_zachary_cole")
 
             # Clear other NPCs from the court
@@ -3913,6 +3908,34 @@ class Game:
         try:
             player_data = self.player.to_dict()
             player_data["floor"] = self.current_floor
+            player_data["state"] = self.state.value
+            
+            if self.state == GameState.BASKETBALL:
+                bb_data = {
+                    "z": self.basketball.player_z,
+                    "shoot_bar": self.basketball.shoot_bar,
+                    "shooting": self.basketball.shooting,
+                    "blocking": self.basketball.blocking,
+                }
+                if self.is_host:
+                    bb_data.update({
+                        "ball_x": self.basketball.ball_x,
+                        "ball_y": self.basketball.ball_y,
+                        "ball_z": self.basketball.ball_z,
+                        "ball_held_by": self.basketball.ball_held_by,
+                        "pass_in_flight": getattr(self.basketball, "pass_in_flight", False),
+                        "opp_x": self.basketball.opponent.rect.centerx if self.basketball.opponent else 0,
+                        "opp_y": self.basketball.opponent.rect.centery if self.basketball.opponent else 0,
+                        "opp_z": self.basketball.opp_z,
+                        "opp_shooting": getattr(self.basketball, "opp_shooting", False),
+                        "opp2_x": self.basketball.opp2.rect.centerx if getattr(self.basketball, "opp2", None) else 0,
+                        "opp2_y": self.basketball.opp2.rect.centery if getattr(self.basketball, "opp2", None) else 0,
+                        "opp2_z": getattr(self.basketball, "opp2_z", 0),
+                        "opp2_shooting": getattr(self.basketball, "opp2_shooting", False),
+                        "p_score": self.basketball.player_score,
+                        "o_score": self.basketball.opp_score,
+                    })
+                player_data["bb_data"] = bb_data
             
             # Host: also send NPC data for synchronization
             if self.is_host:
@@ -3927,6 +3950,16 @@ class Game:
             remote = self.network.get_remote_data()
             
             if remote and self.remote_player:
+                r_state = remote.get("state")
+                
+                # Auto teleport to basketball
+                if r_state == GameState.BASKETBALL.value and self.state != GameState.BASKETBALL:
+                    self._handle_interaction_result({"start_basketball": True})
+                
+                if self.state == GameState.BASKETBALL and "bb_data" in remote:
+                    if hasattr(self, "basketball"):
+                        self.basketball.sync_state(remote["bb_data"], self.is_host)
+                
                 # Apply floor-specific decay for remote player
                 in_main_building = self.current_floor in (FLOOR_1F, FLOOR_2F)
                 decay = 2 if in_main_building else 1

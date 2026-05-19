@@ -126,11 +126,12 @@ class BasketballGame:
         else:
             self.ball_img = None
 
-    def start(self, player, opponent, floor, is_coop=False, ally=None, opp2=None):
+    def start(self, player, opponent, floor, is_coop=False, ally=None, opp2=None, is_host=True):
         self.player = player
         self.opponent = opponent
         self.floor = floor
         self.is_coop = is_coop
+        self.is_host = is_host
         self.ally = ally
         self.opp2 = opp2
         self.win_score = 21 if is_coop else 10
@@ -206,6 +207,58 @@ class BasketballGame:
         self.pass_in_flight = False
         self._mouse_held = False
         self._click_hold_timer = 0.0
+
+    def sync_state(self, bb_data: dict, is_host: bool):
+        """Synchronize state with the remote player."""
+        if is_host:
+            # Host receives client inputs
+            if "z" in bb_data and self.ally:
+                self.ally_z = bb_data["z"]
+            if "shooting" in bb_data:
+                # The ally's shooting state is the client's shooting state
+                if bb_data["shooting"]:
+                    if not getattr(self, "ally_shooting", False):
+                        self.ally_shooting = True
+                    self.ally_shoot_bar = bb_data.get("shoot_bar", 0.0)
+                else:
+                    if getattr(self, "ally_shooting", False):
+                        self.ally_shooting = False
+                        self._shoot_ball('ally', bb_data.get("shoot_bar", 0.0))
+        else:
+            # Client receives authoritative state from Host
+            self.ball_x = bb_data.get("ball_x", self.ball_x)
+            self.ball_y = bb_data.get("ball_y", self.ball_y)
+            self.ball_z = bb_data.get("ball_z", self.ball_z)
+            self.ball_held_by = bb_data.get("ball_held_by", self.ball_held_by)
+            self.pass_in_flight = bb_data.get("pass_in_flight", self.pass_in_flight)
+            
+            self.opp_z = bb_data.get("opp_z", self.opp_z)
+            if self.opponent:
+                self.opponent.rect.centerx = bb_data.get("opp_x", self.opponent.rect.centerx)
+                self.opponent.rect.centery = bb_data.get("opp_y", self.opponent.rect.centery)
+            self.opp_shooting = bb_data.get("opp_shooting", False)
+            
+            if self.opp2:
+                self.opp2_z = bb_data.get("opp2_z", self.opp2_z)
+                self.opp2.rect.centerx = bb_data.get("opp2_x", self.opp2.rect.centerx)
+                self.opp2.rect.centery = bb_data.get("opp2_y", self.opp2.rect.centery)
+                self.opp2_shooting = bb_data.get("opp2_shooting", False)
+                
+            self.player_score = bb_data.get("p_score", self.player_score)
+            self.opp_score = bb_data.get("o_score", self.opp_score)
+            
+            # Client ally is the Host
+            if "z" in bb_data and self.ally:
+                self.ally_z = bb_data["z"]
+            if "shooting" in bb_data:
+                if bb_data["shooting"]:
+                    if not getattr(self, "ally_shooting", False):
+                        self.ally_shooting = True
+                    self.ally_shoot_bar = bb_data.get("shoot_bar", 0.0)
+                else:
+                    if getattr(self, "ally_shooting", False):
+                        self.ally_shooting = False
+                        self._shoot_ball('ally', bb_data.get("shoot_bar", 0.0))
 
     def handle_input(self, event: pygame.event.Event):
         if self.paused:
@@ -488,68 +541,127 @@ class BasketballGame:
             self.player_z = 0
             self.player_vz = 0
 
-        # Opponent AI (Top-Down Chase)
-        target_x = self.ball_x
-        target_y = self.ball_y
-        if self.ball_held_by == 'opp':
-            target_x, target_y = self.left_rim
-        elif self.ball_held_by == 'player':
-            # Defend the player
-            target_x = self.player.rect.centerx - 40
-            target_y = self.player.rect.centery
+        # AI and Physics are authoritative on the Host
+        if self.is_host:
+            # Opponent AI (Top-Down Chase)
+            target_x = self.ball_x
+            target_y = self.ball_y
+            if self.ball_held_by == 'opp':
+                target_x, target_y = self.left_rim
+            elif self.ball_held_by in ('player', 'ally'):
+                # Defend the player or ally depending on who has the ball
+                p = self.player if self.ball_held_by == 'player' else self.ally
+                if p:
+                    target_x = p.rect.centerx - 40
+                    target_y = p.rect.centery
+                
+            o_dx = target_x - self.opponent.rect.centerx
+            o_dy = target_y - self.opponent.rect.centery
+            dist = math.hypot(o_dx, o_dy)
             
-        o_dx = target_x - self.opponent.rect.centerx
-        o_dy = target_y - self.opponent.rect.centery
-        dist = math.hypot(o_dx, o_dy)
-        
-        speed = self.ai_speed * dt
-        if dist > 5:
-            self.opponent.rect.centerx += int((o_dx / dist) * speed)
-            self.opponent.rect.centery += int((o_dy / dist) * speed)
-            
-            # Simple direction assignment for animation
-            if abs(o_dx) > abs(o_dy):
-                self.opponent.direction = Direction.RIGHT if o_dx > 0 else Direction.LEFT
+            speed = self.ai_speed * dt
+            if dist > 20:
+                self.opponent.rect.centerx += int((o_dx / dist) * speed)
+                self.opponent.rect.centery += int((o_dy / dist) * speed)
+                
+                # Simple direction assignment for animation
+                if abs(o_dx) > abs(o_dy):
+                    self.opponent.direction = Direction.RIGHT if o_dx > 0 else Direction.LEFT
+                else:
+                    self.opponent.direction = Direction.DOWN if o_dy > 0 else Direction.UP
+                self.opponent.is_moving = True
             else:
-                self.opponent.direction = Direction.DOWN if o_dy > 0 else Direction.UP
-            self.opponent.is_moving = True
-        else:
-            self.opponent.is_moving = False
-            
-        self.opponent._advance_animation(dt)
+                self.opponent.is_moving = False
+                
+            self.opponent._advance_animation(dt)
+            self.opponent.rect.clamp_ip(self.court_rect)
 
-        # Restrict Opponent to Court
-        self.opponent.rect.clamp_ip(self.court_rect)
+            # Opp2 AI (if coop)
+            if self.is_coop and self.opp2:
+                o2_target_x = self.ball_x
+                o2_target_y = self.ball_y
+                if self.ball_held_by == 'opp2':
+                    o2_target_x, o2_target_y = self.left_rim
+                elif self.ball_held_by in ('player', 'ally'):
+                    # Opp2 defends whoever the opponent is NOT defending
+                    p = self.ally if self.ball_held_by == 'player' else self.player
+                    if p:
+                        o2_target_x = p.rect.centerx - 40
+                        o2_target_y = p.rect.centery
+                o2_dx = o2_target_x - self.opp2.rect.centerx
+                o2_dy = o2_target_y - self.opp2.rect.centery
+                dist2 = math.hypot(o2_dx, o2_dy)
+                if dist2 > 20:
+                    self.opp2.rect.centerx += int((o2_dx / dist2) * speed)
+                    self.opp2.rect.centery += int((o2_dy / dist2) * speed)
+                    if abs(o2_dx) > abs(o2_dy):
+                        self.opp2.direction = Direction.RIGHT if o2_dx > 0 else Direction.LEFT
+                    else:
+                        self.opp2.direction = Direction.DOWN if o2_dy > 0 else Direction.UP
+                    self.opp2.is_moving = True
+                else:
+                    self.opp2.is_moving = False
+                self.opp2._advance_animation(dt)
+                self.opp2.rect.clamp_ip(self.court_rect)
 
-        # Opponent Z-physics
-        self.opp_vz += self.gravity * dt
-        self.opp_z += self.opp_vz * dt
-        if self.opp_z <= 0:
-            self.opp_z = 0
-            self.opp_vz = 0
+            # Opponent Z-physics
+            self.opp_vz += self.gravity * dt
+            self.opp_z += self.opp_vz * dt
+            if self.opp_z <= 0:
+                self.opp_z = 0
+                self.opp_vz = 0
+                
+            if self.is_coop and self.opp2:
+                self.opp2_vz = getattr(self, "opp2_vz", 0) + self.gravity * dt
+                self.opp2_z = getattr(self, "opp2_z", 0) + self.opp2_vz * dt
+                if self.opp2_z <= 0:
+                    self.opp2_z = 0
+                    self.opp2_vz = 0
             
-        # Opponent AI Shooting/Blocking
-        if self.ball_held_by == 'opp':
-            if not self.opp_shooting:
-                if random.random() < self.ai_shoot_chance:
-                    self.opp_shooting = True
-                    self.opp_shoot_bar = 0.0
-                    self.opp_shoot_dir = 1
-                    self.opp_target_bar = random.uniform(0.75, 0.85)
-            else:
-                self.opp_shoot_bar += self.opp_shoot_dir * dt * 1.5
-                if self.opp_shoot_bar >= 1.0:
-                    self.opp_shoot_bar = 1.0
-                    self.opp_shoot_dir = -1
-                elif self.opp_shoot_bar <= 0.0:
-                    self.opp_shoot_bar = 0.0
-                    self.opp_shoot_dir = 1
-                    
-                if self.opp_shoot_dir == 1 and self.opp_shoot_bar >= self.opp_target_bar:
-                    self.opp_shoot_anim = 0.0
-                    self.opp_pending_shot = self.opp_shoot_bar
-                    self.opp_shooting = False
-            
+            # Opponent AI Shooting/Blocking
+            if self.ball_held_by == 'opp':
+                if not self.opp_shooting:
+                    if random.random() < self.ai_shoot_chance:
+                        self.opp_shooting = True
+                        self.opp_shoot_bar = 0.0
+                        self.opp_shoot_dir = 1
+                        self.opp_target_bar = random.uniform(0.75, 0.85)
+                else:
+                    self.opp_shoot_bar += self.opp_shoot_dir * dt * 1.5
+                    if self.opp_shoot_bar >= 1.0:
+                        self.opp_shoot_bar = 1.0
+                        self.opp_shoot_dir = -1
+                    elif self.opp_shoot_bar <= 0.0:
+                        self.opp_shoot_bar = 0.0
+                        self.opp_shoot_dir = 1
+                        
+                    if self.opp_shoot_dir == 1 and self.opp_shoot_bar >= self.opp_target_bar:
+                        self.opp_shoot_anim = 0.0
+                        self.opp_pending_shot = self.opp_shoot_bar
+                        self.opp_shooting = False
+                
+            # Opp2 AI Shooting
+            if self.is_coop and self.opp2 and self.ball_held_by == 'opp2':
+                if not getattr(self, "opp2_shooting", False):
+                    if random.random() < self.ai_shoot_chance:
+                        self.opp2_shooting = True
+                        self.opp2_shoot_bar = 0.0
+                        self.opp2_shoot_dir = 1
+                        self.opp2_target_bar = random.uniform(0.75, 0.85)
+                else:
+                    self.opp2_shoot_bar += self.opp2_shoot_dir * dt * 1.5
+                    if self.opp2_shoot_bar >= 1.0:
+                        self.opp2_shoot_bar = 1.0
+                        self.opp2_shoot_dir = -1
+                    elif self.opp2_shoot_bar <= 0.0:
+                        self.opp2_shoot_bar = 0.0
+                        self.opp2_shoot_dir = 1
+                        
+                    if self.opp2_shoot_dir == 1 and self.opp2_shoot_bar >= self.opp2_target_bar:
+                        self.opp2_shoot_anim = 0.0
+                        self.opp2_pending_shot = self.opp2_shoot_bar
+                        self.opp2_shooting = False
+
             # AI actively blocks when player is shooting nearby
             holder = self.ball_held_by
             if holder in ('player', 'ally'):
@@ -560,10 +672,26 @@ class BasketballGame:
                     if pdist < 60 and random.random() < self.ai_block_chance:
                         self.opp_blocking = True
                         self.opp_block_timer = 0.3
-                        if self.shooting and holder == 'player':
+                        if getattr(self, "shooting", False) and holder == 'player':
                             self.shooting = False
+                        if getattr(self, "ally_shooting", False) and holder == 'ally':
+                            self.ally_shooting = False
                         self.ball_held_by = 'opp'
                         self.possession = 'opp'
+                    
+                    if self.is_coop and self.opp2:
+                        pdist2 = math.hypot(target_ent.rect.centerx - self.opp2.rect.centerx,
+                                            target_ent.rect.centery - self.opp2.rect.centery)
+                        if pdist2 < 60 and random.random() < self.ai_block_chance:
+                            self.opp2_blocking = True
+                            self.opp2_block_timer = 0.3
+                            if getattr(self, "shooting", False) and holder == 'player':
+                                self.shooting = False
+                            if getattr(self, "ally_shooting", False) and holder == 'ally':
+                                self.ally_shooting = False
+                            self.ball_held_by = 'opp2'
+                            self.possession = 'opp2'
+
             # AI steals when very close
             if self.ball_held_by in ('player', 'ally') and not self.opp_blocking:
                 steal_target = self.player if self.ball_held_by == 'player' else (self.ally if self.ally else None)
@@ -573,10 +701,14 @@ class BasketballGame:
                     if sdist < self.ai_steal_range and random.random() < 0.03:
                         self.ball_held_by = 'opp'
                         self.possession = 'opp'
+            
             # AI passes to opp2 in coop
             if self.is_coop and self.opp2 and self.ball_held_by == 'opp' and not self.opp_shooting:
                 if random.random() < 0.008:
                     self._initiate_pass('opp', 'opp2')
+            if self.is_coop and self.opponent and self.ball_held_by == 'opp2' and not getattr(self, "opp2_shooting", False):
+                if random.random() < 0.008:
+                    self._initiate_pass('opp2', 'opp')
 
         # Opponent Image Override for Shooting
         if self.opp_shoot_anim >= 0:
@@ -622,156 +754,157 @@ class BasketballGame:
                 self.opp_blocking = False
 
         # Ball physics
-        if self.ball_held_by == 'player':
-            self.ball_x = self.player.rect.centerx
-            self.ball_y = self.player.rect.centery
-            self.ball_z = self.player_z + 40
-            self.ball_vx = 0
-            self.ball_vy = 0
-            self.ball_vz = 0
-        elif self.ball_held_by == 'ally' and self.ally:
-            self.ball_x = self.ally.rect.centerx
-            self.ball_y = self.ally.rect.centery
-            self.ball_z = self.ally_z + 40
-            self.ball_vx = 0
-            self.ball_vy = 0
-            self.ball_vz = 0
-        elif self.ball_held_by == 'opp2' and self.opp2:
-            self.ball_x = self.opp2.rect.centerx
-            self.ball_y = self.opp2.rect.centery
-            self.ball_z = self.opp2_z + 40
-            self.ball_vx = 0
-            self.ball_vy = 0
-            self.ball_vz = 0
-        elif self.pass_in_flight:
-            target_ent = None
-            if self.pass_target_entity == 'ally': target_ent = self.ally
-            elif self.pass_target_entity == 'player': target_ent = self.player
-            elif self.pass_target_entity == 'opp': target_ent = self.opponent
-            elif self.pass_target_entity == 'opp2': target_ent = self.opp2
-
-            if target_ent:
-                tx, ty = target_ent.rect.centerx, target_ent.rect.centery
-                dx = tx - self.ball_x
-                dy = ty - self.ball_y
-                dist = math.hypot(dx, dy)
-                if dist < 20:
-                    self.pass_in_flight = False
-                    self.ball_held_by = self.pass_target_entity
-                    self.possession = self.pass_target_entity
-                else:
-                    self.ball_vx = (dx / dist) * self.pass_speed
-                    self.ball_vy = (dy / dist) * self.pass_speed
-                    self.ball_x += self.ball_vx * dt
-                    self.ball_y += self.ball_vy * dt
-            else:
-                self.pass_in_flight = False
-        else:
-            self.ball_vz += self.gravity * dt
-            self.ball_x += self.ball_vx * dt
-            self.ball_y += self.ball_vy * dt
-            self.ball_z += self.ball_vz * dt
-
-            # Bouncing
-            if self.ball_z <= 0:
-                self.ball_z = 0
-                self.ball_vz *= -0.7
-                self.ball_vx *= 0.9
-                self.ball_vy *= 0.9
-
-            # Court bounds bouncing
-            if self.ball_x <= self.court_rect.left or self.ball_x >= self.court_rect.right:
-                self.ball_vx *= -0.8
-                self.ball_x = max(self.court_rect.left, min(self.court_rect.right, self.ball_x))
-            if self.ball_y <= self.court_rect.top or self.ball_y >= self.court_rect.bottom:
-                self.ball_vy *= -0.8
-                self.ball_y = max(self.court_rect.top, min(self.court_rect.bottom, self.ball_y))
-
-            p_dist = math.hypot(self.ball_x - self.player.rect.centerx, self.ball_y - self.player.rect.centery)
-            o_dist = math.hypot(self.ball_x - self.opponent.rect.centerx, self.ball_y - self.opponent.rect.centery)
-
-            # Blocking logic (mid-air)
-            if self.blocking and p_dist < 50 and self.ball_z < self.player_z + 80 and self.ball_held_by is None:
-                self.ball_vx *= -1.2
-                self.ball_vy *= -1.2
-                self.ball_vz = 300
-                self.blocking = False
-                self.possession = None
-                from src.controller import get_controller
-                controller = get_controller()
-                if controller.connected and getattr(controller, "last_input_method", "keyboard") == "controller":
-                    controller.rumble(0.6, 0.7, 150)
-            
-            if self.opp_blocking and o_dist < 50 and self.ball_z < self.opp_z + 80 and self.ball_held_by is None:
-                self.ball_vx *= -1.2
-                self.ball_vy *= -1.2
-                self.ball_vz = 300
-                self.opp_blocking = False
-                self.possession = None
-
-            # Catching (only if ball is low or player jumps)
-            if p_dist < 40 and abs(self.ball_z - self.player_z) < 50 and self.possession != 'player':
-                was_held_by_opp = (self.ball_held_by == 'opp')
-                self.ball_held_by = 'player'
-                self.possession = 'player'
-                from src.controller import get_controller
-                controller = get_controller()
-                if controller.connected and getattr(controller, "last_input_method", "keyboard") == "controller":
-                    if was_held_by_opp:
-                         controller.rumble(0.6, 0.6, 150)
+        if self.is_host:
+            if self.ball_held_by == 'player':
+                self.ball_x = self.player.rect.centerx
+                self.ball_y = self.player.rect.centery
+                self.ball_z = self.player_z + 40
+                self.ball_vx = 0
+                self.ball_vy = 0
+                self.ball_vz = 0
+            elif self.ball_held_by == 'ally' and self.ally:
+                self.ball_x = self.ally.rect.centerx
+                self.ball_y = self.ally.rect.centery
+                self.ball_z = self.ally_z + 40
+                self.ball_vx = 0
+                self.ball_vy = 0
+                self.ball_vz = 0
+            elif self.ball_held_by == 'opp2' and self.opp2:
+                self.ball_x = self.opp2.rect.centerx
+                self.ball_y = self.opp2.rect.centery
+                self.ball_z = self.opp2_z + 40
+                self.ball_vx = 0
+                self.ball_vy = 0
+                self.ball_vz = 0
+            elif self.pass_in_flight:
+                target_ent = None
+                if self.pass_target_entity == 'ally': target_ent = self.ally
+                elif self.pass_target_entity == 'player': target_ent = self.player
+                elif self.pass_target_entity == 'opp': target_ent = self.opponent
+                elif self.pass_target_entity == 'opp2': target_ent = self.opp2
+    
+                if target_ent:
+                    tx, ty = target_ent.rect.centerx, target_ent.rect.centery
+                    dx = tx - self.ball_x
+                    dy = ty - self.ball_y
+                    dist = math.hypot(dx, dy)
+                    if dist < 20:
+                        self.pass_in_flight = False
+                        self.ball_held_by = self.pass_target_entity
+                        self.possession = self.pass_target_entity
                     else:
-                         controller.rumble(0.3, 0.3, 80)
-            elif o_dist < 40 and abs(self.ball_z - self.opp_z) < 50 and self.possession != 'opp':
-                was_held_by_player = (self.ball_held_by == 'player')
-                self.ball_held_by = 'opp'
-                self.possession = 'opp'
-            elif self.is_coop and self.ally and math.hypot(self.ball_x - self.ally.rect.centerx, self.ball_y - self.ally.rect.centery) < 40 and abs(self.ball_z - self.ally_z) < 50 and self.possession != 'ally':
-                self.ball_held_by = 'ally'
-                self.possession = 'ally'
-            elif self.is_coop and self.opp2 and math.hypot(self.ball_x - self.opp2.rect.centerx, self.ball_y - self.opp2.rect.centery) < 40 and abs(self.ball_z - self.opp2_z) < 50 and self.possession != 'opp2':
-                self.ball_held_by = 'opp2'
-                self.possession = 'opp2'
-
-            # Scoring (Check 2.5D intersection with hoop rim area)
-            # We assume the ball falls THROUGH the hoop (vz < 0) near the rim coordinates
-            if self.ball_vz < 0 and abs(self.ball_z - self.hoop_z) < 20:
-                dist_right = math.hypot(self.ball_x - self.right_rim[0], self.ball_y - self.right_rim[1])
-                dist_left = math.hypot(self.ball_x - self.left_rim[0], self.ball_y - self.left_rim[1])
+                        self.ball_vx = (dx / dist) * self.pass_speed
+                        self.ball_vy = (dy / dist) * self.pass_speed
+                        self.ball_x += self.ball_vx * dt
+                        self.ball_y += self.ball_vy * dt
+                else:
+                    self.pass_in_flight = False
+            else:
+                self.ball_vz += self.gravity * dt
+                self.ball_x += self.ball_vx * dt
+                self.ball_y += self.ball_vy * dt
+                self.ball_z += self.ball_vz * dt
+    
+                # Bouncing
+                if self.ball_z <= 0:
+                    self.ball_z = 0
+                    self.ball_vz *= -0.7
+                    self.ball_vx *= 0.9
+                    self.ball_vy *= 0.9
+    
+                # Court bounds bouncing
+                if self.ball_x <= self.court_rect.left or self.ball_x >= self.court_rect.right:
+                    self.ball_vx *= -0.8
+                    self.ball_x = max(self.court_rect.left, min(self.court_rect.right, self.ball_x))
+                if self.ball_y <= self.court_rect.top or self.ball_y >= self.court_rect.bottom:
+                    self.ball_vy *= -0.8
+                    self.ball_y = max(self.court_rect.top, min(self.court_rect.bottom, self.ball_y))
+    
+                p_dist = math.hypot(self.ball_x - self.player.rect.centerx, self.ball_y - self.player.rect.centery)
+                o_dist = math.hypot(self.ball_x - self.opponent.rect.centerx, self.ball_y - self.opponent.rect.centery)
+    
+                # Blocking logic (mid-air)
+                if self.blocking and p_dist < 50 and self.ball_z < self.player_z + 80 and self.ball_held_by is None:
+                    self.ball_vx *= -1.2
+                    self.ball_vy *= -1.2
+                    self.ball_vz = 300
+                    self.blocking = False
+                    self.possession = None
+                    from src.controller import get_controller
+                    controller = get_controller()
+                    if controller.connected and getattr(controller, "last_input_method", "keyboard") == "controller":
+                        controller.rumble(0.6, 0.7, 150)
                 
-                if dist_right < 20 and self.reset_timer <= 0:
-                    pts = 3 if (self.last_shot_team == 'player' and math.hypot(self.last_shot_x - self.right_rim[0], self.last_shot_y - self.right_rim[1]) > self.three_point_radius) else 2
-                    self.player_score += pts
-                    self.reset_timer = 1.0 # Wait 1 second before resetting
-                    self.swish_effect = {
-                        "x": self.right_rim[0],
-                        "y": self.right_rim[1],
-                        "text": "SWISH!" if pts == 3 else "2 PTS!",
-                        "text_y": float(self.right_rim[1] - 40),
-                        "color": (255, 215, 0) if pts == 3 else (100, 255, 100),
-                        "particles": [{"x": self.right_rim[0] + random.uniform(-15, 15), "y": self.right_rim[1] - 30, "vx": random.uniform(-40, 40), "vy": random.uniform(80, 200), "life": 0.8} for _ in range(18)],
-                        "timer": 1.0
-                    }
+                if self.opp_blocking and o_dist < 50 and self.ball_z < self.opp_z + 80 and self.ball_held_by is None:
+                    self.ball_vx *= -1.2
+                    self.ball_vy *= -1.2
+                    self.ball_vz = 300
+                    self.opp_blocking = False
+                    self.possession = None
+    
+                # Catching (only if ball is low or player jumps)
+                if p_dist < 40 and abs(self.ball_z - self.player_z) < 50 and self.possession != 'player':
+                    was_held_by_opp = (self.ball_held_by == 'opp')
+                    self.ball_held_by = 'player'
+                    self.possession = 'player'
                     from src.controller import get_controller
                     controller = get_controller()
                     if controller.connected and getattr(controller, "last_input_method", "keyboard") == "controller":
-                        controller.rumble(0.8, 0.8, 300)
-                elif dist_left < 20 and self.reset_timer <= 0:
-                    pts = 3 if (self.last_shot_team == 'opp' and math.hypot(self.last_shot_x - self.left_rim[0], self.left_rim[1] - 605) > self.three_point_radius) else 2
-                    self.opp_score += pts
-                    self.reset_timer = 1.0
-                    self.swish_effect = {
-                        "x": self.left_rim[0],
-                        "y": self.left_rim[1],
-                        "text": "SWISH!" if pts == 3 else "2 PTS!",
-                        "text_y": float(self.left_rim[1] - 40),
-                        "color": (255, 69, 0),
-                        "particles": [{"x": self.left_rim[0] + random.uniform(-15, 15), "y": self.left_rim[1] - 30, "vx": random.uniform(-40, 40), "vy": random.uniform(80, 200), "life": 0.8} for _ in range(18)],
-                        "timer": 1.0
-                    }
-                    from src.controller import get_controller
-                    controller = get_controller()
-                    if controller.connected and getattr(controller, "last_input_method", "keyboard") == "controller":
-                        controller.rumble(0.8, 0.2, 400)
+                        if was_held_by_opp:
+                             controller.rumble(0.6, 0.6, 150)
+                        else:
+                             controller.rumble(0.3, 0.3, 80)
+                elif o_dist < 40 and abs(self.ball_z - self.opp_z) < 50 and self.possession != 'opp':
+                    was_held_by_player = (self.ball_held_by == 'player')
+                    self.ball_held_by = 'opp'
+                    self.possession = 'opp'
+                elif self.is_coop and self.ally and math.hypot(self.ball_x - self.ally.rect.centerx, self.ball_y - self.ally.rect.centery) < 40 and abs(self.ball_z - self.ally_z) < 50 and self.possession != 'ally':
+                    self.ball_held_by = 'ally'
+                    self.possession = 'ally'
+                elif self.is_coop and self.opp2 and math.hypot(self.ball_x - self.opp2.rect.centerx, self.ball_y - self.opp2.rect.centery) < 40 and abs(self.ball_z - self.opp2_z) < 50 and self.possession != 'opp2':
+                    self.ball_held_by = 'opp2'
+                    self.possession = 'opp2'
+    
+                # Scoring (Check 2.5D intersection with hoop rim area)
+                # We assume the ball falls THROUGH the hoop (vz < 0) near the rim coordinates
+                if self.ball_vz < 0 and abs(self.ball_z - self.hoop_z) < 20:
+                    dist_right = math.hypot(self.ball_x - self.right_rim[0], self.ball_y - self.right_rim[1])
+                    dist_left = math.hypot(self.ball_x - self.left_rim[0], self.ball_y - self.left_rim[1])
+                    
+                    if dist_right < 20 and self.reset_timer <= 0:
+                        pts = 3 if (self.last_shot_team == 'player' and math.hypot(self.last_shot_x - self.right_rim[0], self.last_shot_y - self.right_rim[1]) > self.three_point_radius) else 2
+                        self.player_score += pts
+                        self.reset_timer = 1.0 # Wait 1 second before resetting
+                        self.swish_effect = {
+                            "x": self.right_rim[0],
+                            "y": self.right_rim[1],
+                            "text": "SWISH!" if pts == 3 else "2 PTS!",
+                            "text_y": float(self.right_rim[1] - 40),
+                            "color": (255, 215, 0) if pts == 3 else (100, 255, 100),
+                            "particles": [{"x": self.right_rim[0] + random.uniform(-15, 15), "y": self.right_rim[1] - 30, "vx": random.uniform(-40, 40), "vy": random.uniform(80, 200), "life": 0.8} for _ in range(18)],
+                            "timer": 1.0
+                        }
+                        from src.controller import get_controller
+                        controller = get_controller()
+                        if controller.connected and getattr(controller, "last_input_method", "keyboard") == "controller":
+                            controller.rumble(0.8, 0.8, 300)
+                    elif dist_left < 20 and self.reset_timer <= 0:
+                        pts = 3 if (self.last_shot_team == 'opp' and math.hypot(self.last_shot_x - self.left_rim[0], self.left_rim[1] - 605) > self.three_point_radius) else 2
+                        self.opp_score += pts
+                        self.reset_timer = 1.0
+                        self.swish_effect = {
+                            "x": self.left_rim[0],
+                            "y": self.left_rim[1],
+                            "text": "SWISH!" if pts == 3 else "2 PTS!",
+                            "text_y": float(self.left_rim[1] - 40),
+                            "color": (255, 69, 0),
+                            "particles": [{"x": self.left_rim[0] + random.uniform(-15, 15), "y": self.left_rim[1] - 30, "vx": random.uniform(-40, 40), "vy": random.uniform(80, 200), "life": 0.8} for _ in range(18)],
+                            "timer": 1.0
+                        }
+                        from src.controller import get_controller
+                        controller = get_controller()
+                        if controller.connected and getattr(controller, "last_input_method", "keyboard") == "controller":
+                            controller.rumble(0.8, 0.2, 400)
 
         # Update swish effect
         if self.swish_effect:
