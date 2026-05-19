@@ -48,6 +48,7 @@ class HackingMinigame:
         self.active      = False
         self.phase       = HackPhase.INTRO
         self._result:  str | None = None    # "success" / "failure"
+        self._controller_choices: list[str] = []
 
         # Target metadata
         self.target_info: dict = {}
@@ -121,6 +122,19 @@ class HackingMinigame:
         self._cursor    = 0
         self._max_time  = 8.0 + time_bonus + (5 - self._difficulty)
         self._time_left = self._max_time
+        self._controller_choices = []
+
+    def _generate_controller_choices(self):
+        """Generate 4 button options for the current password character."""
+        if not self._sequence or self._cursor >= len(self._sequence):
+            self._controller_choices = []
+            return
+        target = self._sequence[self._cursor]
+        choices = [target]
+        pool = [c for c in self.CHARSET if c != target]
+        choices.extend(random.sample(pool, 3))
+        random.shuffle(choices)
+        self._controller_choices = choices
 
     def _setup_camera_view(self):
         """Camera hack is simpler — just view a feed."""
@@ -160,6 +174,59 @@ class HackingMinigame:
         elif hack_type == "camera":
             # Any key closes the camera view → success
             self._finish("success")
+
+    def handle_controller(self, controller):
+        """Handle Xbox controller input for the hacking minigame."""
+        if not self.active:
+            return
+
+        if controller.is_map_pressed(): # Back button to escape
+            self._finish("failure")
+            return
+
+        if self.phase == HackPhase.INTRO:
+            return
+
+        if self.phase != HackPhase.PLAYING:
+            return
+
+        hack_type = self.target_info.get("type", "server")
+        if hack_type == "camera":
+            # Any button press completes the camera feed
+            if (controller.is_confirm_pressed() or controller.is_cancel_pressed() or 
+                controller.is_inventory_pressed() or controller.is_skill_tree_pressed()):
+                self._finish("success")
+            return
+
+        # Password / Server hack
+        if hack_type in ("server", "npc_chat"):
+            if not self._controller_choices:
+                self._generate_controller_choices()
+
+            pressed_char = None
+            if controller.is_confirm_pressed():      # A
+                pressed_char = self._controller_choices[0]
+            elif controller.is_cancel_pressed():     # B
+                pressed_char = self._controller_choices[1]
+            elif controller.is_inventory_pressed():  # X
+                pressed_char = self._controller_choices[2]
+            elif controller.is_skill_tree_pressed(): # Y
+                pressed_char = self._controller_choices[3]
+
+            if pressed_char is not None:
+                target = self._sequence[self._cursor]
+                if pressed_char == target:
+                    self._cursor += 1
+                    self._input_buf += target
+                    if self._cursor >= len(self._sequence):
+                        self._finish("success")
+                    else:
+                        self._generate_controller_choices()
+                else:
+                    # Wrong input - penalty
+                    self._time_left -= 1.0
+                    if self._time_left <= 0:
+                        self._finish("failure")
 
     def _handle_password_input(self, event: pygame.event.Event):
         """Match typed character against the current sequence position."""
@@ -254,9 +321,17 @@ class HackingMinigame:
             self._draw_camera_view(screen, font_med, font_sm, cx)
 
         # Controls
-        screen.blit(font_hint.render(
-            "Type the characters  |  ESC Abort", True, (0, 150, 0)),
-            (cx - 160, SCREEN_HEIGHT - 35))
+        from src.controller import get_controller
+        controller = get_controller()
+        controller_connected = controller.connected and getattr(controller, "last_input_method", "keyboard") == "controller"
+
+        if controller_connected:
+            hint_txt = "Match the correct button to advance  |  [Back] Abort"
+        else:
+            hint_txt = "Type the characters  |  ESC Abort"
+
+        screen.blit(font_hint.render(hint_txt, True, (0, 150, 0)),
+                    (cx - 160, SCREEN_HEIGHT - 35))
 
     def _draw_password(self, screen, font_big, font_med, font_sm, cx):
         """Draw the password-cracking challenge."""
@@ -294,6 +369,33 @@ class HackingMinigame:
         y += 40
         prog = f"{self._cursor}/{len(self._sequence)}"
         screen.blit(font_sm.render(f"Progress: {prog}", True, (0, 180, 80)), (cx - 80, y))
+
+        # Dynamic controller option mapping
+        from src.controller import get_controller
+        controller = get_controller()
+        controller_connected = controller.connected and getattr(controller, "last_input_method", "keyboard") == "controller"
+
+        if controller_connected:
+            if not self._controller_choices:
+                self._generate_controller_choices()
+            
+            y += 40
+            screen.blit(font_sm.render("BUTTON MAP MATCH:", True, (0, 200, 80)), (cx - 200, y))
+            y += 35
+            
+            buttons = ["[A]", "[B]", "[X]", "[Y]"]
+            colors = [(0, 255, 100), (255, 80, 80), (80, 150, 255), (255, 220, 0)] # standard Xbox button colors!
+            
+            x_start_btn = cx - 180
+            for idx, (btn_lbl, char_val) in enumerate(zip(buttons, self._controller_choices)):
+                btn_rect = pygame.Rect(x_start_btn + idx * 95, y, 75, 45)
+                # Draw container
+                pygame.draw.rect(screen, (20, 30, 20), btn_rect, border_radius=6)
+                pygame.draw.rect(screen, colors[idx], btn_rect, 2, border_radius=6)
+                
+                # Draw character and button label
+                surf = font_med.render(f"{btn_lbl} {char_val}", True, colors[idx])
+                screen.blit(surf, surf.get_rect(center=btn_rect.center))
 
     def _draw_camera_view(self, screen, font_med, font_sm, cx):
         """Draw a fake camera feed (placeholder)."""

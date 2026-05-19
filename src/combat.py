@@ -226,6 +226,12 @@ class CombatSystem:
                     dmg = int(self.target_damage * (1 - BLOCK_DAMAGE_REDUCTION))
                     self.player.take_damage(dmg)
 
+                    # Subtle rumble on block hit
+                    from src.controller import get_controller
+                    controller = get_controller()
+                    if controller.connected and getattr(controller, "last_input_method", "keyboard") == "controller":
+                        controller.rumble(0.2, 0.2, 100)
+
         elif self.state == CombatState.DASHING:
             self.timer -= 1
             if self.timer <= 0:
@@ -277,11 +283,28 @@ class CombatSystem:
                 self.target.knockout_timer = 120.0
         self._hit_flash = 8
 
+        # Rumble on successful player hit
+        from src.controller import get_controller
+        controller = get_controller()
+        if controller.connected and getattr(controller, "last_input_method", "keyboard") == "controller":
+            if self.state == CombatState.COMBO_ATTACK:
+                controller.rumble(0.8, 0.8, 250)
+            elif self.state == CombatState.HEAVY_ATTACK:
+                controller.rumble(0.6, 0.6, 200)
+            else:
+                controller.rumble(0.4, 0.4, 150)
+
     def _npc_counter_attack(self):
         """The NPC attacks the player."""
         if self.player and self.state != CombatState.BLOCKING:
             self.player.take_damage(self.target_damage)
             self._hit_flash = 4
+
+            # Strong rumble on taking damage
+            from src.controller import get_controller
+            controller = get_controller()
+            if controller.connected and getattr(controller, "last_input_method", "keyboard") == "controller":
+                controller.rumble(0.9, 0.9, 300)
 
     # ── drawing ───────────────────────────────────────────────
 
