@@ -93,6 +93,7 @@ ROOM_FLOOR_MAP = {
     # Basement (Floor 3)
     "b_stairs_up": 3, "b_smile_club": 3, "b_server_room": 3,
     "b_surveillance": 3, "b_detention": 3, "b_terminal": 3,
+    "b_men_bath": 3, "b_women_bath": 3,
     # Rooftop (Floor 4)
     "rt_stairs_down": 4, "rt_terrace": 4, "rt_benches": 4,
     # Special interiors

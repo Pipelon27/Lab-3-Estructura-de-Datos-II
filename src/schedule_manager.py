@@ -63,6 +63,7 @@ class ScheduleManager:
         "f2_art_room": 10, "f2_music_room": 8, "f2_conference": 8,
         "f2_director": 3, "b_detention": 6, "b_terminal": 4,
         "b_surveillance": 4, "b_server_room": 8,
+        "b_men_bath": 4, "b_women_bath": 4,
         "f1_cafeteria": 15, "c_fountain": 15,
         "c_gardens": 20, "rt_terrace": 15,
         "f1_counselor": 8, "pi_hall": 10,
@@ -76,7 +77,7 @@ class ScheduleManager:
     ]
 
     RECESS_ZONES: list[str] = ["f1_cafeteria", "c_fountain", "c_gardens"]
-    TRANSIT_ZONES: list[str] = ["f1_main_hall", "f2_corridor", "f1_men_bath", "f1_women_bath"]
+    TRANSIT_ZONES: list[str] = ["f1_main_hall", "f2_corridor", "f1_men_bath", "f1_women_bath", "b_men_bath", "b_women_bath"]
     ARRIVAL_ZONES: list[str] = ["c_parking", "c_gardens", "c_fountain"]
 
     # Detention config
