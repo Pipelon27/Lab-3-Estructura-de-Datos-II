@@ -294,11 +294,12 @@ class MissionManager:
 
         m4 = Mission(
             "mission_final_showdown", "Final Showdown",
-            "Enter the Basement and shut down the Smile Club for good.",
+            "Enter the Basement and explore the labyrinth to find the Smile Club.",
             objectives=[
-                MissionObjective("go_to_zone", "6", "Enter the Basement"),
-                MissionObjective("hack_target", "smile_server", "Disable the central server"),
-                MissionObjective("talk_to", "npc_director", "Confront Director Walsh"),
+                MissionObjective("go_to_zone", "6", "Explore the labyrinth"),
+                MissionObjective("win_combat", "npc_ava_thompson", "Knock out Ava Thompson"),
+                MissionObjective("win_combat", "npc_marcus_green", "Knock out Marcus Green"),
+                MissionObjective("win_combat", "npc_noah_carter", "Knock out Noah Carter"),
             ],
             prerequisites=["mission_unmasked"],
             rewards={"xp": 200},

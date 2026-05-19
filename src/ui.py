@@ -325,6 +325,17 @@ class UI:
                   player.level, MAX_LEVEL,
                   XP_BLUE, XP_BG, "Lv")
 
+        # ── Basement Detection Meter ──
+        if floor and floor.id == 3 and day_number >= 4:
+            # We assume game object is accessible or we pass detection level via reputation hack or something.
+            # Wait, ui doesn't have game access. We can access it via player or pass it explicitly.
+            # Since I can't easily change draw_hud signature across all files without a big refactor,
+            # I can stick the detection level onto the player object from game.py or access it via world_map.
+            det_lvl = getattr(player, 'detection_level', 0.0) 
+            self._bar(screen, bars_x, 72, 180, 10,
+                      det_lvl, 100,
+                      (255, 60, 60), (40, 20, 20), "DETECT")
+
         # ── money (to the right of bars) ──
         money_x = bars_x + 200
         money_surf = self.font_hud_lg.render(f"${player.money}", True, (57, 255, 20))
