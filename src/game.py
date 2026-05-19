@@ -1693,8 +1693,8 @@ class Game:
                 self._car_panel_cooldown = 1.0  # prevent re-trigger
             return
 
-        # If E, ENTER, or SPACE is pressed:
-        if event.key in (pygame.K_e, pygame.K_RETURN, KEY_INTERACT):
+        # Interact/talk only with E.
+        if event.key == KEY_INTERACT:
             # Priority 1: Computer Prompt (Mainframe Login)
             if getattr(self, '_computer_prompt_active', False):
                 self._start_mainframe_login()
@@ -1715,9 +1715,10 @@ class Game:
                 self._try_interact()
                 return
 
-            # If KEY_INTERACT (SPACE) was pressed but no interaction happened, trigger dash
-            if event.key == KEY_INTERACT:
-                self.player.start_dash()
+            return
+
+        elif event.key == KEY_DASH:
+            self.player.start_dash()
 
         elif event.key in (KEY_DASH_ALT, KEY_DASH_ALT2):
             self.player.start_dash()

@@ -259,7 +259,7 @@ KEY_DOWN         = pygame.K_s
 KEY_LEFT         = pygame.K_a
 KEY_RIGHT        = pygame.K_d
 
-KEY_INTERACT     = pygame.K_SPACE
+KEY_INTERACT     = pygame.K_e
 KEY_USE          = pygame.K_e
 KEY_INVENTORY    = pygame.K_i
 KEY_SKILL_TREE   = pygame.K_k
