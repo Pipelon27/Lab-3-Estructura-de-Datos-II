@@ -2823,10 +2823,7 @@ class Game:
                 self.pingpong.finished = False
                 self.pingpong.reset()
                 self._spectating_pingpong = False
-                self._pingpong_match_won = False
-                self._remote_pingpong_match_won = False
-                self._pingpong_exit_voted = False
-                self._remote_pingpong_exit_voted = False
+                # Do NOT reset won/exit flags here; wait for PLAYING state sync to avoid auto-trigger loops
                 self.state = GameState.PLAYING
                 try:
                     if pygame.mixer.get_init():
@@ -2842,10 +2839,7 @@ class Game:
                 self.pingpong.finished = False
                 self.pingpong.reset()
                 self._spectating_pingpong = False
-                self._pingpong_match_won = False
-                self._remote_pingpong_match_won = False
-                self._pingpong_exit_voted = False
-                self._remote_pingpong_exit_voted = False
+                # Do NOT reset won/exit flags here; wait for PLAYING state sync to avoid auto-trigger loops
                 self.state = GameState.PLAYING
                 try:
                     if pygame.mixer.get_init():
