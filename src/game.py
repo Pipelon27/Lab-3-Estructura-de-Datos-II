@@ -2833,6 +2833,7 @@ class Game:
                 if hasattr(self.basketball, 'floor') and self.basketball.floor:
                     self.basketball.floor.hide_hoops = False
                 self.basketball.reset()
+                self._stop_basketball_music()
                 self.state = GameState.PLAYING
                 if player_won:
                     self.reputation.reputation_score = min(100, self.reputation.reputation_score + 20)
@@ -2898,6 +2899,7 @@ class Game:
         if getattr(self.basketball, 'finished', False):
             self.basketball.finished = False
             self.basketball.reset()
+            self._stop_basketball_music()
             self.state = GameState.PLAYING
 
         # Network sync
@@ -4127,9 +4129,27 @@ class Game:
                 pass
 
             self.basketball.start(self.player, opponent, floor, is_coop=is_coop, ally=ally, opp2=opp2, is_host=self.is_host)
+            self._play_basketball_music()
             self.state = GameState.BASKETBALL
 
     # ── network ───────────────────────────────────────────────
+
+    def _play_basketball_music(self):
+        try:
+            if pygame.mixer.get_init():
+                path = os.path.join("assets", "sounds", "Flashing Lights.mp3")
+                pygame.mixer.music.load(path)
+                pygame.mixer.music.set_volume(0.25)
+                pygame.mixer.music.play(-1)
+        except Exception:
+            pass
+
+    def _stop_basketball_music(self):
+        try:
+            if pygame.mixer.get_init():
+                pygame.mixer.music.stop()
+        except Exception:
+            pass
 
     def _sync_network(self, dt: float = 0.016):
         if not self.network:
@@ -4246,6 +4266,7 @@ class Game:
                     if hasattr(self.basketball, 'floor') and self.basketball.floor:
                         self.basketball.floor.hide_hoops = False
                     self.basketball.reset()
+                    self._stop_basketball_music()
                     self.state = GameState.PLAYING
                     if player_won:
                         self._begin_marcus_win_dialogue()
