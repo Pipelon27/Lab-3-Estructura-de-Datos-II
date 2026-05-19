@@ -3713,13 +3713,26 @@ class Game:
         if "start_basketball" in result and result["start_basketball"]:
             opponent = self.npc_manager.get_npc_by_id("npc_marcus_green")
             
+            is_coop = getattr(self, "multiplayer", False)
+            ally = None
+            opp2 = None
+            
+            if is_coop:
+                from settings import Character
+                sibling_char = Character.LENA if self.player.character == Character.AIDEN else Character.AIDEN
+                for npc in self.npc_manager.npcs.values():
+                    if npc.id == f"npc_{sibling_char.value}":
+                        ally = npc
+                        break
+                opp2 = self.npc_manager.get_npc_by_id("npc_zachary_cole")
+
             # Clear other NPCs from the court
             try:
                 floor = self.school_map.get_floor(self.current_floor)
                 if floor and hasattr(floor, "basketball_court"):
                     bc = floor.basketball_court
                     for npc in self.npc_manager.get_npcs_on_floor(self.current_floor):
-                        if npc != opponent and npc.rect.colliderect(bc):
+                        if npc not in (opponent, ally, opp2) and npc.rect.colliderect(bc):
                             # Teleport out of the court safely (to the left of it)
                             npc.rect.right = bc.left - 20
                             npc.target_pos = None
@@ -3727,7 +3740,7 @@ class Game:
             except Exception:
                 pass
 
-            self.basketball.start(self.player, opponent, floor)
+            self.basketball.start(self.player, opponent, floor, is_coop=is_coop, ally=ally, opp2=opp2)
             self.state = GameState.BASKETBALL
 
     # ── network ───────────────────────────────────────────────
@@ -3948,8 +3961,12 @@ class Game:
 
         for npc in self.npc_manager.get_npcs_on_floor(self.current_floor):
             if self._is_npc_on_camera(npc):
-                if self.state == GameState.BASKETBALL and hasattr(self.basketball, "opponent") and npc == self.basketball.opponent:
-                    continue
+                if self.state == GameState.BASKETBALL:
+                    if hasattr(self.basketball, "opponent") and npc == self.basketball.opponent:
+                        continue
+                    if getattr(self.basketball, "is_coop", False):
+                        if npc == getattr(self.basketball, "ally", None) or npc == getattr(self.basketball, "opp2", None):
+                            continue
                 drawables.append({
                     "type": "npc",
                     "obj": npc,
