@@ -209,6 +209,36 @@ class SkillTree:
             return self.unlock_skill(self.selected_node, player)
         return None
 
+    def handle_controller(self, controller, player):
+        """Navigate and unlock skills using a controller."""
+        # Navigation
+        menu_h = controller.get_menu_direction_horizontal()
+        menu_v = controller.get_menu_direction()
+
+        if menu_v < 0:  # Up
+            if self.selected_node.parent and not self.selected_node.parent.is_root():
+                self.selected_node = self.selected_node.parent
+        elif menu_v > 0:  # Down
+            if self.selected_node.children:
+                self.selected_node = self.selected_node.children[0]
+        elif menu_h < 0:  # Left
+            if self.selected_node.parent:
+                sibs = self.selected_node.parent.children
+                idx = sibs.index(self.selected_node)
+                if idx > 0:
+                    self.selected_node = sibs[idx - 1]
+        elif menu_h > 0:  # Right
+            if self.selected_node.parent:
+                sibs = self.selected_node.parent.children
+                idx = sibs.index(self.selected_node)
+                if idx < len(sibs) - 1:
+                    self.selected_node = sibs[idx + 1]
+
+        # Confirm purchase (A button)
+        if controller.is_confirm_pressed():
+            return self.unlock_skill(self.selected_node, player)
+        return None
+
     # ── drawing ───────────────────────────────────────────────
 
     def draw(self, screen: pygame.Surface, player):
@@ -286,7 +316,15 @@ class SkillTree:
             screen.blit(full_name, full_name.get_rect(midtop=(nx, ny + 32)))
 
         # Footer hint
-        hint = font_desc.render("Arrows: Navigate  |  ENTER: Unlock  |  ESC: Back", True, UI_TEXT_DIM)
+        from src.controller import get_controller
+        controller = get_controller()
+        controller_connected = controller.connected and getattr(controller, "last_input_method", "keyboard") == "controller"
+
+        if controller_connected:
+            hint_txt = "D-pad: Navigate  |  [A]: Unlock  |  [Y]: Back"
+        else:
+            hint_txt = "Arrows: Navigate  |  ENTER: Unlock  |  ESC: Back"
+        hint = font_desc.render(hint_txt, True, UI_TEXT_DIM)
         screen.blit(hint, hint.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT - 25)))
 
     def _calculate_layout(self, node, x_start, x_end, y, y_step):

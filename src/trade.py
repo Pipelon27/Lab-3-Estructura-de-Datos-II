@@ -96,6 +96,40 @@ class TradeSystem:
         elif event.key == pygame.K_t:
             self._confirm_trade()
 
+    def handle_controller(self, controller):
+        """Handle Xbox controller input for trading."""
+        if not self.active:
+            return
+
+        # Cancel (B button)
+        if controller.is_cancel_pressed():
+            self._result = "cancel"
+            self.active  = False
+            return
+
+        # Switch panels using D-pad Left / Right
+        menu_h = controller.get_menu_direction_horizontal()
+        if menu_h < 0:
+            self._panel = "player"
+        elif menu_h > 0:
+            self._panel = "npc"
+
+        # Moving D-pad Up / Down changes index
+        menu_v = controller.get_menu_direction()
+        if menu_v != 0:
+            if self._panel == "player":
+                self._sel_p = max(0, min(len(self.inventory.items) - 1, self._sel_p + menu_v))
+            else:
+                self._sel_n = max(0, min(len(self.npc_items) - 1, self._sel_n + menu_v))
+
+        # Confirm selection (A button)
+        if controller.is_confirm_pressed():
+            self._select_item()
+
+        # Confirm trade (Y button)
+        if controller.is_skill_tree_pressed():
+            self._confirm_trade()
+
     def handle_click(self, pos: tuple[int, int]):
         """Handle mouse click in trade screen (not used yet)."""
         pass
@@ -228,7 +262,14 @@ class TradeSystem:
                     (30, SCREEN_HEIGHT - 80))
 
         # Controls
-        screen.blit(font_sm.render(
-            "TAB Switch  |  ENTER Select  |  T Confirm Trade  |  ESC Cancel",
-            True, UI_TEXT_DIM),
-            (SCREEN_WIDTH // 2 - 220, SCREEN_HEIGHT - 30))
+        from src.controller import get_controller
+        controller = get_controller()
+        controller_connected = controller.connected and getattr(controller, "last_input_method", "keyboard") == "controller"
+
+        if controller_connected:
+            controls_txt = "D-pad Move  |  [A] Select  |  [Y] Confirm Trade  |  [B] Cancel"
+        else:
+            controls_txt = "TAB Switch  |  ENTER Select  |  T Confirm Trade  |  ESC Cancel"
+
+        screen.blit(font_sm.render(controls_txt, True, UI_TEXT_DIM),
+                    (SCREEN_WIDTH // 2 - 220, SCREEN_HEIGHT - 30))

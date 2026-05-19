@@ -83,7 +83,7 @@ class BasketballGame:
         ball_path = os.path.join(base_dir, "assets", "ball.png")
         if os.path.exists(ball_path):
             self.ball_img = pygame.image.load(ball_path).convert_alpha()
-            self.ball_img = pygame.transform.scale(self.ball_img, (16, 16))
+            self.ball_img = pygame.transform.scale(self.ball_img, (40, 40))
         else:
             self.ball_img = None
 
@@ -186,6 +186,10 @@ class BasketballGame:
                                 self.opp_shooting = False
                                 self.ball_held_by = 'player'
                                 self.possession = 'player'
+                                from src.controller import get_controller
+                                controller = get_controller()
+                                if controller.connected and getattr(controller, "last_input_method", "keyboard") == "controller":
+                                    controller.rumble(0.5, 0.6, 120)
 
             elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
                 if self.shooting and self.ball_held_by == 'player':
@@ -244,6 +248,7 @@ class BasketballGame:
                             self.opp_shooting = False
                             self.ball_held_by = 'player'
                             self.possession = 'player'
+                            controller.rumble(0.5, 0.6, 120)
 
     def _shoot_ball(self, shooter, power_bar):
         self.last_shot_team = shooter
@@ -419,6 +424,10 @@ class BasketballGame:
                         self.shooting = False
                         self.ball_held_by = 'opp'
                         self.possession = 'opp'
+                        from src.controller import get_controller
+                        controller = get_controller()
+                        if controller.connected and getattr(controller, "last_input_method", "keyboard") == "controller":
+                            controller.rumble(0.7, 0.4, 200)
 
         # Opponent Image Override for Shooting
         if self.opp_shoot_anim >= 0:
@@ -446,6 +455,12 @@ class BasketballGame:
             elif self.shoot_bar <= 0.0:
                 self.shoot_bar = 0.0
                 self.shoot_dir = 1
+
+            # Pulsing tactile vibration during charging
+            from src.controller import get_controller
+            controller = get_controller()
+            if controller.connected and getattr(controller, "last_input_method", "keyboard") == "controller":
+                controller.rumble(0.1, 0.15 + self.shoot_bar * 0.15, 50)
 
         if self.block_timer > 0:
             self.block_timer -= dt
@@ -503,6 +518,10 @@ class BasketballGame:
                 self.ball_vz = 300
                 self.blocking = False
                 self.possession = None
+                from src.controller import get_controller
+                controller = get_controller()
+                if controller.connected and getattr(controller, "last_input_method", "keyboard") == "controller":
+                    controller.rumble(0.6, 0.7, 150)
             
             if self.opp_blocking and o_dist < 50 and self.ball_z < self.opp_z + 80 and self.ball_held_by is None:
                 self.ball_vx *= -1.2
@@ -513,11 +532,25 @@ class BasketballGame:
 
             # Catching (only if ball is low or player jumps)
             if p_dist < 40 and abs(self.ball_z - self.player_z) < 50 and self.possession != 'player':
+                was_held_by_opp = (self.ball_held_by == 'opp')
                 self.ball_held_by = 'player'
                 self.possession = 'player'
+                from src.controller import get_controller
+                controller = get_controller()
+                if controller.connected and getattr(controller, "last_input_method", "keyboard") == "controller":
+                    if was_held_by_opp:
+                         controller.rumble(0.6, 0.6, 150)
+                    else:
+                         controller.rumble(0.3, 0.3, 80)
             elif o_dist < 40 and abs(self.ball_z - self.opp_z) < 50 and self.possession != 'opp':
+                was_held_by_player = (self.ball_held_by == 'player')
                 self.ball_held_by = 'opp'
                 self.possession = 'opp'
+                from src.controller import get_controller
+                controller = get_controller()
+                if controller.connected and getattr(controller, "last_input_method", "keyboard") == "controller":
+                    if was_held_by_player:
+                         controller.rumble(0.7, 0.4, 200)
 
             # Scoring (Check 2.5D intersection with hoop rim area)
             # We assume the ball falls THROUGH the hoop (vz < 0) near the rim coordinates
@@ -538,8 +571,12 @@ class BasketballGame:
                         "particles": [{"x": self.right_rim[0] + random.uniform(-15, 15), "y": self.right_rim[1] - 30, "vx": random.uniform(-40, 40), "vy": random.uniform(80, 200), "life": 0.8} for _ in range(18)],
                         "timer": 1.0
                     }
+                    from src.controller import get_controller
+                    controller = get_controller()
+                    if controller.connected and getattr(controller, "last_input_method", "keyboard") == "controller":
+                        controller.rumble(0.8, 0.8, 300)
                 elif dist_left < 20 and self.reset_timer <= 0:
-                    pts = 3 if (self.last_shot_team == 'opp' and math.hypot(self.last_shot_x - self.left_rim[0], self.last_shot_y - self.left_rim[1]) > self.three_point_radius) else 2
+                    pts = 3 if (self.last_shot_team == 'opp' and math.hypot(self.last_shot_x - self.left_rim[0], self.left_rim[1] - 605) > self.three_point_radius) else 2
                     self.opp_score += pts
                     self.reset_timer = 1.0
                     self.swish_effect = {
@@ -551,6 +588,10 @@ class BasketballGame:
                         "particles": [{"x": self.left_rim[0] + random.uniform(-15, 15), "y": self.left_rim[1] - 30, "vx": random.uniform(-40, 40), "vy": random.uniform(80, 200), "life": 0.8} for _ in range(18)],
                         "timer": 1.0
                     }
+                    from src.controller import get_controller
+                    controller = get_controller()
+                    if controller.connected and getattr(controller, "last_input_method", "keyboard") == "controller":
+                        controller.rumble(0.8, 0.2, 400)
 
         # Update swish effect
         if self.swish_effect:

@@ -1212,6 +1212,11 @@ class UI:
             # Return hint rendered above the item (see blocks above)
 
     def draw_mainframe(self, screen: pygame.Surface, game):
+        from src.controller import get_controller
+        controller = get_controller()
+        controller_connected = controller.connected and getattr(controller, "last_input_method", "keyboard") == "controller"
+        focus_idx = getattr(game, 'mainframe_focus_idx', 4)
+
         # 1. Background blur / darkening overlay
         overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
         overlay.fill((10, 15, 25, 210))
@@ -1280,8 +1285,15 @@ class UI:
             af_lbl = self.font_hud_sm.render("[Auto-Fill Hacked Credentials]", True, (0, 220, 255))
             screen.blit(af_lbl, af_lbl.get_rect(center=autofill_btn.center))
 
+            # Controller focus highlight
+            if controller_connected:
+                focus_rects = [u_rect, p_rect, login_btn, exit_btn, autofill_btn]
+                if 0 <= focus_idx < len(focus_rects):
+                    pygame.draw.rect(screen, (0, 255, 255), focus_rects[focus_idx].inflate(6, 6), 2, border_radius=8)
+
             # Bottom Hint
-            hint = self.font_hint.render("Hint: Enter Hacked Credentials (User: admin_techlab | Pass: pWd_sMiLe_cLuB_99!)", True, (150, 170, 190))
+            hint_txt = "Hint: [Auto-Fill] & Login" if controller_connected else "Hint: Enter Hacked Credentials (User: admin_techlab | Pass: pWd_sMiLe_cLuB_99!)"
+            hint = self.font_hint.render(hint_txt, True, (150, 170, 190))
             screen.blit(hint, hint.get_rect(center=(cx, panel.bottom + 25)))
 
         elif screen_type == "desktop":
@@ -1315,6 +1327,17 @@ class UI:
                 pygame.draw.rect(screen, col, pygame.Rect(rect.x + 20, rect.y + 15, 60, 50), border_radius=8)
                 lbl = self.font_hud_sm.render(name, True, WHITE)
                 screen.blit(lbl, lbl.get_rect(center=(rect.centerx, rect.bottom - 15)))
+
+            # Controller focus highlight
+            if controller_connected:
+                focus_rects = [
+                    pygame.Rect(cx - 240, cy - 150, 100, 100),
+                    pygame.Rect(cx - 100, cy - 150, 100, 100),
+                    pygame.Rect(cx + 40, cy - 150, 100, 100),
+                    pygame.Rect(cx + 180, cy - 150, 100, 100),
+                ]
+                if 0 <= focus_idx < len(focus_rects):
+                    pygame.draw.rect(screen, (0, 255, 255), focus_rects[focus_idx].inflate(6, 6), 3, border_radius=12)
 
         elif screen_type == "mail":
             # Mail Client Window
@@ -1372,12 +1395,25 @@ class UI:
                 screen.blit(subj_lbl, (item_rect.x + 15, item_rect.y + 26))
                 
                 if is_target:
-                    hint_badge = self.font_hint.render("<< CLICK TO READ", True, (200, 50, 50))
+                    hint_badge = self.font_hint.render("<< READ EMAIL" if controller_connected else "<< CLICK TO READ", True, (200, 50, 50))
                     screen.blit(hint_badge, (item_rect.right - 140, item_rect.y + 16))
                 list_y += 60
 
+            # Controller focus highlight
+            if controller_connected:
+                focus_rects = [
+                    back_btn,
+                    disc_btn,
+                    pygame.Rect(cx - 200, panel.y + 190, 560, 50),  # Eli
+                    pygame.Rect(cx - 200, panel.y + 70, 560, 50),   # Walsh
+                    pygame.Rect(cx - 200, panel.y + 130, 560, 50),  # Davis
+                    pygame.Rect(cx - 200, panel.y + 250, 560, 50),  # IT Support
+                ]
+                if 0 <= focus_idx < len(focus_rects):
+                    pygame.draw.rect(screen, (0, 150, 255), focus_rects[focus_idx].inflate(4, 4), 2, border_radius=6)
+
             # Bottom objective prompt
-            prompt = self.font_hud_sm.render("MISSION OBJECTIVE: Find and click Eli's email in the inbox list above.", True, (50, 100, 150))
+            prompt = self.font_hud_sm.render("MISSION OBJECTIVE: Find and select Eli's email in the inbox list above.", True, (50, 100, 150))
             screen.blit(prompt, prompt.get_rect(center=(panel.x + 490, panel.bottom - 30)))
 
         elif screen_type == "mail_view":
@@ -1457,8 +1493,14 @@ class UI:
             c_lbl = self.font_hud_md.render("Close Email", True, WHITE)
             screen.blit(c_lbl, c_lbl.get_rect(center=close_btn.center))
 
+            # Controller focus highlight
+            if controller_connected:
+                focus_rects = [back_btn, disc_btn, close_btn]
+                if 0 <= focus_idx < len(focus_rects):
+                    pygame.draw.rect(screen, (0, 150, 255), focus_rects[focus_idx].inflate(4, 4), 2, border_radius=8)
+
             # Bottom prompt
-            prompt = self.font_hud_sm.render("MISSION OBJECTIVE: Information acquired. Click Disconnect to exit the system.", True, (180, 40, 40))
+            prompt = self.font_hud_sm.render("MISSION OBJECTIVE: Information acquired. Select Disconnect to exit the system.", True, (180, 40, 40))
             screen.blit(prompt, prompt.get_rect(center=(cx, panel.bottom - 25)))
 
         elif screen_type == "alarm":
@@ -1498,3 +1540,7 @@ class UI:
             pygame.draw.rect(screen, WHITE, ack_btn, 3, border_radius=12)
             a_lbl = self.font_menu.render("Acknowledge & Escape", True, WHITE)
             screen.blit(a_lbl, a_lbl.get_rect(center=ack_btn.center))
+
+            # Controller focus highlight
+            if controller_connected:
+                pygame.draw.rect(screen, (255, 255, 255), ack_btn.inflate(6, 6), 2, border_radius=12)
