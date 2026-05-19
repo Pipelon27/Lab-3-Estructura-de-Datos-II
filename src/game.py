@@ -1892,10 +1892,26 @@ class Game:
                 self._ava_phone_on_chair = True
                 self._bad_feeling_active = False
                 self._player_bad_feeling_shown = True
+                
+                # Remove Marcus, Noah, and Ava from the rooftop
+                for nid in ("npc_marcus_green", "npc_noah_carter", "npc_ava_thompson"):
+                    npc = self.npc_manager.get_npc_by_id(nid)
+                    if npc:
+                        npc.current_floor = FLOOR_1F
+                        npc.rect.center = (1500, 500)
+                        npc.ai_enabled = False
 
 
-        self.player.rect.center = (2000, 2700)
-        self.current_floor = FLOOR_CAMPUS
+        if target_id in ("mission_rooftop_party", "mission_talk_ava_rooftop"):
+            self.player.rect.center = (1600, 1600)  # Near rooftop stairs
+            self.current_floor = FLOOR_ROOFTOP
+        elif target_id == "mission_check_ava_phone":
+            self.player.rect.center = (1485, 770)   # Near the phone chair
+            self.current_floor = FLOOR_ROOFTOP
+        else:
+            self.player.rect.center = (2000, 2700)
+            self.current_floor = FLOOR_CAMPUS
+
         floor = self.school_map.get_floor(self.current_floor)
         if floor:
             self._floor_w = floor.width
@@ -4729,14 +4745,14 @@ class Game:
         if marcus:
             marcus.ai_enabled    = True
             marcus.stop_at_target = True
-            marcus.target_pos    = (1200, 900)
-            marcus.target_queue  = [(1050, 120), (800, 150), "SWITCH_TO_F1", (1500, 500)]
+            marcus.target_pos    = (1000, 860)
+            marcus.target_queue  = ["SWITCH_TO_F1", (1500, 500)]
             marcus.speed_multiplier = 3.5
         if noah:
             noah.ai_enabled      = True
             noah.stop_at_target  = True
-            noah.target_pos      = (1200, 900)
-            noah.target_queue    = [(1050, 120), (800, 150), "SWITCH_TO_F1", (1500, 500)]
+            noah.target_pos      = (1000, 920)
+            noah.target_queue    = ["SWITCH_TO_F1", (1500, 500)]
             noah.speed_multiplier = 3.5
 
         # Camera pan target = midpoint of Marcus & Noah
@@ -4942,7 +4958,6 @@ class Game:
         """Player found the secret chat — Mission 12 complete."""
         self._ava_phone_found_chat   = True
         self._ava_phone_completed    = True
-        self._ava_phone_spying       = False
         self._ava_phone_timer_active = False
         self._ava_phone_on_chair     = False
 
@@ -5059,12 +5074,35 @@ class Game:
             for msg in msgs:
                 is_p = msg.get("is_player", False)
                 bubble_col = (60, 20, 50) if is_p else (35, 15, 35)
-                text = fnt_sm.render(f"{msg['sender']}: {msg['text']}", True, (230, 180, 210))
-                tw = min(text.get_width() + 12, ph_w - 20)
+                full_text = f"{msg['sender']}: {msg['text']}"
+                
+                # Word wrap
+                words = full_text.split(' ')
+                lines = []
+                current_line = ""
+                max_width = ph_w - 40
+                for word in words:
+                    test_line = current_line + word + " "
+                    if fnt_sm.size(test_line)[0] < max_width:
+                        current_line = test_line
+                    else:
+                        lines.append(current_line)
+                        current_line = word + " "
+                if current_line:
+                    lines.append(current_line)
+                
+                # Render lines
+                box_h = len(lines) * 16 + 4
+                max_lw = max([fnt_sm.size(l)[0] for l in lines] + [0])
+                tw = min(max_lw + 12, ph_w - 20)
                 bx = ph_x + ph_w - tw - 10 if is_p else ph_x + 10
-                pygame.draw.rect(self.screen, bubble_col, (bx - 4, content_y - 2, tw + 4, 20), border_radius=4)
-                self.screen.blit(text, (bx, content_y))
-                content_y += 22
+                
+                pygame.draw.rect(self.screen, bubble_col, (bx - 4, content_y - 2, tw + 4, box_h), border_radius=4)
+                for i, l in enumerate(lines):
+                    text_surf = fnt_sm.render(l.strip(), True, (230, 180, 210))
+                    self.screen.blit(text_surf, (bx, content_y + i * 16))
+                
+                content_y += box_h + 6
                 if content_y > ph_y + ph_h - 35:
                     break
 
