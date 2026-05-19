@@ -845,7 +845,7 @@ class Floor:
                 pygame.draw.rect(screen, furn["outline"], fr, 2)
 
     def _draw_basement_lighting(self, screen, camera, player):
-        import math, time, random
+        import math, time
         sw, sh = screen.get_width(), screen.get_height()
         
         # 1. Prepare dark surface
@@ -863,11 +863,12 @@ class Floor:
             
         # 3. Atmosphere (More tense, jittery flicker)
         t = time.time()
-        flicker = random.uniform(0.97, 1.03) # stronger flicker
-        pulse = 1.0 + math.sin(t * 1.5) * 0.02 # faster pulse
+        flicker = 1.0 + math.sin(t * 7.0) * 0.02
+        pulse = 1.0 + math.sin(t * 1.5) * 0.02
         
         # Reduced radius by ~50%
         radius = int(150 * flicker * pulse)
+        radius = max(120, min(180, (radius // 4) * 4))
         
         # 4. Draw the light mask (Spotlight)
         if not hasattr(self, '_light_mask_base'):
@@ -880,13 +881,23 @@ class Floor:
                 alpha = int(255 * (1 - ratio**3))
                 pygame.draw.circle(self._light_mask_base, (0, 0, 0, alpha), (center, center), r)
         
-        mask = pygame.transform.scale(self._light_mask_base, (radius * 2, radius * 2))
+        if not hasattr(self, '_light_mask_scaled_cache'):
+            self._light_mask_scaled_cache = {}
+        mask = self._light_mask_scaled_cache.get(radius)
+        if mask is None:
+            mask = pygame.transform.scale(self._light_mask_base, (radius * 2, radius * 2))
+            self._light_mask_scaled_cache[radius] = mask
         self._basement_dark_surf.blit(mask, (px - radius, py - radius), special_flags=pygame.BLEND_RGBA_SUB)
         
         # 5. Faint inner core light
         glow_r = int(radius * 0.4)
-        glow_surf = pygame.Surface((glow_r*2, glow_r*2), pygame.SRCALPHA)
-        pygame.draw.circle(glow_surf, (200, 190, 150, 20), (glow_r, glow_r), glow_r)
+        if not hasattr(self, '_basement_glow_cache'):
+            self._basement_glow_cache = {}
+        glow_surf = self._basement_glow_cache.get(glow_r)
+        if glow_surf is None:
+            glow_surf = pygame.Surface((glow_r*2, glow_r*2), pygame.SRCALPHA)
+            pygame.draw.circle(glow_surf, (200, 190, 150, 20), (glow_r, glow_r), glow_r)
+            self._basement_glow_cache[glow_r] = glow_surf
         self._basement_dark_surf.blit(glow_surf, (px - glow_r, py - glow_r))
 
         # 6. Apply final result to screen

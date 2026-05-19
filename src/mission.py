@@ -294,9 +294,9 @@ class MissionManager:
 
         m4 = Mission(
             "mission_final_showdown", "Final Showdown",
-            "Enter the Basement and explore the labyrinth to find the Smile Club.",
+            "Enter the Basement and explore the labyrinth.",
             objectives=[
-                MissionObjective("go_to_zone", "6", "Explore the labyrinth"),
+                MissionObjective("go_to_zone", "6", "Explore the Labyrinth"),
                 MissionObjective("win_combat", "npc_ava_thompson", "Knock out Ava Thompson"),
                 MissionObjective("win_combat", "npc_marcus_green", "Knock out Marcus Green"),
                 MissionObjective("win_combat", "npc_noah_carter", "Knock out Noah Carter"),
