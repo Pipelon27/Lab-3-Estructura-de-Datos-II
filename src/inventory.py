@@ -208,6 +208,21 @@ class Inventory:
                 name = self.items[self.selected].name
                 self.remove_item(name, 1)
 
+    def handle_controller(self, controller):
+        """Navigate and interact with inventory using a controller."""
+        if not self.items:
+            return
+
+        # Navigate Up / Down
+        menu_v = controller.get_menu_direction()
+        if menu_v != 0:
+            self.selected = max(0, min(len(self.items) - 1, self.selected + menu_v))
+
+        # Discard item (X button)
+        if controller.is_inventory_pressed():
+            name = self.items[self.selected].name
+            self.remove_item(name, 1)
+
     # ── drawing ───────────────────────────────────────────────
 
     def draw(self, screen: pygame.Surface):
@@ -253,9 +268,16 @@ class Inventory:
                 screen.blit(surf, (rx, ry))
                 y += 30
 
-        hint = font_desc.render(
-            "↑↓ Navigate  |  DEL Discard  |  ESC Close", True, UI_TEXT_DIM
-        )
+        from src.controller import get_controller
+        controller = get_controller()
+        controller_connected = controller.connected and getattr(controller, "last_input_method", "keyboard") == "controller"
+
+        if controller_connected:
+            hint_txt = "D-pad Navigate  |  [X] Discard  |  [B] Close"
+        else:
+            hint_txt = "↑↓ Navigate  |  DEL Discard  |  ESC Close"
+
+        hint = font_desc.render(hint_txt, True, UI_TEXT_DIM)
         screen.blit(hint, hint.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT - 25)))
 
     def __repr__(self):

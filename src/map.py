@@ -2232,9 +2232,9 @@ class Floor:
             if -848 < court_x < sw and -694 < court_y < sh and not getattr(self, "hide_hoops", False):
                 # Symmetrically place hoops at 1.5x on the top layer so characters pass underneath!
                 if hasattr(self, "_left_hoop_surface") and self._left_hoop_surface:
-                    screen.blit(self._left_hoop_surface, (court_x + 40, court_y + 252))
+                    screen.blit(self._left_hoop_surface, (court_x + 10, court_y + 222))
                 if hasattr(self, "_right_hoop_surface") and self._right_hoop_surface:
-                    screen.blit(self._right_hoop_surface, (court_x + 941, court_y + 252))
+                    screen.blit(self._right_hoop_surface, (court_x + 706, court_y + 222))
 
     def __repr__(self):
         return f"Floor({self.id}, '{self.name}', rooms={len(self.rooms)})"
@@ -2570,7 +2570,7 @@ class SchoolMap:
                 f.walls.append(pygame.Rect(px - 10, py - 10, 20, 20))
         
         # Use the fountain sprite only at the Central Fountain POI
-        f.garden_decorations.append(('sprite', 2000, 2225, fountain_2_3, 280, 350))
+        f.garden_decorations.append(('sprite', 2000, 2225, fountain_3_3, 280, 350))
         
         # New bush sprites to alternate
         bush_sprites = [
@@ -3423,11 +3423,11 @@ class SchoolMap:
         f.basketball_court = pygame.Rect(476, 258, 848, 694)
 
         # Add hoop base walls (only the base of the hoop blocks the player!)
-        # Left hoop: centered collision rect at (519, 676, 32, 24)
-        f.walls.append(pygame.Rect(519, 676, 32, 24))
+        # Left hoop: centered collision rect at (489, 646, 32, 24)
+        f.walls.append(pygame.Rect(489, 646, 32, 24))
         
-        # Right hoop: centered collision rect at (1513, 676, 32, 24)
-        f.walls.append(pygame.Rect(1513, 676, 32, 24))
+        # Right hoop: centered collision rect at (1278, 646, 32, 24)
+        f.walls.append(pygame.Rect(1278, 646, 32, 24))
 
         # Exit back to campus at the bottom gap
         f.transitions.append(FloorTransition(
