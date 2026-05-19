@@ -297,6 +297,17 @@ class Floor:
             except Exception as e:
                 print(f"Failed to load sprite {sprite_name} from {data_tiles_path}: {e}")
         
+        # Try assets/decoracionbasement folder
+        decor_path = os.path.join(
+            os.path.dirname(os.path.dirname(__file__)),
+            "assets", "decoracionbasement", sprite_name
+        )
+        if os.path.isfile(decor_path):
+            try:
+                return pygame.image.load(decor_path).convert_alpha()
+            except Exception as e:
+                print(f"Failed to load sprite {sprite_name} from {decor_path}: {e}")
+        
         # Try assets folders
         asset_base = os.path.join(
             os.path.dirname(os.path.dirname(__file__)),
@@ -524,7 +535,8 @@ class Floor:
 
         if draw_furniture:
             for furn in self.furniture:
-                self.draw_single_furn(screen, camera, furn)
+                if furn.get("type") != "sprite_decor":
+                    self.draw_single_furn(screen, camera, furn)
 
         # ── Two-pass wall rendering ──────────────────────────────
         # Pass 1: shadows + 3-D extrusions (bottom/right faces)
@@ -533,7 +545,7 @@ class Floor:
         # another wall's top surface.
         pp_tables = getattr(self, 'ping_pong_tables', [])
         pp_table  = getattr(self, 'ping_pong_table', None)
-        fountain  = getattr(self, 'fountain_rect', None)
+        fountain_colliders = getattr(self, 'fountain_rects', [])
         # Collect all furniture rects so they are drawn as furniture, not walls
         furniture_rects = set()
         for furn in self.furniture:
@@ -553,7 +565,7 @@ class Floor:
         for wall, wr in visible_walls:
             if wall in pp_tables or (pp_table and wall == pp_table):
                 continue
-            if fountain and wall == fountain:
+            if wall in fountain_colliders:
                 continue
             if id(wall) in furniture_rects:
                 continue
@@ -563,12 +575,18 @@ class Floor:
         for wall, wr in visible_walls:
             if wall in pp_tables or (pp_table and wall == pp_table):
                 self._draw_ping_pong_table(screen, wr)
-            elif fountain and wall == fountain:
+            elif wall in fountain_colliders:
                 continue
             elif id(wall) in furniture_rects:
                 continue
             else:
                 self._draw_wall_cap(screen, wr, wall=wall)
+
+        # Draw wall-mounted decorations (like graffiti) on top of the walls cap/face
+        if draw_furniture:
+            for furn in self.furniture:
+                if furn.get("type") == "sprite_decor":
+                    self.draw_single_furn(screen, camera, furn)
 
         # ── Room name labels (drawn AFTER walls so they stay visible) ──
         for room in self.rooms.values():
@@ -804,6 +822,21 @@ class Floor:
             self._draw_chalkboard(screen, fr, furn.get("facing", "up"))
         elif ftype == "sink":
             self._draw_sink(screen, fr, furn.get("facing", "down"))
+        elif ftype in ("sprite_furn", "sprite_decor"):
+            sprite_name = furn.get("sprite_name")
+            if sprite_name:
+                if not hasattr(self, '_sprite_cache'):
+                    self._sprite_cache = {}
+                if sprite_name not in self._sprite_cache:
+                    self._sprite_cache[sprite_name] = self._load_sprite(sprite_name)
+                sprite_surf = self._sprite_cache[sprite_name]
+                if sprite_surf:
+                    scaled_surf = pygame.transform.smoothscale(sprite_surf, (fr.width, fr.height))
+                    screen.blit(scaled_surf, fr)
+                else:
+                    pygame.draw.rect(screen, furn.get("color", (140, 140, 150)), fr)
+                    if furn.get("outline"):
+                        pygame.draw.rect(screen, furn["outline"], fr, 2)
         else:
             pygame.draw.rect(screen, furn["color"], fr)
             if furn.get("outline"):
@@ -2481,18 +2514,22 @@ class SchoolMap:
         f.ping_pong_table = pygame.Rect(3400, 2420, 180, 110)
         f.walls.append(f.ping_pong_table)
 
-        # Fountain collision - circular base at center of c_fountain room
+        # Fountain collision - sliced rectangles approximate the circular sprite.
         # Room center: 1700+300=2000, 2050+175=2225
         fountain_cx, fountain_cy = 2000, 2225
         fountain_base_r = 85
-        # Approximate circle with a square collision (slightly larger than visual)
-        f.fountain_rect = pygame.Rect(
-            fountain_cx - fountain_base_r,
-            fountain_cy - fountain_base_r,
-            fountain_base_r * 2,
-            fountain_base_r * 2
-        )
-        f.walls.append(f.fountain_rect)
+        fountain_slice_h = 24
+        f.fountain_rects = []
+        for y_offset in (-72, -48, -24, 0, 24, 48, 72):
+            half_width = int((fountain_base_r * fountain_base_r - y_offset * y_offset) ** 0.5)
+            rect = pygame.Rect(
+                fountain_cx - half_width,
+                fountain_cy + y_offset - fountain_slice_h // 2,
+                half_width * 2,
+                fountain_slice_h
+            )
+            f.fountain_rects.append(rect)
+            f.walls.append(rect)
 
         # Basketball court
         f.basketball_court = pygame.Rect(2800 + WT, 150 + WT, 1080 - 2 * WT, 950 - 2 * WT)
@@ -2570,7 +2607,7 @@ class SchoolMap:
                 f.walls.append(pygame.Rect(px - 10, py - 10, 20, 20))
         
         # Use the fountain sprite only at the Central Fountain POI
-        f.garden_decorations.append(('sprite', 2000, 2225, fountain_3_3, 280, 350))
+        f.garden_decorations.append(('sprite', 2000, 2225, fountain_3_3, 170, 170))
         
         # New bush sprites to alternate
         bush_sprites = [
@@ -3318,6 +3355,51 @@ class SchoolMap:
             {"type": "server", "x": 1550, "y": 450, "difficulty": 5, "id": "smile_server"},
             {"type": "camera", "x": 2350, "y": 450, "difficulty": 4, "id": "surv_cam"},
         ]
+
+        # ── BASEMENT DECORATIONS ──
+        # 1. Coffee Machine - pegada a la pared de la derecha (against the right wall)
+        # Right boundary is x = 3200 - WT. Let's place it at x = 3200 - WT - 48, y = 1600.
+        # It's a blocking sprite-based furniture.
+        _add_furn(f, pygame.Rect(3200 - WT - 48, 1600, 48, 64), "sprite_furn",
+                  sprite_name="ME_Singles_Subway_and_Train_Station_32x32_Coffee_Machine_Right.png")
+
+        # 2. Shovel (la pala) - en una de las esquinas
+        # Let's put it in the bottom-left corner of the main corridor (x = WT + 20, y = 2400 - WT - 48).
+        # We can make it a blocking furniture (width 32, height 48).
+        _add_furn(f, pygame.Rect(WT + 20, 2400 - WT - 48, 32, 48), "sprite_furn",
+                  sprite_name="ME_Singles_Worksite_32x32_Shovel_3.png")
+
+        # 3. Graffiti (los grafitis deben estar en las paredes)
+        # These are non-blocking sprite_decor items drawn on walls.
+        # Let's place them symmetrically and beautifully on the south-facing walls of the room cluster (y = 1300 - WT).
+        # Since it's y = 1300 - WT, they are on the wall face/cap.
+        # We will scale them to 64x48.
+        _add_furn(f, pygame.Rect(500, 1300 - WT - 32, 64, 48), "sprite_decor", blocking=False,
+                  sprite_name="ME_Singles_Subway_and_Train_Station_32x32_Green_FNS_Writing_Graffiti.png")
+        _add_furn(f, pygame.Rect(1500, 1300 - WT - 32, 64, 48), "sprite_decor", blocking=False,
+                  sprite_name="ME_Singles_Subway_and_Train_Station_32x32_Green_Purple_Writing_Graffiti.png")
+        _add_furn(f, pygame.Rect(2300, 1300 - WT - 32, 64, 48), "sprite_decor", blocking=False,
+                  sprite_name="ME_Singles_Subway_and_Train_Station_32x32_Green_FNS_Writing_Graffiti.png")
+        # Let's also put graffiti on the left and right walls of the basement
+        _add_furn(f, pygame.Rect(WT, 1000, 48, 64), "sprite_decor", blocking=False,
+                  sprite_name="ME_Singles_Subway_and_Train_Station_32x32_Green_Purple_Writing_Graffiti.png")
+        _add_furn(f, pygame.Rect(3200 - WT - 48, 1000, 48, 64), "sprite_decor", blocking=False,
+                  sprite_name="ME_Singles_Subway_and_Train_Station_32x32_Green_FNS_Writing_Graffiti.png")
+
+        # 4. Wooden Tiny Tables (mesas) - ordenadas y simétricas
+        # Symmetrical 2x6 grid in the lower corridor (avoiding stairs at x=550..1050, y=1620..1900).
+        # Grid Y coordinates: Row 1 at y = 1450, Row 2 at y = 2050.
+        # Grid X coordinates (perfectly symmetric around x=1600):
+        # x = 400, 1200, 1500, 1700, 2000, 2800.
+        # Each table blocks path (blocking=True) and is 48x48.
+        table_positions = [
+            (400, 1450), (1200, 1450), (1500, 1450), (1700, 1450), (2000, 1450), (2800, 1450),
+            (400, 2050), (1200, 2050), (1500, 2050), (1700, 2050), (2000, 2050), (2800, 2050)
+        ]
+        for tx, ty in table_positions:
+            _add_furn(f, pygame.Rect(tx, ty, 48, 48), "sprite_furn",
+                      sprite_name="ME_Singles_Swimming_Pool_32x32_Wooden_Tiny_Table_2.png")
+
         return f
 
     # ──────────────────────────────────────────────────────────
