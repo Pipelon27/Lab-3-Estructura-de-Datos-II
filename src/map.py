@@ -3447,8 +3447,8 @@ class SchoolMap:
             _hw(1200, 500, 1200), bot_wall,
         ])
         f.windowed_walls = [bot_wall]
-        f.walls.extend(_vwall_gaps(1200, 500, 1700, [(900, DW)]))
-        f.walls.extend(_vwall_gaps(2400 - WT, 500, 1700, [(900, DW)]))
+        f.walls.extend(_vwall_gaps(1200, 500, 1700, [(850, int(2.5 * DW))]))
+        f.walls.extend(_vwall_gaps(2400 - WT, 500, 1700, [(850, int(2.5 * DW))]))
 
         # ── Rooftop Terrace furniture: patio tables with parasol umbrellas ──
         # Terrace bounds: x=1200..2400, y=500..1700 (parapet)
