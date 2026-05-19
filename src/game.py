@@ -263,6 +263,18 @@ class Game:
         rects.extend(rect for rect, _, _ in self._extra_parked_cars)
         return rects
 
+    def _play_button_sound(self):
+        if not pygame.mixer.get_init():
+            return
+        if not hasattr(self, "_button_sound"):
+            try:
+                self._button_sound = pygame.mixer.Sound("assets/sounds/sonido_boton.mp3")
+                self._button_sound.set_volume(0.25)
+            except Exception:
+                self._button_sound = None
+        if self._button_sound:
+            self._button_sound.play()
+
     def _init_map(self):
         self.school_map    = SchoolMap()
         self.current_floor = FLOOR_CAMPUS
@@ -860,6 +872,8 @@ class Game:
             if event.type in (pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN):
                 if self.controller:
                     self.controller.last_input_method = "keyboard"
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                self._play_button_sound()
             if getattr(self, "_oscar_win_dialogue_active", False):
                 if event.type == pygame.KEYDOWN and event.key in (pygame.K_SPACE, pygame.K_RETURN):
                     self._advance_oscar_win_dialogue()
@@ -3907,7 +3921,7 @@ class Game:
             self.state = GameState.PINGPONG
             try:
                 if pygame.mixer.get_init():
-                    pygame.mixer.music.load("sound/ping pong music.mp3")
+                    pygame.mixer.music.load("assets/sounds/armin-van-buuren-ping-pong-official-music-video_imhWhjMW.mp3")
                     pygame.mixer.music.set_volume(0.25)
                     pygame.mixer.music.play(-1)
             except Exception:
