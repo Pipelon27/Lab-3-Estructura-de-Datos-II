@@ -460,6 +460,9 @@ class Game:
         self.remote_cinematic_skip = False
         self.car_departure_voted = False
         self.remote_car_departure_voted = False
+        self._host_viewed_oscar_post = False
+        self._client_viewed_oscar_post = False
+        self._remote_client_viewed_oscar_post = False
         self.camera = Camera(self._floor_w, self._floor_h)
         # Snap camera to entrance for intro cinematic to prevent lerp-from-zero spawn bugs
         target_x = 2000 - SCREEN_WIDTH // 2
@@ -2647,6 +2650,8 @@ class Game:
         self.social_ui.update(dt)
 
         if getattr(self, "_oscar_win_dialogue_active", False):
+            if self.multiplayer and self.network:
+                self._sync_network(dt)
             return
         
         # Check if the player viewed the mention in XSchool-Net
@@ -2654,7 +2659,18 @@ class Game:
             if getattr(self, "phone", None) and self.phone.is_visible and self.phone.current_app.value == "social":
                 if getattr(self.phone, "active_post", None):
                     if self.phone.active_post.author_npc_id == "npc_oscar":
-                        self._current_main_mission_text = "Mission 2: Go to the Ping Pong court to play against Oscar Jimenez."
+                        if self.multiplayer:
+                            if self.is_host:
+                                self._host_viewed_oscar_post = True
+                            else:
+                                self._client_viewed_oscar_post = True
+                        else:
+                            self._current_main_mission_text = "Mission 2: Go to the Ping Pong court to play against Oscar Jimenez."
+
+        if self.multiplayer and getattr(self, "_current_main_mission_text", None) == "Mission 2: Open Social app and click Oscar's post.":
+            if self.is_host:
+                if self._host_viewed_oscar_post and self._remote_client_viewed_oscar_post:
+                    self._current_main_mission_text = "Mission 2: Go to the Ping Pong court to play against Oscar Jimenez."
 
         if getattr(self, 'sibling_npc', None):
             col = (255, 180, 220) if self.character == Character.AIDEN else (100, 150, 255)
@@ -2988,10 +3004,26 @@ class Game:
                 self._pending_pingpong_result = None
             # If in coop and they won, transition to live spectating mode!
             elif self.multiplayer and getattr(self, "_pending_pingpong_result", None) == "win":
-                self._spectating_pingpong = True
-                self.pingpong.finished = False
-                self.pingpong.waiting_for_dismiss = False
-                self._pending_pingpong_result = None
+                if self._remote_pingpong_match_won:
+                    # Both have won! No need to spectate. Exit the minigame cleanly.
+                    self.pingpong.finished = False
+                    self.pingpong.reset()
+                    self._spectating_pingpong = False
+                    self._pingpong_match_won = True  # Keep True so host can see it!
+                    self.state = GameState.PLAYING
+                    try:
+                        if pygame.mixer.get_init():
+                            pygame.mixer.music.stop()
+                    except Exception:
+                        pass
+                    self._pending_pingpong_result = None
+                    if self.is_host:
+                        self._begin_oscar_win_dialogue()
+                else:
+                    self._spectating_pingpong = True
+                    self.pingpong.finished = False
+                    self.pingpong.waiting_for_dismiss = False
+                    self._pending_pingpong_result = None
             else:
                 # Single-player exit or default clean up
                 pingpong_result = getattr(self, "_pending_pingpong_result", None)
@@ -3014,6 +3046,12 @@ class Game:
             self.basketball.reset()
             self._stop_basketball_music()
             self.state = GameState.PLAYING
+
+        # Reset pingpong match won flags in PLAYING state once remote state is also PLAYING
+        if self.multiplayer and self.state == GameState.PLAYING and self._pingpong_match_won:
+            if getattr(self, "_remote_game_state", None) == GameState.PLAYING.value:
+                self._pingpong_match_won = False
+                self._remote_pingpong_match_won = False
 
         # Network sync
         if self.multiplayer and self.network:
@@ -4357,6 +4395,7 @@ class Game:
                         ]
                     }
                 player_data["mission_data"] = mission_data
+                player_data["main_mission_text"] = self._current_main_mission_text
 
                 # Sync cinematic variables
                 player_data["cine_phase"] = self._cine_phase
@@ -4414,6 +4453,7 @@ class Game:
                     if m.status.value == "active":
                         client_mission_progress[m_id] = [o.client_completed for o in m.objectives]
                 player_data["client_mission_progress"] = client_mission_progress
+                player_data["client_viewed_oscar_post"] = self._client_viewed_oscar_post
 
             # Pack ping pong match won & cheers
             player_data["pp_match_won"] = self._pingpong_match_won
@@ -4436,6 +4476,7 @@ class Game:
                                 for idx, val in enumerate(m_objectives):
                                     if idx < len(m.objectives):
                                         m.objectives[idx].client_completed = val
+                    self._remote_client_viewed_oscar_post = remote.get("client_viewed_oscar_post", False)
 
                 r_state = remote.get("game_state")
                 
@@ -4566,6 +4607,9 @@ class Game:
                                                 self._current_main_mission_text = "Mission 12: Check Ava's phone before she comes back! (15 seconds)"
                                             elif new_m.id == "mission_final_showdown":
                                                 self._current_main_mission_text = "Mission 13: Go to the Basement and see what they're plotting!"
+                                        
+                    if "main_mission_text" in remote:
+                        self._current_main_mission_text = remote["main_mission_text"]
                                         
                     # Sync intro cinematic variables
                     self._cine_phase = remote.get("cine_phase", self._cine_phase)
