@@ -96,6 +96,7 @@ class BasketballGame:
 
         # Pass state
         self.pass_in_flight = False
+        self.pass_requested = False
         self.pass_start_x = 0.0
         self.pass_start_y = 0.0
         self.pass_target_entity = None  # 'ally' or 'player'
@@ -214,6 +215,8 @@ class BasketballGame:
             # Host receives client inputs
             if "z" in bb_data and self.ally:
                 self.ally_z = bb_data["z"]
+            if bb_data.get("pass_request", False):
+                self._initiate_pass('ally', 'player')
             if "shooting" in bb_data:
                 # The ally's shooting state is the client's shooting state
                 if bb_data["shooting"]:
@@ -223,13 +226,30 @@ class BasketballGame:
                 else:
                     if getattr(self, "ally_shooting", False):
                         self.ally_shooting = False
-                        self._shoot_ball('ally', bb_data.get("shoot_bar", 0.0))
+                        self.ally_shoot_anim = 0.0
+                        self.ally_pending_shot = bb_data.get("shoot_bar", 0.0)
         else:
             # Client receives authoritative state from Host
             self.ball_x = bb_data.get("ball_x", self.ball_x)
             self.ball_y = bb_data.get("ball_y", self.ball_y)
             self.ball_z = bb_data.get("ball_z", self.ball_z)
-            self.ball_held_by = bb_data.get("ball_held_by", self.ball_held_by)
+            
+            raw_held = bb_data.get("ball_held_by", self.ball_held_by)
+            if raw_held == 'player':
+                self.ball_held_by = 'ally'
+            elif raw_held == 'ally':
+                self.ball_held_by = 'player'
+            else:
+                self.ball_held_by = raw_held
+
+            raw_possession = bb_data.get("possession", self.possession)
+            if raw_possession == 'player':
+                self.possession = 'ally'
+            elif raw_possession == 'ally':
+                self.possession = 'player'
+            else:
+                self.possession = raw_possession
+
             self.pass_in_flight = bb_data.get("pass_in_flight", self.pass_in_flight)
             
             self.opp_z = bb_data.get("opp_z", self.opp_z)
@@ -258,7 +278,8 @@ class BasketballGame:
                 else:
                     if getattr(self, "ally_shooting", False):
                         self.ally_shooting = False
-                        self._shoot_ball('ally', bb_data.get("shoot_bar", 0.0))
+                        self.ally_shoot_anim = 0.0
+                        self.ally_pending_shot = bb_data.get("shoot_bar", 0.0)
 
     def handle_input(self, event: pygame.event.Event):
         if self.paused:
@@ -388,6 +409,9 @@ class BasketballGame:
 
     def _initiate_pass(self, from_entity, to_entity):
         """Start a pass from from_entity to to_entity."""
+        if not self.is_host and from_entity == 'player':
+            self.pass_requested = True
+            
         if from_entity == 'player':
             sx, sy = self.player.rect.centerx, self.player.rect.centery
         elif from_entity == 'ally' and self.ally:
@@ -517,6 +541,15 @@ class BasketballGame:
             elif self.opp_shoot_anim >= 3.0 and self.opp_pending_shot is not None:
                 self._shoot_ball('opp', self.opp_pending_shot)
                 self.opp_pending_shot = None
+
+        # Ally Shooting Animation logic
+        if self.ally_shoot_anim >= 0:
+            self.ally_shoot_anim += dt * 10.0
+            if self.ally_shoot_anim >= 6.0:
+                self.ally_shoot_anim = -1.0
+            elif self.ally_shoot_anim >= 3.0 and getattr(self, "ally_pending_shot", None) is not None:
+                self._shoot_ball('ally', self.ally_pending_shot)
+                self.ally_pending_shot = None
         
         # Player Movement (using top-down WASD logic from player)
         # To reuse animations and collisions:
@@ -723,6 +756,21 @@ class BasketballGame:
             frames = self.opponent.animations.get(anim_key, [])
             if frames:
                 self.opponent.image = frames[0]
+
+        # Ally Image Override for Shooting
+        if self.is_coop and self.ally:
+            if self.ally_shoot_anim >= 0:
+                self.ally.state = "shoot"
+                anim_key = f"shoot_{self.ally.direction.value}"
+                frames = self.ally.animations.get(anim_key, [])
+                if frames:
+                    self.ally.image = frames[min(int(self.ally_shoot_anim), len(frames)-1)]
+            elif getattr(self, 'ally_shooting', False):
+                self.ally.state = "shoot"
+                anim_key = f"shoot_{self.ally.direction.value}"
+                frames = self.ally.animations.get(anim_key, [])
+                if frames:
+                    self.ally.image = frames[0]
 
         # Shooting bar logic
         if self.shooting:
