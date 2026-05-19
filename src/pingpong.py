@@ -1063,6 +1063,7 @@ class PingPongGame:
         # Allow drawing the end screen, menu, or countdown even when `active` is False
         if not self.active and not getattr(self, 'waiting_for_dismiss', False) and not getattr(self, 'show_menu', False) and not getattr(self, 'countdown_active', False):
             return
+        controller = get_controller()
         # Background image (lazy load)
         if not self._bg_loaded:
             try:
@@ -1144,7 +1145,6 @@ class PingPongGame:
             fog.fill((10, 10, 18, 130))
             screen.blit(fog, (0, 0))
 
-            controller = get_controller()
             using_controller = controller.connected if controller else False
 
             panel_w = 560
@@ -1406,7 +1406,7 @@ class PingPongGame:
                 surf = font.render(line, True, WHITE)
                 screen.blit(surf, surf.get_rect(center=(SCREEN_WIDTH // 2, y + (i * 36))))
             hint = self.font_hint if hasattr(self, 'font_hint') else pygame.font.Font(VT323_PATH, 16)
-            is_controller = controller.connected and getattr(controller, "last_input_method", "keyboard") == "controller"
+            is_controller = bool(controller and controller.connected and getattr(controller, "last_input_method", "keyboard") == "controller")
             msg = "Press A to exit" if is_controller else "Press SPACE to exit"
             screen.blit(hint.render(msg, True, UI_TEXT_DIM), (SCREEN_WIDTH // 2 - 110, by + box_h - 32))
 
