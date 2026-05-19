@@ -11,9 +11,11 @@ class BasketballGame:
         self.show_menu = True
         self.waiting_for_dismiss = False
         self.end_message = None
+        self.is_coop = False
 
         self.player_score = 0
         self.opp_score = 0
+        self.win_score = 10  # 10 for normal, 21 for coop
         
         self.reset_timer = 0.0
         self.swish_effect = None
@@ -22,21 +24,26 @@ class BasketballGame:
         self.player_vz = 0.0
         self.opp_z = 0.0
         self.opp_vz = 0.0
+        self.ally_z = 0.0
+        self.ally_vz = 0.0
+        self.opp2_z = 0.0
+        self.opp2_vz = 0.0
         self.gravity = -1500.0
         self.jump_speed = 500.0
 
         self.ball_x = 900.0
         self.ball_y = 605.0
-        self.ball_z = 200.0
+        self.ball_z = 0.0
         self.ball_vx = 0.0
         self.ball_vy = 0.0
         self.ball_vz = 0.0
         self.ball_radius = 8
-        self.ball_held_by = None  # 'player', 'opp', or None
+        self.ball_held_by = None  # 'player', 'opp', 'ally', 'opp2', or None
         self.possession = None
 
         # Court & Physics Constants
         self.court_rect = pygame.Rect(490, 258, 1070, 694)
+        self.court_center = (900, 605)
         self.hoop_z = 30.0
         self.left_rim = (605, 605)
         self.right_rim = (1460, 605)
@@ -53,6 +60,8 @@ class BasketballGame:
         self.shooting = False
         self.shoot_bar = 0.0
         self.shoot_dir = 1
+        self._click_hold_timer = 0.0  # For pass vs shoot detection
+        self._mouse_held = False
         
         self.blocking = False
         self.block_timer = 0.0
@@ -64,18 +73,48 @@ class BasketballGame:
         self.opp_shoot_dir = 1
         self.opp_target_bar = 0.0
 
+        # Opp2 shooting state (coop)
+        self.opp2_shooting = False
+        self.opp2_shoot_bar = 0.0
+        self.opp2_shoot_dir = 1
+        self.opp2_target_bar = 0.0
+        self.opp2_blocking = False
+        self.opp2_block_timer = 0.0
+        self.opp2_shoot_anim = -1.0
+        self.opp2_pending_shot = None
+
         self.last_shot_x = None
         self.last_shot_y = None
         self.last_shot_team = None
         
         self.player_shoot_anim = -1.0
         self.opp_shoot_anim = -1.0
+        self.ally_shoot_anim = -1.0
         self.player_pending_shot = None
         self.opp_pending_shot = None
+        self.ally_pending_shot = None
+
+        # Pass state
+        self.pass_in_flight = False
+        self.pass_start_x = 0.0
+        self.pass_start_y = 0.0
+        self.pass_target_entity = None  # 'ally' or 'player'
+        self.pass_target_x = 0.0
+        self.pass_target_y = 0.0
+        self.pass_speed = 600.0
+        self.pass_team = None  # 'player_team' or 'opp_team'
 
         self._font = None
         self.player = None
         self.opponent = None
+        self.ally = None      # Teammate (coop)
+        self.opp2 = None      # Second opponent (coop)
+
+        # AI difficulty
+        self.ai_speed = 280.0
+        self.ai_shoot_chance = 0.025
+        self.ai_block_chance = 0.04
+        self.ai_steal_range = 35
         
         # Load custom ball sprite
         import os
@@ -87,14 +126,22 @@ class BasketballGame:
         else:
             self.ball_img = None
 
-    def start(self, player, opponent, floor):
+    def start(self, player, opponent, floor, is_coop=False, ally=None, opp2=None):
         self.player = player
         self.opponent = opponent
         self.floor = floor
+        self.is_coop = is_coop
+        self.ally = ally
+        self.opp2 = opp2
+        self.win_score = 21 if is_coop else 10
         if self.floor:
             self.floor.hide_hoops = True
         # Temporarily disable NPC AI while playing basketball
         self.opponent.ai_enabled = False
+        if self.ally:
+            self.ally.ai_enabled = False
+        if self.opp2:
+            self.opp2.ai_enabled = False
         
         self.reset()
         self.show_menu = True
@@ -125,9 +172,24 @@ class BasketballGame:
         self.opp_z = 0.0
         self.opp_vz = 0.0
 
-        self.ball_x = 900.0
-        self.ball_y = 605.0
-        self.ball_z = 200.0
+        # Coop positions
+        if self.is_coop and self.ally:
+            self.ally.rect.centerx = 650
+            self.ally.rect.centery = 450
+            self.ally.direction = Direction.RIGHT
+            self.ally_z = 0.0
+            self.ally_vz = 0.0
+        if self.is_coop and self.opp2:
+            self.opp2.rect.centerx = 1150
+            self.opp2.rect.centery = 450
+            self.opp2.direction = Direction.LEFT
+            self.opp2_z = 0.0
+            self.opp2_vz = 0.0
+
+        # Ball always at center of court, on the floor
+        self.ball_x = float(self.court_center[0])
+        self.ball_y = float(self.court_center[1])
+        self.ball_z = 0.0
         self.ball_vx = 0.0
         self.ball_vy = 0.0
         self.ball_vz = 0.0
@@ -139,6 +201,11 @@ class BasketballGame:
         self.opp_shooting = False
         self.blocking = False
         self.opp_blocking = False
+        self.opp2_shooting = False
+        self.opp2_blocking = False
+        self.pass_in_flight = False
+        self._mouse_held = False
+        self._click_hold_timer = 0.0
 
     def handle_input(self, event: pygame.event.Event):
         if self.paused:
@@ -155,6 +222,10 @@ class BasketballGame:
                 self.waiting_for_dismiss = False
                 self.finished = True
                 self.opponent.ai_enabled = True # Restore NPC AI
+                if self.ally:
+                    self.ally.ai_enabled = True
+                if self.opp2:
+                    self.opp2.ai_enabled = True
         
         if self.active and not self.show_menu and not self.waiting_for_dismiss:
             if event.type == pygame.KEYDOWN:
@@ -169,30 +240,43 @@ class BasketballGame:
                         self.player.start_dash()
                     
             if event.type == pygame.MOUSEBUTTONDOWN:
-                if event.button == 1: # Left Click -> Shoot
+                if event.button == 1: # Left Click -> Start hold timer for pass vs shoot
                     if self.ball_held_by == 'player':
-                        self.shooting = True
-                        self.shoot_bar = 0.0
-                        self.shoot_dir = 1
+                        self._mouse_held = True
+                        self._click_hold_timer = 0.0
                 elif event.button == 3: # Right Click -> Block/Steal
                     if self.ball_held_by != 'player' and self.player_z == 0:
                         self.blocking = True
                         self.block_timer = 0.3
                         # Steal check
-                        if self.ball_held_by == 'opp' and self.opp_shooting:
-                            dist = math.hypot(self.player.rect.centerx - self.opponent.rect.centerx, 
-                                              self.player.rect.centery - self.opponent.rect.centery)
-                            if dist < 60:
-                                self.opp_shooting = False
-                                self.ball_held_by = 'player'
-                                self.possession = 'player'
-                                from src.controller import get_controller
-                                controller = get_controller()
-                                if controller.connected and getattr(controller, "last_input_method", "keyboard") == "controller":
-                                    controller.rumble(0.5, 0.6, 120)
+                        opp_holders = ['opp', 'opp2']
+                        for holder in opp_holders:
+                            if self.ball_held_by == holder:
+                                target = self.opponent if holder == 'opp' else self.opp2
+                                if target and (holder == 'opp' and self.opp_shooting or holder == 'opp2' and self.opp2_shooting):
+                                    dist = math.hypot(self.player.rect.centerx - target.rect.centerx, 
+                                                      self.player.rect.centery - target.rect.centery)
+                                    if dist < 60:
+                                        if holder == 'opp':
+                                            self.opp_shooting = False
+                                        else:
+                                            self.opp2_shooting = False
+                                        self.ball_held_by = 'player'
+                                        self.possession = 'player'
 
             elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
-                if self.shooting and self.ball_held_by == 'player':
+                if self._mouse_held and self.ball_held_by == 'player':
+                    if self.shooting:
+                        # Was holding long enough -> shoot
+                        self.player_shoot_anim = 0.0
+                        self.player_pending_shot = self.shoot_bar
+                        self.shooting = False
+                    elif self.is_coop and self.ally and self._click_hold_timer < 0.15:
+                        # Short click in coop -> pass to ally
+                        self._initiate_pass('player', 'ally')
+                self._mouse_held = False
+                self._click_hold_timer = 0.0
+                if self.shooting:
                     self.player_shoot_anim = 0.0
                     self.player_pending_shot = self.shoot_bar
                     self.shooting = False
@@ -248,7 +332,30 @@ class BasketballGame:
                             self.opp_shooting = False
                             self.ball_held_by = 'player'
                             self.possession = 'player'
-                            controller.rumble(0.5, 0.6, 120)
+
+    def _initiate_pass(self, from_entity, to_entity):
+        """Start a pass from from_entity to to_entity."""
+        if from_entity == 'player':
+            sx, sy = self.player.rect.centerx, self.player.rect.centery
+        elif from_entity == 'ally' and self.ally:
+            sx, sy = self.ally.rect.centerx, self.ally.rect.centery
+        elif from_entity == 'opp' and self.opponent:
+            sx, sy = self.opponent.rect.centerx, self.opponent.rect.centery
+        elif from_entity == 'opp2' and self.opp2:
+            sx, sy = self.opp2.rect.centerx, self.opp2.rect.centery
+        else:
+            return
+        self.ball_held_by = None
+        self.pass_in_flight = True
+        self.pass_start_x = sx
+        self.pass_start_y = sy
+        self.pass_target_entity = to_entity
+        self.ball_x = sx
+        self.ball_y = sy
+        self.ball_z = 30.0
+        self.ball_vz = 0.0
+        # Determine team
+        self.pass_team = 'player_team' if from_entity in ('player', 'ally') else 'opp_team'
 
     def _shoot_ball(self, shooter, power_bar):
         self.last_shot_team = shooter
@@ -265,6 +372,26 @@ class BasketballGame:
             start_x = self.player.rect.centerx
             start_y = self.player.rect.centery
             start_z = self.player_z + 40
+        elif shooter == 'ally' and self.ally:
+            self.last_shot_x = self.ally.rect.centerx
+            self.last_shot_y = self.ally.rect.centery
+            target_x, target_y = self.right_rim
+            dist = math.hypot(self.last_shot_x - target_x, self.last_shot_y - target_y)
+            is_3pt = dist > self.three_point_radius
+            quality = 1.0 - abs(power_bar - target_quality) * 2.5
+            start_x = self.ally.rect.centerx
+            start_y = self.ally.rect.centery
+            start_z = self.ally_z + 40
+        elif shooter == 'opp2' and self.opp2:
+            self.last_shot_x = self.opp2.rect.centerx
+            self.last_shot_y = self.opp2.rect.centery
+            target_x, target_y = self.left_rim
+            dist = math.hypot(self.last_shot_x - target_x, self.last_shot_y - target_y)
+            is_3pt = dist > self.three_point_radius
+            quality = 1.0 - abs(power_bar - target_quality) * 2.0
+            start_x = self.opp2.rect.centerx
+            start_y = self.opp2.rect.centery
+            start_z = self.opp2_z + 40
         else:
             self.last_shot_x = self.opponent.rect.centerx
             self.last_shot_y = self.opponent.rect.centery
@@ -311,6 +438,14 @@ class BasketballGame:
                 self.reset_positions()
                 
         keys = pygame.key.get_pressed()
+
+        # Click-hold timer: if held long enough, start shooting bar
+        if self._mouse_held and self.ball_held_by == 'player' and not self.shooting:
+            self._click_hold_timer += dt
+            if self._click_hold_timer >= 0.15:
+                self.shooting = True
+                self.shoot_bar = 0.0
+                self.shoot_dir = 1
         
         # Player Shooting Animation logic
         if self.player_shoot_anim >= 0:
@@ -367,7 +502,7 @@ class BasketballGame:
         o_dy = target_y - self.opponent.rect.centery
         dist = math.hypot(o_dx, o_dy)
         
-        speed = 200.0 * dt
+        speed = self.ai_speed * dt
         if dist > 5:
             self.opponent.rect.centerx += int((o_dx / dist) * speed)
             self.opponent.rect.centery += int((o_dy / dist) * speed)
@@ -396,11 +531,11 @@ class BasketballGame:
         # Opponent AI Shooting/Blocking
         if self.ball_held_by == 'opp':
             if not self.opp_shooting:
-                if random.random() < 0.01:
+                if random.random() < self.ai_shoot_chance:
                     self.opp_shooting = True
                     self.opp_shoot_bar = 0.0
                     self.opp_shoot_dir = 1
-                    self.opp_target_bar = random.uniform(0.7, 0.9)
+                    self.opp_target_bar = random.uniform(0.75, 0.85)
             else:
                 self.opp_shoot_bar += self.opp_shoot_dir * dt * 1.5
                 if self.opp_shoot_bar >= 1.0:
@@ -415,19 +550,33 @@ class BasketballGame:
                     self.opp_pending_shot = self.opp_shoot_bar
                     self.opp_shooting = False
             
-            if not self.opp_blocking and self.ball_held_by == 'player' and self.shooting:
-                if math.hypot(self.player.rect.centerx - self.opponent.rect.centerx, 
-                              self.player.rect.centery - self.opponent.rect.centery) < 60:
-                    if random.random() < 0.02:
+            # AI actively blocks when player is shooting nearby
+            holder = self.ball_held_by
+            if holder in ('player', 'ally'):
+                target_ent = self.player if holder == 'player' else self.ally
+                if target_ent:
+                    pdist = math.hypot(target_ent.rect.centerx - self.opponent.rect.centerx,
+                                       target_ent.rect.centery - self.opponent.rect.centery)
+                    if pdist < 60 and random.random() < self.ai_block_chance:
                         self.opp_blocking = True
                         self.opp_block_timer = 0.3
-                        self.shooting = False
+                        if self.shooting and holder == 'player':
+                            self.shooting = False
                         self.ball_held_by = 'opp'
                         self.possession = 'opp'
-                        from src.controller import get_controller
-                        controller = get_controller()
-                        if controller.connected and getattr(controller, "last_input_method", "keyboard") == "controller":
-                            controller.rumble(0.7, 0.4, 200)
+            # AI steals when very close
+            if self.ball_held_by in ('player', 'ally') and not self.opp_blocking:
+                steal_target = self.player if self.ball_held_by == 'player' else (self.ally if self.ally else None)
+                if steal_target:
+                    sdist = math.hypot(steal_target.rect.centerx - self.opponent.rect.centerx,
+                                       steal_target.rect.centery - self.opponent.rect.centery)
+                    if sdist < self.ai_steal_range and random.random() < 0.03:
+                        self.ball_held_by = 'opp'
+                        self.possession = 'opp'
+            # AI passes to opp2 in coop
+            if self.is_coop and self.opp2 and self.ball_held_by == 'opp' and not self.opp_shooting:
+                if random.random() < 0.008:
+                    self._initiate_pass('opp', 'opp2')
 
         # Opponent Image Override for Shooting
         if self.opp_shoot_anim >= 0:
@@ -480,13 +629,43 @@ class BasketballGame:
             self.ball_vx = 0
             self.ball_vy = 0
             self.ball_vz = 0
-        elif self.ball_held_by == 'opp':
-            self.ball_x = self.opponent.rect.centerx
-            self.ball_y = self.opponent.rect.centery
-            self.ball_z = self.opp_z + 40
+        elif self.ball_held_by == 'ally' and self.ally:
+            self.ball_x = self.ally.rect.centerx
+            self.ball_y = self.ally.rect.centery
+            self.ball_z = self.ally_z + 40
             self.ball_vx = 0
             self.ball_vy = 0
             self.ball_vz = 0
+        elif self.ball_held_by == 'opp2' and self.opp2:
+            self.ball_x = self.opp2.rect.centerx
+            self.ball_y = self.opp2.rect.centery
+            self.ball_z = self.opp2_z + 40
+            self.ball_vx = 0
+            self.ball_vy = 0
+            self.ball_vz = 0
+        elif self.pass_in_flight:
+            target_ent = None
+            if self.pass_target_entity == 'ally': target_ent = self.ally
+            elif self.pass_target_entity == 'player': target_ent = self.player
+            elif self.pass_target_entity == 'opp': target_ent = self.opponent
+            elif self.pass_target_entity == 'opp2': target_ent = self.opp2
+
+            if target_ent:
+                tx, ty = target_ent.rect.centerx, target_ent.rect.centery
+                dx = tx - self.ball_x
+                dy = ty - self.ball_y
+                dist = math.hypot(dx, dy)
+                if dist < 20:
+                    self.pass_in_flight = False
+                    self.ball_held_by = self.pass_target_entity
+                    self.possession = self.pass_target_entity
+                else:
+                    self.ball_vx = (dx / dist) * self.pass_speed
+                    self.ball_vy = (dy / dist) * self.pass_speed
+                    self.ball_x += self.ball_vx * dt
+                    self.ball_y += self.ball_vy * dt
+            else:
+                self.pass_in_flight = False
         else:
             self.ball_vz += self.gravity * dt
             self.ball_x += self.ball_vx * dt
@@ -546,11 +725,12 @@ class BasketballGame:
                 was_held_by_player = (self.ball_held_by == 'player')
                 self.ball_held_by = 'opp'
                 self.possession = 'opp'
-                from src.controller import get_controller
-                controller = get_controller()
-                if controller.connected and getattr(controller, "last_input_method", "keyboard") == "controller":
-                    if was_held_by_player:
-                         controller.rumble(0.7, 0.4, 200)
+            elif self.is_coop and self.ally and math.hypot(self.ball_x - self.ally.rect.centerx, self.ball_y - self.ally.rect.centery) < 40 and abs(self.ball_z - self.ally_z) < 50 and self.possession != 'ally':
+                self.ball_held_by = 'ally'
+                self.possession = 'ally'
+            elif self.is_coop and self.opp2 and math.hypot(self.ball_x - self.opp2.rect.centerx, self.ball_y - self.opp2.rect.centery) < 40 and abs(self.ball_z - self.opp2_z) < 50 and self.possession != 'opp2':
+                self.ball_held_by = 'opp2'
+                self.possession = 'opp2'
 
             # Scoring (Check 2.5D intersection with hoop rim area)
             # We assume the ball falls THROUGH the hoop (vz < 0) near the rim coordinates
@@ -604,10 +784,10 @@ class BasketballGame:
             if self.swish_effect["timer"] <= 0:
                 self.swish_effect = None
 
-        if self.player_score >= 10:
+        if self.player_score >= self.win_score:
             self.end_message = "You Win!"
             self.waiting_for_dismiss = True
-        elif self.opp_score >= 10:
+        elif self.opp_score >= self.win_score:
             self.end_message = "Opponent Wins!"
             self.waiting_for_dismiss = True
 
@@ -626,6 +806,13 @@ class BasketballGame:
         ox, oy = camera.apply_pos(self.opponent.rect.centerx, self.opponent.rect.centery)
         pygame.draw.ellipse(shadow_surf, shadow_color, (ox - 15, oy - 5, 30, 10))
         
+        if self.is_coop and self.ally:
+            ax, ay = camera.apply_pos(self.ally.rect.centerx, self.ally.rect.centery)
+            pygame.draw.ellipse(shadow_surf, shadow_color, (ax - 15, ay - 5, 30, 10))
+        if self.is_coop and self.opp2:
+            o2x, o2y = camera.apply_pos(self.opp2.rect.centerx, self.opp2.rect.centery)
+            pygame.draw.ellipse(shadow_surf, shadow_color, (o2x - 15, o2y - 5, 30, 10))
+        
         bx, by = camera.apply_pos(self.ball_x, self.ball_y)
         ball_shadow_w = max(4, 16 - (self.ball_z * 0.05))
         pygame.draw.ellipse(shadow_surf, shadow_color, (bx - ball_shadow_w/2, by - ball_shadow_w/4, ball_shadow_w, ball_shadow_w/2))
@@ -636,21 +823,54 @@ class BasketballGame:
         # Temporarily modify centery to simulate Z-height
         old_py = self.player.rect.centery
         old_oy = self.opponent.rect.centery
+        old_ay = self.ally.rect.centery if self.ally else 0
+        old_o2y = self.opp2.rect.centery if self.opp2 else 0
         
         self.player.rect.centery = old_py - int(self.player_z)
         self.opponent.rect.centery = old_oy - int(self.opp_z)
+        if self.is_coop and self.ally:
+            self.ally.rect.centery = old_ay - int(self.ally_z)
+        if self.is_coop and self.opp2:
+            self.opp2.rect.centery = old_o2y - int(self.opp2_z)
         
         def draw_scaled_player():
             if self.player.image:
                 scaled = pygame.transform.scale_by(self.player.image, 1.5)
                 rect = scaled.get_rect(midbottom=camera.apply(self.player).midbottom)
                 screen.blit(scaled, rect)
+                if self.is_coop:
+                    font = pygame.font.Font(VT323_PATH, 14) if VT323_PATH else pygame.font.SysFont(None, 14)
+                    name = font.render(getattr(self.player, 'character', getattr(self.player, 'name', "P1")).value.title() if hasattr(getattr(self.player, 'character', None), 'value') else "Player", True, (100, 255, 100))
+                    screen.blit(name, name.get_rect(center=(rect.centerx, rect.top - 5)))
                 
         def draw_scaled_opp():
             if self.opponent.image:
                 scaled = pygame.transform.scale_by(self.opponent.image, 1.5)
                 rect = scaled.get_rect(midbottom=camera.apply(self.opponent).midbottom)
                 screen.blit(scaled, rect)
+                if self.is_coop:
+                    font = pygame.font.Font(VT323_PATH, 14) if VT323_PATH else pygame.font.SysFont(None, 14)
+                    name = font.render(getattr(self.opponent, 'name', "Opp1"), True, (255, 100, 100))
+                    screen.blit(name, name.get_rect(center=(rect.centerx, rect.top - 5)))
+
+        def draw_scaled_ally():
+            if self.is_coop and self.ally and self.ally.image:
+                scaled = pygame.transform.scale_by(self.ally.image, 1.5)
+                rect = scaled.get_rect(midbottom=camera.apply(self.ally).midbottom)
+                screen.blit(scaled, rect)
+                font = pygame.font.Font(VT323_PATH, 14) if VT323_PATH else pygame.font.SysFont(None, 14)
+                name_str = getattr(self.ally, 'character', getattr(self.ally, 'name', "P2")).value.title() if hasattr(getattr(self.ally, 'character', None), 'value') else "Ally"
+                name = font.render(name_str, True, (100, 255, 100))
+                screen.blit(name, name.get_rect(center=(rect.centerx, rect.top - 5)))
+
+        def draw_scaled_opp2():
+            if self.is_coop and self.opp2 and self.opp2.image:
+                scaled = pygame.transform.scale_by(self.opp2.image, 1.5)
+                rect = scaled.get_rect(midbottom=camera.apply(self.opp2).midbottom)
+                screen.blit(scaled, rect)
+                font = pygame.font.Font(VT323_PATH, 14) if VT323_PATH else pygame.font.SysFont(None, 14)
+                name = font.render(getattr(self.opp2, 'name', "Opp2"), True, (255, 100, 100))
+                screen.blit(name, name.get_rect(center=(rect.centerx, rect.top - 5)))
 
         def draw_left_hoop():
             if hasattr(self, 'floor') and self.floor and hasattr(self.floor, '_left_hoop_surface') and self.floor._left_hoop_surface:
@@ -677,6 +897,10 @@ class BasketballGame:
             (700, draw_right_hoop),
             (self.ball_y + 10, draw_ball)
         ]
+        if self.is_coop and self.ally:
+            entities.append((old_ay + self.ally.rect.height // 2, draw_scaled_ally))
+        if self.is_coop and self.opp2:
+            entities.append((old_o2y + self.opp2.rect.height // 2, draw_scaled_opp2))
         entities.sort(key=lambda x: x[0])
         for _, draw_func in entities:
             draw_func()
@@ -706,6 +930,10 @@ class BasketballGame:
         # Restore original Y coordinates so physics aren't broken!
         self.player.rect.centery = old_py
         self.opponent.rect.centery = old_oy
+        if self.is_coop and self.ally:
+            self.ally.rect.centery = old_ay
+        if self.is_coop and self.opp2:
+            self.opp2.rect.centery = old_o2y
 
         # 3. Draw UI
         score_text = self._font.render(f"Player: {self.player_score}  |  Opp: {self.opp_score}", True, WHITE)

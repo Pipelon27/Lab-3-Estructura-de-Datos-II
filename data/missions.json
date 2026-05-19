@@ -137,6 +137,28 @@
       "status": "locked"
     },
     {
+      "id": "mission_talk_ava_rooftop",
+      "title": "Find Ava at the Party",
+      "description": "You're at the Rooftop party. Find Ava Thompson and say hello.",
+      "objectives": [
+        {"type": "talk_to", "target": "npc_ava_thompson", "description": "Talk to Ava Thompson at the rooftop party", "required": 1}
+      ],
+      "prerequisites": ["mission_rooftop_party"],
+      "rewards": {"xp": 60},
+      "status": "locked"
+    },
+    {
+      "id": "mission_check_ava_phone",
+      "title": "Check Ava's Phone",
+      "description": "Ava left her phone on a chair. Something feels wrong about everyone leaving... Check her messages before she returns!",
+      "objectives": [
+        {"type": "special", "target": "ava_phone_check", "description": "Read Ava's group chat with Marcus and Noah", "required": 1}
+      ],
+      "prerequisites": ["mission_talk_ava_rooftop"],
+      "rewards": {"xp": 120},
+      "status": "locked"
+    },
+    {
       "id": "mission_final_showdown",
       "title": "Final Showdown",
       "description": "This is it. Enter the Basement, disable the Smile Club's central server, and confront Director Walsh with the evidence.",
@@ -145,7 +167,7 @@
         {"type": "hack_target", "target": "smile_server", "description": "Disable the Smile Club server", "required": 1},
         {"type": "talk_to", "target": "npc_director", "description": "Confront Director Walsh", "required": 1}
       ],
-      "prerequisites": ["mission_rooftop_party"],
+      "prerequisites": ["mission_check_ava_phone"],
       "rewards": {"xp": 200},
       "status": "locked"
     }
