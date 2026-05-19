@@ -3979,9 +3979,20 @@ class Game:
             if remote and self.remote_player:
                 r_state = remote.get("state")
                 
-                # Auto teleport to basketball
-                if r_state == GameState.BASKETBALL.value and self.state != GameState.BASKETBALL:
+                # Auto teleport to basketball (only client follows host)
+                if not self.is_host and r_state == GameState.BASKETBALL.value and self.state != GameState.BASKETBALL:
                     self._apply_dialogue_result({"start_basketball": True})
+                
+                # Auto exit basketball (client follows host out of the game)
+                if not self.is_host and self.state == GameState.BASKETBALL and r_state != GameState.BASKETBALL.value:
+                    player_won = self.basketball.player_score > self.basketball.opp_score
+                    self.basketball.finished = False
+                    if hasattr(self.basketball, 'floor') and self.basketball.floor:
+                        self.basketball.floor.hide_hoops = False
+                    self.basketball.reset()
+                    self.state = GameState.PLAYING
+                    if player_won:
+                        self._begin_marcus_win_dialogue()
                 
                 if self.state == GameState.BASKETBALL and "bb_data" in remote:
                     if hasattr(self, "basketball"):

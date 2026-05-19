@@ -121,6 +121,13 @@ class BasketballGame:
         self.ai_block_chance = 0.04
         self.ai_steal_range = 35
         
+        # AI restructuring variables
+        self.opp_ai_goal = 'drive'
+        self.opp2_ai_goal = 'shoot_3'
+        self.opp_ai_target = (580, 605)
+        self.opp2_ai_target = (700, 605)
+        self.opp_pass_cooldown = 0.0
+        
         # Load custom ball sprite
         import os
         base_dir = os.path.dirname(os.path.dirname(__file__))
@@ -163,6 +170,9 @@ class BasketballGame:
         self.finished = False
         self.end_message = None
         self.waiting_for_dismiss = False
+        self.ball_trail = []
+        self.opp_pass_cooldown = 0.0
+        self.select_offensive_goals()
 
     def reset_positions(self):
         # Place player on left, opp on right
@@ -566,9 +576,50 @@ class BasketballGame:
             self.shake_timer = 0.2
             self.shake_intensity = 4
 
+    def get_ai_position_target(self, goal, entity):
+        # Left rim is (530, 605)
+        rx, ry = self.left_rim
+        if goal == 'drive':
+            # Target close to the hoop for a layup/dunk or close shot
+            tx = rx + random.uniform(30, 70)
+            ty = ry + random.uniform(-40, 40)
+        elif goal == 'shoot_3':
+            # Target outside 3pt line (three_point_radius is 150)
+            tx = rx + self.three_point_radius + random.uniform(20, 50)
+            ty = ry + random.uniform(-100, 100)
+        else: # mid_range
+            # Target between hoop and 3pt line
+            tx = rx + random.uniform(80, 120)
+            ty = ry + random.uniform(-60, 60)
+        return (tx, ty)
+
+    def select_offensive_goals(self):
+        # Decide goals for both opponents
+        self.opp_ai_goal = random.choice(['drive', 'shoot_3', 'mid_range'])
+        if self.is_coop and self.opp2:
+            if self.opp_ai_goal == 'drive':
+                self.opp2_ai_goal = random.choice(['shoot_3', 'mid_range'])
+            elif self.opp_ai_goal == 'shoot_3':
+                self.opp2_ai_goal = random.choice(['drive', 'mid_range'])
+            else:
+                self.opp2_ai_goal = random.choice(['drive', 'shoot_3'])
+        
+        self.opp_ai_target = self.get_ai_position_target(self.opp_ai_goal, 'opp')
+        if self.is_coop and self.opp2:
+            self.opp2_ai_target = self.get_ai_position_target(self.opp2_ai_goal, 'opp2')
+
     def update(self, dt: float):
         if not self.active or self.show_menu or self.waiting_for_dismiss:
             return {"status": "running"}
+            
+        # Update ball trail
+        if self.ball_held_by is None or getattr(self, "pass_in_flight", False):
+            self.ball_trail.append((self.ball_x, self.ball_y, self.ball_z))
+            if len(self.ball_trail) > 8:
+                self.ball_trail.pop(0)
+        else:
+            if self.ball_trail:
+                self.ball_trail.pop(0)
             
         if self.reset_timer > 0:
             self.reset_timer -= dt
@@ -637,13 +688,36 @@ class BasketballGame:
 
         # AI and Physics are authoritative on the Host
         if self.is_host:
-            # Opponent AI (Top-Down Chase)
+            # Decrement pass cooldown
+            if getattr(self, "opp_pass_cooldown", 0.0) > 0.0:
+                self.opp_pass_cooldown -= dt
+
+            # Opponent AI (Restructured offensive movement & positioning)
             target_x = self.ball_x
             target_y = self.ball_y
+            
             if self.ball_held_by == 'opp':
-                target_x, target_y = self.left_rim
+                # Opponent has the ball -> move to assigned offensive target zone
+                target_x, target_y = self.opp_ai_target
+                
+                # Check for passing to teammate (coop mode)
+                if self.is_coop and self.opp2 and getattr(self, "opp_pass_cooldown", 0.0) <= 0.0 and not getattr(self, "opp_shooting", False):
+                    def_dist = math.hypot(self.opponent.rect.centerx - self.player.rect.centerx, self.opponent.rect.centery - self.player.rect.centery)
+                    if self.ally:
+                        def_dist = min(def_dist, math.hypot(self.opponent.rect.centerx - self.ally.rect.centerx, self.opponent.rect.centery - self.ally.rect.centery))
+                    tm_def_dist = math.hypot(self.opp2.rect.centerx - self.player.rect.centerx, self.opp2.rect.centery - self.player.rect.centery)
+                    if self.ally:
+                        tm_def_dist = min(tm_def_dist, math.hypot(self.opp2.rect.centerx - self.ally.rect.centerx, self.opp2.rect.centery - self.ally.rect.centery))
+                    
+                    if def_dist < 70 and tm_def_dist > 100 and random.random() < 0.05:
+                        self._initiate_pass('opp', 'opp2')
+                        self.opp_pass_cooldown = 2.0
+                        self.select_offensive_goals()
+            elif self.ball_held_by == 'opp2' and self.opp2:
+                # Teammate has ball -> off-ball movement to clear space/cut
+                target_x, target_y = self.opp_ai_target
             elif self.ball_held_by in ('player', 'ally'):
-                # Defend the player or ally depending on who has the ball
+                # Defense: Defend the player or ally depending on who has the ball
                 p = self.player if self.ball_held_by == 'player' else self.ally
                 if p:
                     target_x = p.rect.centerx - 40
@@ -675,7 +749,24 @@ class BasketballGame:
                 o2_target_x = self.ball_x
                 o2_target_y = self.ball_y
                 if self.ball_held_by == 'opp2':
-                    o2_target_x, o2_target_y = self.left_rim
+                    o2_target_x, o2_target_y = self.opp2_ai_target
+                    
+                    # Check for passing to teammate
+                    if getattr(self, "opp_pass_cooldown", 0.0) <= 0.0 and not getattr(self, "opp2_shooting", False):
+                        def_dist = math.hypot(self.opp2.rect.centerx - self.player.rect.centerx, self.opp2.rect.centery - self.player.rect.centery)
+                        if self.ally:
+                            def_dist = min(def_dist, math.hypot(self.opp2.rect.centerx - self.ally.rect.centerx, self.opp2.rect.centery - self.ally.rect.centery))
+                        tm_def_dist = math.hypot(self.opponent.rect.centerx - self.player.rect.centerx, self.opponent.rect.centery - self.player.rect.centery)
+                        if self.ally:
+                            tm_def_dist = min(tm_def_dist, math.hypot(self.opponent.rect.centerx - self.ally.rect.centerx, self.opponent.rect.centery - self.ally.rect.centery))
+                        
+                        if def_dist < 70 and tm_def_dist > 100 and random.random() < 0.05:
+                            self._initiate_pass('opp2', 'opp')
+                            self.opp_pass_cooldown = 2.0
+                            self.select_offensive_goals()
+                elif self.ball_held_by == 'opp':
+                    # Teammate has ball -> off-ball movement to clear space/cut
+                    o2_target_x, o2_target_y = self.opp2_ai_target
                 elif self.ball_held_by in ('player', 'ally'):
                     # Opp2 defends whoever the opponent is NOT defending
                     p = self.ally if self.ball_held_by == 'player' else self.player
@@ -712,10 +803,11 @@ class BasketballGame:
                     self.opp2_z = 0
                     self.opp2_vz = 0
             
-            # Opponent AI Shooting/Blocking
+            # Opponent AI Shooting
             if self.ball_held_by == 'opp':
                 if not self.opp_shooting:
-                    if random.random() < self.ai_shoot_chance:
+                    dist_to_target = math.hypot(self.opponent.rect.centerx - self.opp_ai_target[0], self.opponent.rect.centery - self.opp_ai_target[1])
+                    if (dist_to_target < 40 or random.random() < 0.015) and not getattr(self, "pass_in_flight", False):
                         self.opp_shooting = True
                         self.opp_shoot_bar = 0.0
                         self.opp_shoot_dir = 1
@@ -737,7 +829,8 @@ class BasketballGame:
             # Opp2 AI Shooting
             if self.is_coop and self.opp2 and self.ball_held_by == 'opp2':
                 if not getattr(self, "opp2_shooting", False):
-                    if random.random() < self.ai_shoot_chance:
+                    dist_to_target2 = math.hypot(self.opp2.rect.centerx - self.opp2_ai_target[0], self.opp2.rect.centery - self.opp2_ai_target[1])
+                    if (dist_to_target2 < 40 or random.random() < 0.015) and not getattr(self, "pass_in_flight", False):
                         self.opp2_shooting = True
                         self.opp2_shoot_bar = 0.0
                         self.opp2_shoot_dir = 1
@@ -967,12 +1060,14 @@ class BasketballGame:
                     was_held_by_player = (self.ball_held_by == 'player')
                     self.ball_held_by = 'opp'
                     self.possession = 'opp'
+                    self.select_offensive_goals()
                 elif self.is_coop and self.ally and math.hypot(self.ball_x - self.ally.rect.centerx, self.ball_y - self.ally.rect.centery) < 40 and abs(self.ball_z - self.ally_z) < 50 and self.possession != 'ally':
                     self.ball_held_by = 'ally'
                     self.possession = 'ally'
                 elif self.is_coop and self.opp2 and math.hypot(self.ball_x - self.opp2.rect.centerx, self.ball_y - self.opp2.rect.centery) < 40 and abs(self.ball_z - self.opp2_z) < 50 and self.possession != 'opp2':
                     self.ball_held_by = 'opp2'
                     self.possession = 'opp2'
+                    self.select_offensive_goals()
     
                  # Scoring (Check 2.5D intersection with hoop rim area)
                 # We assume the ball falls THROUGH the hoop (vz < 0) near the rim coordinates
@@ -1138,6 +1233,18 @@ class BasketballGame:
                 screen.blit(self.floor._right_hoop_surface, camera.apply_rect(rect))
         
         def draw_ball():
+            # Draw trail first
+            if getattr(self, "ball_trail", None):
+                for idx, (tx, ty, tz) in enumerate(self.ball_trail):
+                    bx_t, by_t = camera.apply_pos(tx, ty - tz)
+                    alpha = int(120 * (idx + 1) / len(self.ball_trail))
+                    trail_color = (255, 165, 0, alpha)
+                    trail_surf = pygame.Surface((30, 30), pygame.SRCALPHA)
+                    radius = int(8 * (idx + 1) / len(self.ball_trail))
+                    radius = max(2, radius)
+                    pygame.draw.circle(trail_surf, trail_color, (15, 15), radius)
+                    screen.blit(trail_surf, (bx_t - 15, by_t - 15))
+            
             bx, by = camera.apply_pos(self.ball_x, self.ball_y - self.ball_z)
             if hasattr(self, 'ball_img') and self.ball_img:
                 screen.blit(self.ball_img, (bx - self.ball_img.get_width()//2, by - self.ball_img.get_height()//2))
