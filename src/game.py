@@ -427,7 +427,17 @@ class Game:
         self.hacking_game    = HackingMinigame()
         self.trade_system    = TradeSystem()
         self.dialogue_system = DialogueSystem()
+        self.dialogue_system.game = self
         self.dialogue_system.load_dialogues_from_json()
+        
+        # Coop sync dialogue / cinematic / events voting flags
+        self.dialogue_continue_voted = False
+        self.cinematic_continue_voted = False
+        self.cinematic_skip_voted = False
+        self._pending_dialogue_request = None
+        self.remote_dialogue_continue = False
+        self.remote_cinematic_continue = False
+        self.remote_cinematic_skip = False
         self.camera = Camera(self._floor_w, self._floor_h)
         # Snap camera to entrance for intro cinematic to prevent lerp-from-zero spawn bugs
         target_x = 2000 - SCREEN_WIDTH // 2
@@ -951,10 +961,16 @@ class Game:
                 if self.state == GameState.INTRO_CINEMATIC:
                     skip_rect = getattr(self, '_skip_btn_rect', None)
                     if skip_rect and skip_rect.collidepoint(event.pos):
-                        self._skip_cinematic()
+                        if self.multiplayer:
+                            self.cinematic_skip_voted = True
+                        else:
+                            self._skip_cinematic()
                         continue
                     elif self._cine_phase in ("dialogue", "final_dialogue"):
-                        self._advance_cinematic_dialogue()
+                        if self.multiplayer:
+                            self.cinematic_continue_voted = True
+                        else:
+                            self._advance_cinematic_dialogue()
                         continue
                 if self.state == GameState.TRADING:
                     self.trade_system.handle_click(event.pos)
@@ -1132,9 +1148,15 @@ class Game:
             # A button: if skip is focused, skip; otherwise advance dialogue
             if controller.is_confirm_pressed() or controller.is_interact_pressed():
                 if self._cine_skip_focused:
-                    self._skip_cinematic()
+                    if self.multiplayer:
+                        self.cinematic_skip_voted = True
+                    else:
+                        self._skip_cinematic()
                 else:
-                    self._advance_cinematic_dialogue()
+                    if self.multiplayer:
+                        self.cinematic_continue_voted = True
+                    else:
+                        self._advance_cinematic_dialogue()
         elif self.state == GameState.PLAYING:
             self._handle_controller_playing(controller)
         elif self.state == GameState.PAUSED:
@@ -1742,9 +1764,15 @@ class Game:
     def _keys_cinematic(self, event: pygame.event.Event):
         """Handle keyboard input during the intro cinematic."""
         if event.key in (pygame.K_SPACE, pygame.K_RETURN, pygame.K_e, KEY_INTERACT):
-            self._advance_cinematic_dialogue()
+            if self.multiplayer:
+                self.cinematic_continue_voted = True
+            else:
+                self._advance_cinematic_dialogue()
         elif event.key == pygame.K_q:  # Q key skips cinematic directly
-            self._skip_cinematic()
+            if self.multiplayer:
+                self.cinematic_skip_voted = True
+            else:
+                self._skip_cinematic()
 
     def _keys_paused(self, event: pygame.event.Event):
         option_count = len(self.pause_options)
@@ -2055,14 +2083,27 @@ class Game:
             dlg_id = npc.get_dialogue_id(self.character)
             if dlg_id:
                 # Use old dialogue system for story NPCs
-                self.dialogue_system.start_dialogue(
-                    dlg_id, npc, self.player, self.reputation,
-                )
-                self.state = GameState.DIALOGUE
-                self.mission_manager.advance_objective_event("talk_to", npc.id)
-                self.player.vx = 0
-                self.player.vy = 0
-                self.player._dashing = False
+                if self.multiplayer:
+                    if not self.is_host:
+                        self._pending_dialogue_request = {"dialogue_id": dlg_id, "npc_id": npc.id}
+                    else:
+                        self.dialogue_system.start_dialogue(
+                            dlg_id, npc, self.player, self.reputation,
+                        )
+                        self.state = GameState.DIALOGUE
+                        self.mission_manager.advance_objective_event("talk_to", npc.id)
+                        self.player.vx = 0
+                        self.player.vy = 0
+                        self.player._dashing = False
+                else:
+                    self.dialogue_system.start_dialogue(
+                        dlg_id, npc, self.player, self.reputation,
+                    )
+                    self.state = GameState.DIALOGUE
+                    self.mission_manager.advance_objective_event("talk_to", npc.id)
+                    self.player.vx = 0
+                    self.player.vy = 0
+                    self.player._dashing = False
             else:
                 # Co-op: Lena talks to party NPCs to add time to phone timer
                 if (self.multiplayer and self.current_floor == FLOOR_ROOFTOP
@@ -3985,6 +4026,12 @@ class Game:
             player_data["floor"] = self.current_floor
             player_data["game_state"] = self.state.value
             
+            # Coop vote sync
+            player_data["dialogue_continue"] = self.dialogue_continue_voted
+            player_data["cinematic_continue"] = self.cinematic_continue_voted
+            player_data["cinematic_skip"] = self.cinematic_skip_voted
+            player_data["request_dialogue"] = self._pending_dialogue_request
+            
             if self.state == GameState.BASKETBALL:
                 bb_data = {
                     "z": self.basketball.player_z,
@@ -4020,6 +4067,39 @@ class Game:
                     })
                 player_data["bb_data"] = bb_data
             
+            # Host: sync dialogue, mission and cinematic details
+            if self.is_host:
+                if self.state == GameState.DIALOGUE and self.dialogue_system.active_tree:
+                    # Find dialogue_id of active tree
+                    active_id = None
+                    for k, v in self.dialogue_system.trees.items():
+                        if v == self.dialogue_system.active_tree:
+                            active_id = k
+                            break
+                    player_data["active_dialogue_id"] = active_id
+                    player_data["active_npc_id"] = self.dialogue_system.npc.id if self.dialogue_system.npc else None
+                    player_data["active_node_id"] = self.dialogue_system.active_tree.current.id if self.dialogue_system.active_tree else None
+                    player_data["dialogue_choice_index"] = self.dialogue_system._choice_index
+                else:
+                    player_data["active_dialogue_id"] = None
+                    player_data["active_npc_id"] = None
+                    player_data["active_node_id"] = None
+                    player_data["dialogue_choice_index"] = 0
+
+                # Sync mission data
+                mission_data = {}
+                for m_id, m in self.mission_manager.missions.items():
+                    mission_data[m_id] = {
+                        "status": m.status.value,
+                        "objectives": [{"progress": o.progress, "completed": o.completed} for o in m.objectives]
+                    }
+                player_data["mission_data"] = mission_data
+
+                # Sync cinematic variables
+                player_data["cine_phase"] = self._cine_phase
+                player_data["cine_dlg_index"] = self._cine_dlg_index
+                player_data["noah_final_dlg_index"] = self._noah_final_dlg_index
+            
             # Host: also send NPC data for synchronization (skip in BASKETBALL state to save bandwidth & CPU)
             if self.is_host and self.state != GameState.BASKETBALL:
                 npcs = self.npc_manager.get_npcs_on_floor(self.current_floor)
@@ -4034,6 +4114,11 @@ class Game:
             
             if remote and self.remote_player:
                 r_state = remote.get("game_state")
+                
+                # Update remote votes
+                self.remote_dialogue_continue = remote.get("dialogue_continue", False)
+                self.remote_cinematic_continue = remote.get("cinematic_continue", False)
+                self.remote_cinematic_skip = remote.get("cinematic_skip", False)
                 
                 # Auto teleport to basketball (only client follows host)
                 if not self.is_host and r_state == GameState.BASKETBALL.value and self.state != GameState.BASKETBALL:
@@ -4053,6 +4138,89 @@ class Game:
                 if self.state == GameState.BASKETBALL and "bb_data" in remote:
                     if hasattr(self, "basketball"):
                         self.basketball.sync_state(remote["bb_data"], self.is_host)
+                
+                # Apply dialogue/cinematic consensus voting resolution
+                if self.state == GameState.DIALOGUE and self.dialogue_system.active_tree:
+                    if self.dialogue_continue_voted and self.remote_dialogue_continue:
+                        # BOTH confirmed continue: advance locally on both ends
+                        choices = self.dialogue_system.active_tree.get_choices()
+                        if choices:
+                            cons = self.dialogue_system.active_tree.make_choice(self.dialogue_system._choice_index)
+                            if cons:
+                                self.dialogue_system._all_consequences.append(cons)
+                            self.dialogue_system._choice_index = 0
+                            if not self.dialogue_system.active_tree.advance(self.dialogue_system._all_consequences):
+                                self.dialogue_system._finish()
+                        else:
+                            if not self.dialogue_system.active_tree.advance(self.dialogue_system._all_consequences):
+                                self.dialogue_system._finish()
+                        self.dialogue_continue_voted = False
+
+                if self.state == GameState.INTRO_CINEMATIC and self._cine_phase in ("dialogue", "final_dialogue"):
+                    if self.cinematic_continue_voted and self.remote_cinematic_continue:
+                        self._advance_cinematic_dialogue()
+                        self.cinematic_continue_voted = False
+
+                if self.state == GameState.INTRO_CINEMATIC:
+                    if self.cinematic_skip_voted and self.remote_cinematic_skip:
+                        self._skip_cinematic()
+                        self.cinematic_skip_voted = False
+                
+                # Client-specific authoritative sync from Host
+                if not self.is_host:
+                    # Sync dialogue state
+                    r_dlg_id = remote.get("active_dialogue_id")
+                    r_npc_id = remote.get("active_npc_id")
+                    r_node_id = remote.get("active_node_id")
+                    r_choice_idx = remote.get("dialogue_choice_index", 0)
+
+                    if r_dlg_id:
+                        if self.state != GameState.DIALOGUE:
+                            npc = self.npc_manager.get_npc_by_id(r_npc_id) if r_npc_id else None
+                            self.dialogue_system.start_dialogue(r_dlg_id, npc, self.player, self.reputation)
+                            self.state = GameState.DIALOGUE
+                            self.player.vx = 0
+                            self.player.vy = 0
+                            self.player._dashing = False
+                            self._pending_dialogue_request = None
+                        
+                        if self.dialogue_system.active_tree and r_node_id:
+                            self.dialogue_system.active_tree.set_current_by_id(r_node_id)
+                        self.dialogue_system._choice_index = r_choice_idx
+                    else:
+                        if self.state == GameState.DIALOGUE:
+                            self.dialogue_system.active_tree = None
+                            self.state = GameState.PLAYING
+
+                    # Sync mission data
+                    if "mission_data" in remote:
+                        for m_id, m_state in remote["mission_data"].items():
+                            m = self.mission_manager.missions.get(m_id)
+                            if m:
+                                from settings import MissionStatus
+                                m.status = MissionStatus(m_state["status"])
+                                for idx, obj_state in enumerate(m_state["objectives"]):
+                                    if idx < len(m.objectives):
+                                        m.objectives[idx].progress = obj_state["progress"]
+                                        m.objectives[idx].completed = obj_state["completed"]
+                                        
+                    # Sync intro cinematic variables
+                    self._cine_phase = remote.get("cine_phase", self._cine_phase)
+                    self._cine_dlg_index = remote.get("cine_dlg_index", self._cine_dlg_index)
+                    self._noah_final_dlg_index = remote.get("noah_final_dlg_index", self._noah_final_dlg_index)
+
+                else:
+                    # Host-specific processing: handle dialogue request from Client
+                    r_req_dlg = remote.get("request_dialogue")
+                    if r_req_dlg and self.state != GameState.DIALOGUE:
+                        r_dlg_id = r_req_dlg["dialogue_id"]
+                        r_npc_id = r_req_dlg["npc_id"]
+                        npc = self.npc_manager.get_npc_by_id(r_npc_id) if r_npc_id else None
+                        self.dialogue_system.start_dialogue(r_dlg_id, npc, self.player, self.reputation)
+                        self.state = GameState.DIALOGUE
+                        self.player.vx = 0
+                        self.player.vy = 0
+                        self.player._dashing = False
                 
                 # Apply floor-specific decay for remote player
                 in_main_building = self.current_floor in (FLOOR_1F, FLOOR_2F)
@@ -5486,8 +5654,14 @@ class Game:
         if self._cine_phase in ("dialogue", "final_dialogue"):
             font_hint = pygame.font.Font(VT323_PATH, 16)
             is_controller = bool(self.controller and self.controller.connected and getattr(self.controller, "last_input_method", "keyboard") == "controller")
-            msg = "Press A to continue" if is_controller else "Press SPACE to continue"
-            hint = font_hint.render(msg, True, (160, 160, 160))
+            if self.multiplayer:
+                total_votes = (1 if self.cinematic_continue_voted else 0) + (1 if getattr(self, "remote_cinematic_continue", False) else 0)
+                msg = f"Continue {total_votes}/2 (Press {'A' if is_controller else 'SPACE'})"
+                color = (50, 255, 120) if total_votes == 2 else ((50, 200, 100) if total_votes == 1 else (160, 160, 160))
+            else:
+                msg = "Press A to continue" if is_controller else "Press SPACE to continue"
+                color = (160, 160, 160)
+            hint = font_hint.render(msg, True, color)
             self.screen.blit(hint, hint.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT - 30)))
 
         # ── Skip button (top-right corner) ──
@@ -5501,7 +5675,16 @@ class Game:
         self.screen.blit(skip_surf, (skip_x, skip_y))
         pygame.draw.rect(self.screen, (180, 180, 200), skip_rect, 2, border_radius=8)
         font_skip = pygame.font.Font(VT323_PATH, 15)
-        skip_label = font_skip.render("Skip  >>>", True, (220, 220, 240))
+        
+        if self.multiplayer:
+            total_skips = (1 if self.cinematic_skip_voted else 0) + (1 if getattr(self, "remote_cinematic_skip", False) else 0)
+            skip_text = f"Skip {total_skips}/2"
+            color = (255, 220, 80) if total_skips >= 1 else (220, 220, 240)
+        else:
+            skip_text = "Skip  >>>"
+            color = (220, 220, 240)
+            
+        skip_label = font_skip.render(skip_text, True, color)
         self.screen.blit(skip_label, skip_label.get_rect(center=skip_rect.center))
         # Yellow selection frame when focused (same style as wallet/FF button)
         mouse_hover = skip_rect.collidepoint(pygame.mouse.get_pos())
