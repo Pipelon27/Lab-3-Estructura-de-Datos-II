@@ -438,6 +438,8 @@ class Game:
         self.remote_dialogue_continue = False
         self.remote_cinematic_continue = False
         self.remote_cinematic_skip = False
+        self.car_departure_voted = False
+        self.remote_car_departure_voted = False
         self.camera = Camera(self._floor_w, self._floor_h)
         # Snap camera to entrance for intro cinematic to prevent lerp-from-zero spawn bugs
         target_x = 2000 - SCREEN_WIDTH // 2
@@ -1248,17 +1250,25 @@ class Game:
 
             if controller.is_confirm_pressed():
                 sel = getattr(self, "_car_panel_selection", "accept")
-                self._car_panel_active = False
                 if sel == "accept":
-                    if self._day1_story_complete or self.time_of_day_minutes >= 16 * 60:
-                        self._start_car_departure()
+                    can_leave = self._day1_story_complete or getattr(self, '_day2_story_complete', False) or getattr(self, '_day3_story_complete', False) or self.time_of_day_minutes >= 16 * 60
+                    if can_leave:
+                        if self.multiplayer:
+                            self.car_departure_voted = True
+                        else:
+                            self._car_panel_active = False
+                            self._start_car_departure()
                     else:
+                        self._car_panel_active = False
                         self._car_panel_cooldown = 1.0
                         self.ui.show_notification("You cannot leave school early.", NOTIF_ERROR)
                 else:
+                    self._car_panel_active = False
+                    self.car_departure_voted = False
                     self._car_panel_cooldown = 1.0
             elif controller.is_cancel_pressed():
                 self._car_panel_active = False
+                self.car_departure_voted = False
                 self._car_panel_cooldown = 1.0
             return
 
@@ -1704,14 +1714,20 @@ class Game:
             if self._car_panel_input_delay > 0:
                 return  # ignore input during delay
             if event.key == pygame.K_e:
-                self._car_panel_active = False
-                if self._day1_story_complete or getattr(self, '_day2_story_complete', False) or getattr(self, '_day3_story_complete', False) or self.time_of_day_minutes >= 16 * 60:
-                    self._start_car_departure()
+                can_leave = self._day1_story_complete or getattr(self, '_day2_story_complete', False) or getattr(self, '_day3_story_complete', False) or self.time_of_day_minutes >= 16 * 60
+                if can_leave:
+                    if self.multiplayer:
+                        self.car_departure_voted = True
+                    else:
+                        self._car_panel_active = False
+                        self._start_car_departure()
                 else:
+                    self._car_panel_active = False
                     self._car_panel_cooldown = 1.0
                     self.ui.show_notification("You cannot leave school early.", NOTIF_ERROR)
             elif event.key == KEY_PAUSE:
                 self._car_panel_active = False
+                self.car_departure_voted = False
                 self._car_panel_cooldown = 1.0  # prevent re-trigger
             return
 
@@ -2602,11 +2618,15 @@ class Game:
             if self._day_transition_timer <= 0:
                 self._day_transition_active = False
                 self._start_next_day()
+            if self.multiplayer and self.network:
+                self._sync_network(dt)
             return  # freeze everything else
 
         # ── Car departure cinematic ──
         if self._car_departure_active:
             self._update_car_departure(dt)
+            if self.multiplayer and self.network:
+                self._sync_network(dt)
             return  # freeze normal gameplay
 
         if not hasattr(self, '_last_known_level'):
@@ -4031,6 +4051,7 @@ class Game:
             player_data["cinematic_continue"] = self.cinematic_continue_voted
             player_data["cinematic_skip"] = self.cinematic_skip_voted
             player_data["request_dialogue"] = self._pending_dialogue_request
+            player_data["car_departure_voted"] = self.car_departure_voted
             
             if self.state == GameState.BASKETBALL:
                 bb_data = {
@@ -4119,6 +4140,7 @@ class Game:
                 self.remote_dialogue_continue = remote.get("dialogue_continue", False)
                 self.remote_cinematic_continue = remote.get("cinematic_continue", False)
                 self.remote_cinematic_skip = remote.get("cinematic_skip", False)
+                self.remote_car_departure_voted = remote.get("car_departure_voted", False)
                 
                 # Auto teleport to basketball (only client follows host)
                 if not self.is_host and r_state == GameState.BASKETBALL.value and self.state != GameState.BASKETBALL:
@@ -4165,6 +4187,12 @@ class Game:
                     if self.cinematic_skip_voted and self.remote_cinematic_skip:
                         self._skip_cinematic()
                         self.cinematic_skip_voted = False
+
+                # Bus Travel/Day transition consensus resolution
+                if self.car_departure_voted and self.remote_car_departure_voted:
+                    self._car_panel_active = False
+                    self._start_car_departure()
+                    self.car_departure_voted = False
                 
                 # Client-specific authoritative sync from Host
                 if not self.is_host:
@@ -6077,8 +6105,8 @@ class Game:
         overlay.fill((0, 0, 0, 150))
         self.screen.blit(overlay, (0, 0))
 
-        # Panel box
-        box_w, box_h = 500, 200
+        # Panel box (larger to hold multiplayer voting status nicely)
+        box_w, box_h = 500, 230
         bx = (SCREEN_WIDTH - box_w) // 2
         by = (SCREEN_HEIGHT - box_h) // 2
         pygame.draw.rect(self.screen, (30, 30, 45), (bx, by, box_w, box_h), border_radius=16)
@@ -6087,10 +6115,18 @@ class Game:
         # Title
         title_font = pygame.font.Font(VT323_PATH, 28)
         title = title_font.render("End the day and go home?", True, WHITE)
-        self.screen.blit(title, title.get_rect(center=(SCREEN_WIDTH // 2, by + 60)))
+        self.screen.blit(title, title.get_rect(center=(SCREEN_WIDTH // 2, by + 45)))
+
+        # Co-op voting status
+        if self.multiplayer:
+            votes = (1 if self.car_departure_voted else 0) + (1 if self.remote_car_departure_voted else 0)
+            v_font = pygame.font.Font(VT323_PATH, 20)
+            v_color = (50, 255, 120) if votes == 2 else ((50, 200, 100) if votes == 1 else (180, 180, 200))
+            v_lbl = v_font.render(f"Ready: {votes}/2", True, v_color)
+            self.screen.blit(v_lbl, v_lbl.get_rect(center=(SCREEN_WIDTH // 2, by + 90)))
 
         # Draw buttons
-        btn_y = by + 120
+        btn_y = by + 145
         accept_rect = pygame.Rect(bx + 60, btn_y, 160, 44)
         cancel_rect = pygame.Rect(bx + 280, btn_y, 160, 44)
         
@@ -6124,16 +6160,21 @@ class Game:
 
         # Handle mouse clicks
         if pygame.mouse.get_pressed()[0] and getattr(self, "_car_panel_input_delay", 0) <= 0:
+            can_leave = self._day1_story_complete or getattr(self, '_day2_story_complete', False) or getattr(self, '_day3_story_complete', False) or self.time_of_day_minutes >= 16 * 60
             if hover_accept:
-                if self._day1_story_complete:
-                    self._car_panel_active = False
-                    self._start_car_departure()
+                if can_leave:
+                    if self.multiplayer:
+                        self.car_departure_voted = True
+                    else:
+                        self._car_panel_active = False
+                        self._start_car_departure()
                 else:
                     self._car_panel_active = False
                     self._car_panel_cooldown = 1.0
                     self.ui.show_notification("You cannot leave school early.", NOTIF_ERROR)
             elif hover_cancel:
                 self._car_panel_active = False
+                self.car_departure_voted = False
                 self._car_panel_cooldown = 1.0
 
     def _draw_day_transition(self):
