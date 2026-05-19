@@ -372,7 +372,10 @@ def main():
     pygame.init()
     pygame.mixer.init()
 
-    screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+    flags = pygame.FULLSCREEN
+    if hasattr(pygame, "SCALED"):
+        flags |= pygame.SCALED
+    screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT), flags)
     pygame.display.set_caption(TITLE)
 
     mode_map = {

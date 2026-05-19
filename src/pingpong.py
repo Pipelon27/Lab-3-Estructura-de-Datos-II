@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import pygame
 import math
+import os
 from settings import (
     SCREEN_WIDTH,
     SCREEN_HEIGHT,
@@ -119,6 +120,8 @@ class PingPongGame:
         self._opp_sprites = {}
         self._player_hit_timer = 0.0
         self._opp_hit_timer = 0.0
+        self._bounce_sound = None
+        self._point_sound = None
         self._player_anim_timer = 0.0
         self._opp_anim_timer = 0.0
         self._sprite_disp_w = 80
@@ -253,6 +256,32 @@ class PingPongGame:
         except Exception as e:
             print(f"[PingPong] Sprite load failed: {e}")
             self._sprites_loaded = False
+
+    def _load_sound(self, attr_name: str, filename: str):
+        if not pygame.mixer.get_init():
+            return None
+        sound = getattr(self, attr_name, None)
+        if sound is not None:
+            return sound
+        path = os.path.join("assets", "sounds", filename)
+        try:
+            sound = pygame.mixer.Sound(path)
+            sound.set_volume(0.055)
+        except Exception as e:
+            print(f"[PingPong] Failed to load sound {path}: {e}")
+            sound = None
+        setattr(self, attr_name, sound)
+        return sound
+
+    def _play_bounce_sound(self):
+        sound = self._load_sound("_bounce_sound", "sonido_rebote_pp.mp3")
+        if sound:
+            sound.play()
+
+    def _play_point_sound(self):
+        sound = self._load_sound("_point_sound", "sonido_punto_PP.mp3")
+        if sound:
+            sound.play()
 
     def _draw_character_sprite(self, screen: pygame.Surface, x: int, y: int, is_player: bool):
         """Draw idle sprite plus racket overlay."""
@@ -801,6 +830,7 @@ class PingPongGame:
                         used = True
                         break
             if used:
+                self._play_bounce_sound()
                 self.super_points_spent += 6
                 self._player_hit_timer = 0.5
                 # Controller rumble feedback for Super Shot
@@ -881,6 +911,7 @@ class PingPongGame:
             self._steer_for_first_bounce(self.ball, self.ball_vel, "oscar", court)
             self.last_touch = 'player'
             self._player_hit_timer = 0.5
+            self._play_bounce_sound()
             # Light rumble for regular ball hit
             controller = get_controller()
             if controller.connected:
@@ -903,6 +934,7 @@ class PingPongGame:
                 self._steer_for_first_bounce(self.ball, self.ball_vel, "player", court)
                 self.last_touch = 'opponent'
                 self._opp_hit_timer = 0.5
+                self._play_bounce_sound()
             # extra balls are now generated progressively by time (not instant volley bursts)
 
         # Side/top/bottom walls reflect
@@ -952,6 +984,7 @@ class PingPongGame:
                     self._cap_speed(b["vel"], self.max_return_speed * 1.1)
                 self.last_touch = 'player'
                 self._player_hit_timer = 0.4
+                self._play_bounce_sound()
                 # Light rumble for extra ball hit
                 controller = get_controller()
                 if controller.connected:
@@ -971,6 +1004,7 @@ class PingPongGame:
                     self._steer_for_first_bounce(b["rect"], b["vel"], "player", court)
                     self.last_touch = 'opponent'
                     self._opp_hit_timer = 0.4
+                    self._play_bounce_sound()
 
         # handle taunt timer
         if self._taunt_timer > 0:
@@ -989,6 +1023,7 @@ class PingPongGame:
             scorer_side = 'right'
 
         if scored:
+            self._play_point_sound()
             if scorer_side == 'right':
                 # player scored
                 self.player_score += 1
@@ -1019,6 +1054,7 @@ class PingPongGame:
             if b["rect"].right < 0:
                 # ball exited left side -> opponent scored
                 self.opponent_score += 1
+                self._play_point_sound()
                 self._taunt_msg = self.taunts[self._taunt_index % len(self.taunts)]
                 self._taunt_index += 1
                 self._taunt_timer = 2.0
@@ -1029,6 +1065,7 @@ class PingPongGame:
             elif b["rect"].left > SCREEN_WIDTH:
                 # ball exited right side -> player scored
                 self.player_score += 1
+                self._play_point_sound()
                 try:
                     self.extra_balls.remove(b)
                 except ValueError:
@@ -1063,6 +1100,7 @@ class PingPongGame:
         # Allow drawing the end screen, menu, or countdown even when `active` is False
         if not self.active and not getattr(self, 'waiting_for_dismiss', False) and not getattr(self, 'show_menu', False) and not getattr(self, 'countdown_active', False):
             return
+        controller = get_controller()
         # Background image (lazy load)
         if not self._bg_loaded:
             try:
@@ -1144,7 +1182,6 @@ class PingPongGame:
             fog.fill((10, 10, 18, 130))
             screen.blit(fog, (0, 0))
 
-            controller = get_controller()
             using_controller = controller.connected if controller else False
 
             panel_w = 560
@@ -1406,7 +1443,7 @@ class PingPongGame:
                 surf = font.render(line, True, WHITE)
                 screen.blit(surf, surf.get_rect(center=(SCREEN_WIDTH // 2, y + (i * 36))))
             hint = self.font_hint if hasattr(self, 'font_hint') else pygame.font.Font(VT323_PATH, 16)
-            is_controller = controller.connected and getattr(controller, "last_input_method", "keyboard") == "controller"
+            is_controller = bool(controller and controller.connected and getattr(controller, "last_input_method", "keyboard") == "controller")
             msg = "Press A to exit" if is_controller else "Press SPACE to exit"
             screen.blit(hint.render(msg, True, UI_TEXT_DIM), (SCREEN_WIDTH // 2 - 110, by + box_h - 32))
 

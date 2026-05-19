@@ -818,7 +818,7 @@ class UI:
         lines = [
             ("Movement",     "W A S D"),
             ("Sprint",       "Hold SHIFT"),
-            ("Interact",     "SPACE"),
+            ("Interact",     "E"),
             ("Use Item",     "E"),
             ("Inventory",    "I"),
             ("Skill Tree",   "K"),

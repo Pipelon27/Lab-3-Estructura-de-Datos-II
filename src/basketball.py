@@ -173,6 +173,15 @@ class BasketballGame:
         self.ball_trail = []
         self.opp_pass_cooldown = 0.0
         self.select_offensive_goals()
+        
+        self.cheer_emojis = []
+        self.particles = []
+        self.player_streak = 0
+        self.opp_streak = 0
+        self.player_on_fire = False
+        self.opp_on_fire = False
+        self.opp_hold_timer = 0.0
+        self.opp2_hold_timer = 0.0
 
     def reset_positions(self):
         # Place player on left, opp on right
@@ -268,19 +277,31 @@ class BasketballGame:
             
             self.opp_z = bb_data.get("opp_z", self.opp_z)
             if self.opponent:
+                if not hasattr(self, "opp_float_x"):
+                    self.opp_float_x = float(self.opponent.rect.centerx)
+                    self.opp_float_y = float(self.opponent.rect.centery)
                 tx = bb_data.get("opp_x", self.opponent.rect.centerx)
                 ty = bb_data.get("opp_y", self.opponent.rect.centery)
-                self.opponent.rect.centerx += int((tx - self.opponent.rect.centerx) * 0.4)
-                self.opponent.rect.centery += int((ty - self.opponent.rect.centery) * 0.4)
+                self.opp_float_x += (tx - self.opp_float_x) * 0.4
+                self.opp_float_y += (ty - self.opp_float_y) * 0.4
+                self.opponent.rect.centerx = int(self.opp_float_x)
+                self.opponent.rect.centery = int(self.opp_float_y)
             self.opp_shooting = bb_data.get("opp_shooting", False)
+            self.opp_shoot_anim = bb_data.get("opp_shoot_anim", -1.0)
             
             if self.opp2:
                 self.opp2_z = bb_data.get("opp2_z", self.opp2_z)
+                if not hasattr(self, "opp2_float_x"):
+                    self.opp2_float_x = float(self.opp2.rect.centerx)
+                    self.opp2_float_y = float(self.opp2.rect.centery)
                 tx2 = bb_data.get("opp2_x", self.opp2.rect.centerx)
                 ty2 = bb_data.get("opp2_y", self.opp2.rect.centery)
-                self.opp2.rect.centerx += int((tx2 - self.opp2.rect.centerx) * 0.4)
-                self.opp2.rect.centery += int((ty2 - self.opp2.rect.centery) * 0.4)
+                self.opp2_float_x += (tx2 - self.opp2_float_x) * 0.4
+                self.opp2_float_y += (ty2 - self.opp2_float_y) * 0.4
+                self.opp2.rect.centerx = int(self.opp2_float_x)
+                self.opp2.rect.centery = int(self.opp2_float_y)
                 self.opp2_shooting = bb_data.get("opp2_shooting", False)
+                self.opp2_shoot_anim = bb_data.get("opp2_shoot_anim", -1.0)
                 
             # Score and swish effect triggering on Client
             new_p_score = bb_data.get("p_score", self.player_score)
@@ -300,6 +321,28 @@ class BasketballGame:
                 self.shake_timer = 0.3
                 self.shake_intensity = 8
                 
+                # Client Streak & On Fire sync
+                self.player_streak = getattr(self, "player_streak", 0) + 1
+                self.opp_streak = 0
+                self.opp_on_fire = False
+                if self.player_streak >= 2 and not getattr(self, "player_on_fire", False):
+                    self.player_on_fire = True
+                    self.swish_effect["text"] = "PLAYER IS ON FIRE!!!"
+                    self.swish_effect["color"] = (255, 69, 0)
+                    
+                # Client: spawn cheering arcade words
+                cheers = ["BOOM!", "FIRE!", "CLUTCH!", "INSANE!", "WOW!", "NICE!"]
+                colors = [(255, 69, 0), (255, 215, 0), (50, 255, 50), (0, 255, 255), (255, 20, 147)]
+                for _ in range(6):
+                    self.cheer_emojis.append({
+                        "x": random.uniform(self.court_rect.left + 50, self.court_rect.right - 50),
+                        "y": random.uniform(self.court_rect.top + 50, self.court_rect.bottom - 50),
+                        "text": random.choice(cheers),
+                        "vy": random.uniform(-80, -40),
+                        "color": random.choice(colors),
+                        "life": 1.2
+                    })
+                
             if new_o_score > self.opp_score:
                 diff = new_o_score - self.opp_score
                 self.swish_effect = {
@@ -313,6 +356,28 @@ class BasketballGame:
                 }
                 self.shake_timer = 0.3
                 self.shake_intensity = 8
+                
+                # Client Streak & On Fire sync
+                self.opp_streak = getattr(self, "opp_streak", 0) + 1
+                self.player_streak = 0
+                self.player_on_fire = False
+                if self.opp_streak >= 2 and not getattr(self, "opp_on_fire", False):
+                    self.opp_on_fire = True
+                    self.swish_effect["text"] = "OPPONENTS ON FIRE!!!"
+                    self.swish_effect["color"] = (255, 69, 0)
+                    
+                # Client: spawn cheering arcade words
+                cheers = ["BOOM!", "FIRE!", "CLUTCH!", "INSANE!", "WOW!", "NICE!"]
+                colors = [(255, 69, 0), (255, 215, 0), (50, 255, 50), (0, 255, 255), (255, 20, 147)]
+                for _ in range(6):
+                    self.cheer_emojis.append({
+                        "x": random.uniform(self.court_rect.left + 50, self.court_rect.right - 50),
+                        "y": random.uniform(self.court_rect.top + 50, self.court_rect.bottom - 50),
+                        "text": random.choice(cheers),
+                        "vy": random.uniform(-80, -40),
+                        "color": random.choice(colors),
+                        "life": 1.2
+                    })
                 
             self.player_score = new_p_score
             self.opp_score = new_o_score
@@ -496,14 +561,22 @@ class BasketballGame:
         target_quality = 0.8
         is_perfect = (shooter in ('player', 'ally') and abs(power_bar - target_quality) < 0.02)
         
+        is_dunk = False
+        is_layup = False
+        
         if shooter == 'player':
             self.last_shot_x = self.player.rect.centerx
             self.last_shot_y = self.player.rect.centery
             target_x, target_y = self.right_rim
             dist = math.hypot(self.last_shot_x - target_x, self.last_shot_y - target_y)
+            if dist < 95:
+                if self.player_z > 5:
+                    is_dunk = True
+                else:
+                    is_layup = True
             is_3pt = dist > self.three_point_radius
             spread = 4.0 if is_3pt else 2.0
-            quality = 1.0 if is_perfect else (1.0 - abs(power_bar - target_quality) * spread)
+            quality = 1.0 if (is_perfect or is_dunk or is_layup) else (1.0 - abs(power_bar - target_quality) * spread)
             start_x = self.player.rect.centerx
             start_y = self.player.rect.centery
             start_z = self.player_z + 40
@@ -512,8 +585,13 @@ class BasketballGame:
             self.last_shot_y = self.ally.rect.centery
             target_x, target_y = self.right_rim
             dist = math.hypot(self.last_shot_x - target_x, self.last_shot_y - target_y)
+            if dist < 95:
+                if self.ally_z > 5:
+                    is_dunk = True
+                else:
+                    is_layup = True
             is_3pt = dist > self.three_point_radius
-            quality = 1.0 if is_perfect else (1.0 - abs(power_bar - target_quality) * 2.5)
+            quality = 1.0 if (is_perfect or is_dunk or is_layup) else (1.0 - abs(power_bar - target_quality) * 2.5)
             start_x = self.ally.rect.centerx
             start_y = self.ally.rect.centery
             start_z = self.ally_z + 40
@@ -522,8 +600,13 @@ class BasketballGame:
             self.last_shot_y = self.opp2.rect.centery
             target_x, target_y = self.left_rim
             dist = math.hypot(self.last_shot_x - target_x, self.last_shot_y - target_y)
+            if dist < 95:
+                if self.opp2_z > 5 or random.random() < 0.5:
+                    is_dunk = True
+                else:
+                    is_layup = True
             is_3pt = dist > self.three_point_radius
-            quality = 1.0 - abs(power_bar - target_quality) * 2.0
+            quality = 1.0 if (is_dunk or is_layup) else (1.0 - abs(power_bar - target_quality) * 2.0)
             start_x = self.opp2.rect.centerx
             start_y = self.opp2.rect.centery
             start_z = self.opp2_z + 40
@@ -532,8 +615,13 @@ class BasketballGame:
             self.last_shot_y = self.opponent.rect.centery
             target_x, target_y = self.left_rim
             dist = math.hypot(self.last_shot_x - target_x, self.last_shot_y - target_y)
+            if dist < 95:
+                if self.opp_z > 5 or random.random() < 0.5:
+                    is_dunk = True
+                else:
+                    is_layup = True
             is_3pt = dist > self.three_point_radius
-            quality = 1.0 - abs(power_bar - target_quality) * 2.0
+            quality = 1.0 if (is_dunk or is_layup) else (1.0 - abs(power_bar - target_quality) * 2.0)
             start_x = self.opponent.rect.centerx
             start_y = self.opponent.rect.centery
             start_z = self.opp_z + 40
@@ -546,14 +634,14 @@ class BasketballGame:
         dx = target_x - start_x
         dy = target_y - start_y
         
-        time_to_target = 1.1
+        time_to_target = 0.55 if is_dunk else (0.75 if is_layup else 1.1)
         
         vx = dx / time_to_target
         vy = dy / time_to_target
         vz = (self.hoop_z - start_z - 0.5 * self.gravity * time_to_target**2) / time_to_target
         
         # Add error based on quality
-        if not is_perfect and quality < 0.8:
+        if not is_perfect and not is_dunk and not is_layup and quality < 0.8:
             error_x = random.uniform(-100, 100) * (1.0 - quality)
             error_y = random.uniform(-100, 100) * (1.0 - quality)
             vx += error_x
@@ -563,7 +651,20 @@ class BasketballGame:
         self.ball_vy = vy
         self.ball_vz = vz
 
-        if is_perfect:
+        if is_dunk or is_layup:
+            self.shake_timer = 0.25
+            self.shake_intensity = 7
+            txt = "SLAM DUNK!" if is_dunk else "LAYUP!"
+            self.swish_effect = {
+                "x": start_x,
+                "y": start_y,
+                "text": txt,
+                "text_y": float(start_y - 60),
+                "color": (255, 69, 0) if is_dunk else (255, 215, 0),
+                "particles": [{"x": start_x + random.uniform(-15, 15), "y": start_y - 10, "vx": random.uniform(-60, 60), "vy": random.uniform(-140, -60), "life": 0.6} for _ in range(16)],
+                "timer": 0.8
+            }
+        elif is_perfect:
             self.swish_effect = {
                 "x": start_x,
                 "y": start_y,
@@ -620,6 +721,87 @@ class BasketballGame:
         else:
             if self.ball_trail:
                 self.ball_trail.pop(0)
+                
+        # Update particles
+        if not hasattr(self, "particles"): self.particles = []
+        for p in self.particles[:]:
+            p["life"] -= dt
+            p["x"] += p["vx"] * dt
+            p["y"] += p["vy"] * dt
+            if p["life"] <= 0:
+                self.particles.remove(p)
+                
+        # Update cheer emojis
+        if not hasattr(self, "cheer_emojis"): self.cheer_emojis = []
+        for emoji in self.cheer_emojis[:]:
+            emoji["life"] -= dt
+            emoji["y"] += emoji["vy"] * dt
+            if emoji["life"] <= 0:
+                self.cheer_emojis.remove(emoji)
+                
+        # Spawn flame trail if player/ally is on fire
+        if getattr(self, "player_on_fire", False):
+            self.particles.append({
+                "x": self.player.rect.centerx + random.uniform(-10, 10),
+                "y": self.player.rect.centery + random.uniform(-5, 5) - self.player_z,
+                "vx": random.uniform(-15, 15),
+                "vy": random.uniform(-30, -10),
+                "color": (255, random.randint(120, 200), 0),
+                "size": random.randint(3, 5),
+                "life": 0.35,
+                "max_life": 0.35
+            })
+            if self.is_coop and self.ally:
+                self.particles.append({
+                    "x": self.ally.rect.centerx + random.uniform(-10, 10),
+                    "y": self.ally.rect.centery + random.uniform(-5, 5) - self.ally_z,
+                    "vx": random.uniform(-15, 15),
+                    "vy": random.uniform(-30, -10),
+                    "color": (255, random.randint(120, 200), 0),
+                    "size": random.randint(3, 5),
+                    "life": 0.35,
+                    "max_life": 0.35
+                })
+        
+        # Spawn flame trail if opponents are on fire
+        if getattr(self, "opp_on_fire", False):
+            self.particles.append({
+                "x": self.opponent.rect.centerx + random.uniform(-10, 10),
+                "y": self.opponent.rect.centery + random.uniform(-5, 5) - self.opp_z,
+                "vx": random.uniform(-15, 15),
+                "vy": random.uniform(-30, -10),
+                "color": (255, random.randint(50, 120), 0),
+                "size": random.randint(3, 5),
+                "life": 0.35,
+                "max_life": 0.35
+            })
+            if self.is_coop and self.opp2:
+                self.particles.append({
+                    "x": self.opp2.rect.centerx + random.uniform(-10, 10),
+                    "y": self.opp2.rect.centery + random.uniform(-5, 5) - self.opp2_z,
+                    "vx": random.uniform(-15, 15),
+                    "vy": random.uniform(-30, -10),
+                    "color": (255, random.randint(50, 120), 0),
+                    "size": random.randint(3, 5),
+                    "life": 0.35,
+                    "max_life": 0.35
+                })
+
+        # Spawn flame trail behind ball if shot/passed by "On Fire" team
+        if (self.ball_held_by is None or getattr(self, "pass_in_flight", False)) and getattr(self, "possession", None) is not None:
+            is_p_team = self.possession in ('player', 'ally')
+            is_o_team = self.possession in ('opp', 'opp2')
+            if (is_p_team and getattr(self, "player_on_fire", False)) or (is_o_team and getattr(self, "opp_on_fire", False)):
+                self.particles.append({
+                    "x": self.ball_x + random.uniform(-5, 5),
+                    "y": self.ball_y + random.uniform(-5, 5) - self.ball_z,
+                    "vx": random.uniform(-10, 10),
+                    "vy": random.uniform(-10, 10),
+                    "color": (255, random.randint(140, 220), 20) if is_p_team else (255, random.randint(60, 120), 0),
+                    "size": random.randint(4, 6),
+                    "life": 0.25,
+                    "max_life": 0.25
+                })
             
         if self.reset_timer > 0:
             self.reset_timer -= dt
@@ -653,6 +835,15 @@ class BasketballGame:
             elif self.opp_shoot_anim >= 3.0 and self.opp_pending_shot is not None:
                 self._shoot_ball('opp', self.opp_pending_shot)
                 self.opp_pending_shot = None
+
+        # Opp2 Shooting Animation logic
+        if getattr(self, "opp2_shoot_anim", -1.0) >= 0:
+            self.opp2_shoot_anim += dt * 10.0
+            if self.opp2_shoot_anim >= 6.0:
+                self.opp2_shoot_anim = -1.0
+            elif self.opp2_shoot_anim >= 3.0 and getattr(self, "opp2_pending_shot", None) is not None:
+                self._shoot_ball('opp2', self.opp2_pending_shot)
+                self.opp2_pending_shot = None
 
         # Ally Shooting Animation logic
         if self.ally_shoot_anim >= 0:
@@ -806,13 +997,25 @@ class BasketballGame:
             # Opponent AI Shooting
             if self.ball_held_by == 'opp':
                 if not self.opp_shooting:
+                    self.opp_hold_timer = getattr(self, "opp_hold_timer", 0.0) + dt
                     dist_to_target = math.hypot(self.opponent.rect.centerx - self.opp_ai_target[0], self.opponent.rect.centery - self.opp_ai_target[1])
-                    if (dist_to_target < 40 or random.random() < 0.015) and not getattr(self, "pass_in_flight", False):
+                    
+                    should_shoot = False
+                    if dist_to_target < 65:
+                        should_shoot = True
+                    elif self.opp_hold_timer > 0.6:
+                        should_shoot = True
+                    elif random.random() < 0.06:
+                        should_shoot = True
+                        
+                    if should_shoot and not getattr(self, "pass_in_flight", False):
                         self.opp_shooting = True
                         self.opp_shoot_bar = 0.0
                         self.opp_shoot_dir = 1
                         self.opp_target_bar = random.uniform(0.75, 0.85)
+                        self.opp_hold_timer = 0.0
                 else:
+                    self.opp_hold_timer = 0.0
                     self.opp_shoot_bar += self.opp_shoot_dir * dt * 1.5
                     if self.opp_shoot_bar >= 1.0:
                         self.opp_shoot_bar = 1.0
@@ -829,13 +1032,25 @@ class BasketballGame:
             # Opp2 AI Shooting
             if self.is_coop and self.opp2 and self.ball_held_by == 'opp2':
                 if not getattr(self, "opp2_shooting", False):
+                    self.opp2_hold_timer = getattr(self, "opp2_hold_timer", 0.0) + dt
                     dist_to_target2 = math.hypot(self.opp2.rect.centerx - self.opp2_ai_target[0], self.opp2.rect.centery - self.opp2_ai_target[1])
-                    if (dist_to_target2 < 40 or random.random() < 0.015) and not getattr(self, "pass_in_flight", False):
+                    
+                    should_shoot2 = False
+                    if dist_to_target2 < 65:
+                        should_shoot2 = True
+                    elif self.opp2_hold_timer > 0.6:
+                        should_shoot2 = True
+                    elif random.random() < 0.06:
+                        should_shoot2 = True
+                        
+                    if should_shoot2 and not getattr(self, "pass_in_flight", False):
                         self.opp2_shooting = True
                         self.opp2_shoot_bar = 0.0
                         self.opp2_shoot_dir = 1
                         self.opp2_target_bar = random.uniform(0.75, 0.85)
+                        self.opp2_hold_timer = 0.0
                 else:
+                    self.opp2_hold_timer = 0.0
                     self.opp2_shoot_bar += self.opp2_shoot_dir * dt * 1.5
                     if self.opp2_shoot_bar >= 1.0:
                         self.opp2_shoot_bar = 1.0
@@ -910,6 +1125,21 @@ class BasketballGame:
             frames = self.opponent.animations.get(anim_key, [])
             if frames:
                 self.opponent.image = frames[0]
+
+        # Opp2 Image Override for Shooting
+        if self.is_coop and self.opp2:
+            if getattr(self, 'opp2_shoot_anim', -1.0) >= 0:
+                self.opp2.state = "shoot"
+                anim_key = f"shoot_{self.opp2.direction.value}"
+                frames = self.opp2.animations.get(anim_key, [])
+                if frames:
+                    self.opp2.image = frames[min(int(self.opp2_shoot_anim), len(frames)-1)]
+            elif getattr(self, 'opp2_shooting', False):
+                self.opp2.state = "shoot"
+                anim_key = f"shoot_{self.opp2.direction.value}"
+                frames = self.opp2.animations.get(anim_key, [])
+                if frames:
+                    self.opp2.image = frames[0]
 
         # Ally Image Override for Shooting
         if self.is_coop and self.ally:
@@ -1090,6 +1320,29 @@ class BasketballGame:
                             "particles": [{"x": self.right_rim[0] + random.uniform(-15, 15), "y": self.right_rim[1] - 30, "vx": random.uniform(-40, 40), "vy": random.uniform(80, 200), "life": 0.8} for _ in range(18)],
                             "timer": 1.0
                         }
+                        
+                        # Streak and On Fire mechanics
+                        self.player_streak = getattr(self, "player_streak", 0) + 1
+                        self.opp_streak = 0
+                        self.opp_on_fire = False
+                        if self.player_streak >= 2 and not getattr(self, "player_on_fire", False):
+                            self.player_on_fire = True
+                            self.swish_effect["text"] = "PLAYER IS ON FIRE!!!"
+                            self.swish_effect["color"] = (255, 69, 0)
+                            
+                        # Spawn arcade cheering words
+                        cheers = ["BOOM!", "FIRE!", "CLUTCH!", "INSANE!", "WOW!", "NICE!"]
+                        colors = [(255, 69, 0), (255, 215, 0), (50, 255, 50), (0, 255, 255), (255, 20, 147)]
+                        for _ in range(6):
+                            self.cheer_emojis.append({
+                                "x": random.uniform(self.court_rect.left + 50, self.court_rect.right - 50),
+                                "y": random.uniform(self.court_rect.top + 50, self.court_rect.bottom - 50),
+                                "text": random.choice(cheers),
+                                "vy": random.uniform(-80, -40),
+                                "color": random.choice(colors),
+                                "life": 1.2
+                            })
+                            
                         from src.controller import get_controller
                         controller = get_controller()
                         if controller.connected and getattr(controller, "last_input_method", "keyboard") == "controller":
@@ -1109,6 +1362,29 @@ class BasketballGame:
                             "particles": [{"x": self.left_rim[0] + random.uniform(-15, 15), "y": self.left_rim[1] - 30, "vx": random.uniform(-40, 40), "vy": random.uniform(80, 200), "life": 0.8} for _ in range(18)],
                             "timer": 1.0
                         }
+                        
+                        # Streak and On Fire mechanics
+                        self.opp_streak = getattr(self, "opp_streak", 0) + 1
+                        self.player_streak = 0
+                        self.player_on_fire = False
+                        if self.opp_streak >= 2 and not getattr(self, "opp_on_fire", False):
+                            self.opp_on_fire = True
+                            self.swish_effect["text"] = "OPPONENTS ON FIRE!!!"
+                            self.swish_effect["color"] = (255, 69, 0)
+                            
+                        # Spawn arcade cheering words
+                        cheers = ["BOOM!", "FIRE!", "CLUTCH!", "INSANE!", "WOW!", "NICE!"]
+                        colors = [(255, 69, 0), (255, 215, 0), (50, 255, 50), (0, 255, 255), (255, 20, 147)]
+                        for _ in range(6):
+                            self.cheer_emojis.append({
+                                "x": random.uniform(self.court_rect.left + 50, self.court_rect.right - 50),
+                                "y": random.uniform(self.court_rect.top + 50, self.court_rect.bottom - 50),
+                                "text": random.choice(cheers),
+                                "vy": random.uniform(-80, -40),
+                                "color": random.choice(colors),
+                                "life": 1.2
+                            })
+                            
                         from src.controller import get_controller
                         controller = get_controller()
                         if controller.connected and getattr(controller, "last_input_method", "keyboard") == "controller":
@@ -1142,6 +1418,67 @@ class BasketballGame:
             self.waiting_for_dismiss = True
 
         return None
+
+    def _draw_premium_shoot_bar(self, screen, camera, x, y, z, value, smooth_val_attr, is_3pt):
+        # Retrieve or initialize the smooth value
+        if not hasattr(self, smooth_val_attr):
+            setattr(self, smooth_val_attr, 0.0)
+        curr_smooth = getattr(self, smooth_val_attr)
+        
+        # Smoothly LERP towards target
+        curr_smooth += (value - curr_smooth) * 0.35
+        curr_smooth = max(0.0, min(1.0, curr_smooth))
+        setattr(self, smooth_val_attr, curr_smooth)
+
+        # Apply camera position
+        bx, by = camera.apply_pos(x, y - z - 85)
+        
+        bar_w = 70
+        bar_h = 10
+        bar_x = bx - bar_w // 2
+        bar_y = by
+
+        # 1. Draw outer border/shadow
+        shadow_rect = pygame.Rect(bar_x - 3, bar_y - 3, bar_w + 6, bar_h + 6)
+        pygame.draw.rect(screen, (10, 10, 20, 180), shadow_rect, border_radius=4)
+        
+        # 2. Draw background panel
+        bg_rect = pygame.Rect(bar_x, bar_y, bar_w, bar_h)
+        pygame.draw.rect(screen, (30, 30, 45), bg_rect, border_radius=3)
+        pygame.draw.rect(screen, (60, 60, 85), bg_rect, width=1, border_radius=3)
+
+        # 3. Draw Sweet Spot
+        green_min, green_max = (0.75, 0.85) if is_3pt else (0.7, 0.9)
+        green_x = bar_x + int(bar_w * green_min)
+        green_w = int(bar_w * (green_max - green_min))
+        
+        green_rect = pygame.Rect(green_x, bar_y + 1, green_w, bar_h - 2)
+        pygame.draw.rect(screen, (0, 220, 100), green_rect)
+        
+        # 4. Fill progress bar with dynamic color transitions
+        fill_w = int(bar_w * curr_smooth)
+        if fill_w > 0:
+            if green_min < curr_smooth < green_max:
+                color = (0, 255, 120)  # Neon Green
+            elif 0.5 < curr_smooth < 0.95:
+                color = (255, 220, 0)  # Vibrant Yellow
+            else:
+                color = (255, 70, 70)  # Bright Coral Red
+            
+            fill_rect = pygame.Rect(bar_x + 1, bar_y + 1, fill_w - 2, bar_h - 2)
+            pygame.draw.rect(screen, color, fill_rect, border_radius=2)
+            
+            # Gloss overlay sheen
+            try:
+                sheen = pygame.Surface((fill_w - 2, (bar_h - 2) // 2), pygame.SRCALPHA)
+                sheen.fill((255, 255, 255, 60))
+                screen.blit(sheen, (bar_x + 1, bar_y + 1))
+            except Exception:
+                pass
+
+        # 5. Draw target marker line
+        perfect_release_x = bar_x + int(bar_w * 0.8)
+        pygame.draw.line(screen, (255, 255, 255), (perfect_release_x, bar_y - 2), (perfect_release_x, bar_y + bar_h + 2), 2)
 
     def draw(self, screen: pygame.Surface, camera):
         # We don't fill the background. The actual map is drawn behind this!
@@ -1283,6 +1620,30 @@ class BasketballGame:
                 px, py = camera.apply_pos(self.swish_effect["x"], self.swish_effect["text_y"])
                 screen.blit(text_surf, (px - text_surf.get_width()//2, py))
             
+        # Draw general particles (with blending / transparent alpha)
+        if getattr(self, "particles", None):
+            for p in self.particles:
+                px, py = camera.apply_pos(p["x"], p["y"])
+                alpha = int(255 * max(0.0, min(1.0, p["life"] / p["max_life"])))
+                color = p["color"]
+                if len(color) == 3:
+                    color = color + (alpha,)
+                else:
+                    color = (color[0], color[1], color[2], alpha)
+                particle_surf = pygame.Surface((p["size"]*2, p["size"]*2), pygame.SRCALPHA)
+                pygame.draw.circle(particle_surf, color, (p["size"], p["size"]), p["size"])
+                screen.blit(particle_surf, (px - p["size"], py - p["size"]))
+                
+        # Draw cheering arcade words popups
+        if getattr(self, "cheer_emojis", None) and self._font:
+            for emoji in self.cheer_emojis:
+                ex, ey = camera.apply_pos(emoji["x"], emoji["y"])
+                alpha = int(255 * max(0.0, min(1.0, emoji["life"] / 1.2)))
+                text_surf = self._font.render(emoji["text"], True, emoji["color"])
+                if alpha < 255:
+                    text_surf.set_alpha(alpha)
+                screen.blit(text_surf, (ex - text_surf.get_width()//2, ey))
+            
         # Draw block aura effect
         if self.blocking:
             pygame.draw.circle(screen, (100, 200, 255, 128), camera.apply_pos(self.player.rect.centerx, self.player.rect.centery), 30, 4)
@@ -1304,48 +1665,30 @@ class BasketballGame:
         pygame.draw.rect(screen, (0, 0, 0, 150), s_rect.inflate(20, 10))
         screen.blit(score_text, s_rect)
 
-        # Opponent Shooting Bar
-        if self.opp_shooting:
-            bar_w = 60
-            bar_h = 8
-            bx, by = camera.apply_pos(self.opponent.rect.centerx, old_oy - self.opp_z - 80)
-            bar_x = bx - bar_w // 2
-            bar_y = by
-            pygame.draw.rect(screen, BLACK, (bar_x, bar_y, bar_w, bar_h))
-            
-            fill_w = int(bar_w * self.opp_shoot_bar)
-            color = (255, 0, 0)
-            if 0.7 < self.opp_shoot_bar < 0.9:
-                color = (0, 255, 0)
-            elif 0.5 < self.opp_shoot_bar < 0.95:
-                color = (255, 255, 0)
-                
-            pygame.draw.rect(screen, color, (bar_x, bar_y, fill_w, bar_h))
-            pygame.draw.rect(screen, WHITE, (bar_x + int(bar_w * 0.8) - 2, bar_y - 2, 4, bar_h + 4))
-
-        # Shooting Bar
+        # Draw all active shooting bars with smooth local LERP interpolation
+        # 1. Local Player
         if self.shooting:
             dist = math.hypot(self.player.rect.centerx - self.right_rim[0], self.player.rect.centery - self.right_rim[1])
             is_3pt = dist > self.three_point_radius
+            self._draw_premium_shoot_bar(screen, camera, self.player.rect.centerx, old_py, self.player_z, self.shoot_bar, "smooth_shoot_bar", is_3pt)
             
-            bar_w = 60
-            bar_h = 8
-            bx, by = camera.apply_pos(self.player.rect.centerx, old_py - self.player_z - 80)
-            bar_x = bx - bar_w // 2
-            bar_y = by
-            pygame.draw.rect(screen, BLACK, (bar_x, bar_y, bar_w, bar_h))
-            
-            fill_w = int(bar_w * self.shoot_bar)
-            color = (255, 0, 0)
-            
-            green_min, green_max = (0.75, 0.85) if is_3pt else (0.7, 0.9)
-            if green_min < self.shoot_bar < green_max:
-                color = (0, 255, 0)
-            elif 0.5 < self.shoot_bar < 0.95:
-                color = (255, 255, 0)
-                
-            pygame.draw.rect(screen, color, (bar_x, bar_y, fill_w, bar_h))
-            pygame.draw.rect(screen, WHITE, (bar_x + int(bar_w * 0.8) - 2, bar_y - 2, 4, bar_h + 4))
+        # 2. Remote Ally Teammate (Coop)
+        if self.is_coop and self.ally and getattr(self, "ally_shooting", False):
+            dist = math.hypot(self.ally.rect.centerx - self.right_rim[0], self.ally.rect.centery - self.right_rim[1])
+            is_3pt = dist > self.three_point_radius
+            self._draw_premium_shoot_bar(screen, camera, self.ally.rect.centerx, old_ay, self.ally_z, getattr(self, "ally_shoot_bar", 0.0), "smooth_ally_shoot_bar", is_3pt)
+
+        # 3. Main Opponent AI
+        if self.opp_shooting:
+            dist = math.hypot(self.opponent.rect.centerx - self.left_rim[0], self.opponent.rect.centery - self.left_rim[1])
+            is_3pt = dist > self.three_point_radius
+            self._draw_premium_shoot_bar(screen, camera, self.opponent.rect.centerx, old_oy, self.opp_z, self.opp_shoot_bar, "smooth_opp_shoot_bar", is_3pt)
+
+        # 4. Teammate Opponent AI (Coop)
+        if self.is_coop and self.opp2 and getattr(self, "opp2_shooting", False):
+            dist = math.hypot(self.opp2.rect.centerx - self.left_rim[0], self.opp2.rect.centery - self.left_rim[1])
+            is_3pt = dist > self.three_point_radius
+            self._draw_premium_shoot_bar(screen, camera, self.opp2.rect.centerx, old_o2y, getattr(self, "opp2_z", 0.0), getattr(self, "opp2_shoot_bar", 0.0), "smooth_opp2_shoot_bar", is_3pt)
 
         # Check if a controller is connected to show dynamic button prompts
         controller_connected = False
