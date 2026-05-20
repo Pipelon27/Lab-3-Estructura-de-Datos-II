@@ -236,7 +236,16 @@ class NPC:
         self.vision_cone_angle = 90.0 # degrees
 
         # Animation state
-        self.animations = {}
+        self.hurt_timer = 0.0
+        self.knockout_time_elapsed = 0.0
+        self.attack_timer = 0.0
+        self.animations = {
+            "idle_up": [], "idle_down": [], "idle_left": [], "idle_right": [],
+            "walk_up": [], "walk_down": [], "walk_left": [], "walk_right": [],
+            "attack_up": [], "attack_down": [], "attack_left": [], "attack_right": [],
+            "hurt_up": [], "hurt_down": [], "hurt_left": [], "hurt_right": [],
+            "knockout": [],
+        }
         self.state = "idle"
         self.frame_index = 0
         self.animation_timer = 0.0
@@ -246,6 +255,32 @@ class NPC:
     def _advance_animation(self, dt: float):
         """Advance sprite frames independently from AI movement."""
         if not self.animations:
+            return
+
+        if self.state == "knockout":
+            anim_key = f"knockout_{self.direction.value}"
+            frames = self.animations.get(anim_key, [])
+            if not frames:
+                frames = self.animations.get("knockout", [])
+            if frames:
+                self.frame_index = min(len(frames) - 1, int(self.knockout_time_elapsed * 6.0))
+                self.image = frames[self.frame_index]
+            return
+
+        if self.state == "hurt":
+            anim_key = f"hurt_{self.direction.value}"
+            frames = self.animations.get(anim_key, [])
+            if frames:
+                self.frame_index = int((0.4 - self.hurt_timer) * 10.0) % len(frames)
+                self.image = frames[self.frame_index]
+            return
+
+        if self.state == "attack":
+            anim_key = f"attack_{self.direction.value}"
+            frames = self.animations.get(anim_key, [])
+            if frames:
+                self.frame_index = int((0.2 - self.attack_timer) * 30.0) % len(frames)
+                self.image = frames[self.frame_index]
             return
 
         fps = 10.0 if self.state == "walk" else 6.0
@@ -291,26 +326,47 @@ class NPC:
         frame_w, frame_h = 32, 64
 
         def get_frame(col, row):
-            rect = pygame.Rect(col * frame_w, row * frame_h, frame_w, frame_h)
-            return sheet.subsurface(rect).copy()
+            try:
+                rect = pygame.Rect(col * frame_w, row * frame_h, frame_w, frame_h)
+                return sheet.subsurface(rect).copy()
+            except ValueError:
+                # Safe fallback if bounds are exceeded
+                return self.animations.get("idle_down", [None])[0]
 
-        # Row 1 (Fila 2) (Idle): Right (0-5), Up (6-11), Left (12-17), Down (18-23)
+        # Row 1 (Idle): Right (0-5), Up (6-11), Left (12-17), Down (18-23)
         self.animations["idle_right"] = [get_frame(c, 1) for c in range(0, 6)]
         self.animations["idle_up"]    = [get_frame(c, 1) for c in range(6, 12)]
         self.animations["idle_left"]  = [get_frame(c, 1) for c in range(12, 18)]
         self.animations["idle_down"]  = [get_frame(c, 1) for c in range(18, 24)]
 
-        # Row 2 (Fila 3) (Walk/Run): Right (0-5), Up (6-11), Left (12-17), Down (18-23)
+        # Row 2 (Walk/Run): Right (0-5), Up (6-11), Left (12-17), Down (18-23)
         self.animations["walk_right"] = [get_frame(c, 2) for c in range(0, 6)]
         self.animations["walk_up"]    = [get_frame(c, 2) for c in range(6, 12)]
         self.animations["walk_left"]  = [get_frame(c, 2) for c in range(12, 18)]
         self.animations["walk_down"]  = [get_frame(c, 2) for c in range(18, 24)]
 
-        # Row 12 (8th from bottom) (Shoot): Right (0-5), Up (6-11), Left (12-17), Down (18-23)
+        # Row 12 (Shoot/Attack): Right (0-5), Up (6-11), Left (12-17), Down (18-23)
         self.animations["shoot_right"] = [get_frame(c, 12) for c in range(0, 6)]
         self.animations["shoot_up"]    = [get_frame(c, 12) for c in range(6, 12)]
         self.animations["shoot_left"]  = [get_frame(c, 12) for c in range(12, 18)]
         self.animations["shoot_down"]  = [get_frame(c, 12) for c in range(18, 24)]
+
+        self.animations["attack_right"] = self.animations["shoot_right"]
+        self.animations["attack_up"]    = self.animations["shoot_up"]
+        self.animations["attack_left"]  = self.animations["shoot_left"]
+        self.animations["attack_down"]  = self.animations["shoot_down"]
+
+        # Row 7, Cols 0-11: Hurt recoil (3 frames per direction: Right, Up, Left, Down)
+        self.animations["hurt_right"] = [get_frame(c, 7) for c in range(0, 3)]
+        self.animations["hurt_up"]    = [get_frame(c, 7) for c in range(3, 6)]
+        self.animations["hurt_left"]  = [get_frame(c, 7) for c in range(6, 9)]
+        self.animations["hurt_down"]  = [get_frame(c, 7) for c in range(9, 12)]
+
+        # Row 9, Cols 0-23: Sitting without book (6 frames per direction)
+        self.animations["knockout_right"] = [get_frame(c, 9) for c in range(0, 6)]
+        self.animations["knockout_up"]    = [get_frame(c, 9) for c in range(6, 12)]
+        self.animations["knockout_left"]  = [get_frame(c, 9) for c in range(12, 18)]
+        self.animations["knockout_down"]  = [get_frame(c, 9) for c in range(18, 24)]
 
         # Set default image
         self.image = self.animations["idle_down"][0]
@@ -422,14 +478,48 @@ class NPC:
 
     def update(self, dt: float, walls: list[pygame.Rect] | None = None):
         """Update AI and movement."""
+        if not hasattr(self, '_prev_health'):
+            self._prev_health = self.health
+
+        # Monitor health changes
+        if self.health < self._prev_health:
+            self.hurt_timer = 0.4
+            self.knockout_time_elapsed = 0.0
+            self._prev_health = self.health
+        elif self.health > self._prev_health:
+            self._prev_health = self.health
+
+        if self.hurt_timer > 0:
+            self.hurt_timer -= dt
+
+        if getattr(self, 'attack_timer', 0) > 0:
+            self.attack_timer -= dt
+            if self.attack_timer <= 0:
+                self.state = "idle"
+
         if self.health <= 0:
+            self.state = "knockout"
+            self.knockout_time_elapsed += dt
+            self._advance_animation(dt)
+            
             if self.knockout_timer > 0:
-                # 1 second of real time roughly equals 1 in-game minute by default,
-                # so 120 seconds = 2 in-game hours
                 self.knockout_timer -= dt
                 if self.knockout_timer <= 0:
                     self.health = self.max_health
                     self.knockout_timer = 0.0
+                    self.state = "idle"
+                    self.knockout_time_elapsed = 0.0
+                    self._prev_health = self.health
+            return
+
+        if self.hurt_timer > 0:
+            self.state = "hurt"
+            self._advance_animation(dt)
+            return
+
+        if getattr(self, 'attack_timer', 0) > 0:
+            self.state = "attack"
+            self._advance_animation(dt)
             return
 
         if self.attack_cooldown > 0:
@@ -611,7 +701,15 @@ class NPC:
         if self.image:
             # The sprite is 32x64, we draw it so its bottom-center aligns with the collision rect bottom-center
             draw_rect = self.image.get_rect(midbottom=dr.midbottom)
-            screen.blit(self.image, draw_rect)
+            if getattr(self, "hurt_timer", 0) > 0 and int(self.hurt_timer * 20) % 2 == 0:
+                # Premium red silhouette/flash using mask
+                mask = pygame.mask.from_surface(self.image)
+                mask_surf = mask.to_surface(setcolor=(255, 50, 50, 255), unsetcolor=(0, 0, 0, 0))
+                screen.blit(self.image, draw_rect)
+                mask_surf.set_alpha(150)
+                screen.blit(mask_surf, draw_rect)
+            else:
+                screen.blit(self.image, draw_rect)
             
             # Name label (can be hidden for observers)
             if getattr(self, 'show_name', True):

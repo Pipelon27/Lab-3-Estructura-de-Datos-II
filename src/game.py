@@ -3275,6 +3275,8 @@ class Game:
                             dmg = getattr(_npc, 'target_damage', 8)
                             self.player.take_damage(dmg)
                             _npc.attack_cooldown = 1.0
+                            _npc.attack_timer = 0.2
+                            _npc.state = "attack"
                             self.ui.show_notification(f"{_npc.name} attacked you!", NOTIF_ERROR)
                             controller = get_controller()
                             if controller.connected:
