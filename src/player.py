@@ -73,6 +73,8 @@ class Player:
         self.stamina     = PLAYER_MAX_STAMINA
         self.max_stamina = PLAYER_MAX_STAMINA
         self.current_floor = 1
+        self.hit_flash_color = (255, 50, 50, 255)
+        self.is_dash_strike = False
 
         # Real-time Combat
         self.is_attacking = False
@@ -108,10 +110,16 @@ class Player:
         self.crowd_chance       = 0
         self.respect_aura       = 0
 
+        self.hurt_timer = 0.0
+        self.knockout_time_elapsed = 0.0
+
         # Animation
         self.animations = {
             "idle_up": [], "idle_down": [], "idle_left": [], "idle_right": [],
             "walk_up": [], "walk_down": [], "walk_left": [], "walk_right": [],
+            "attack_up": [], "attack_down": [], "attack_left": [], "attack_right": [],
+            "hurt_up": [], "hurt_down": [], "hurt_left": [], "hurt_right": [],
+            "knockout": [],
         }
         self.state = "idle"
         self.frame_index = 0
@@ -129,6 +137,54 @@ class Player:
 
     def update(self, keys, walls: list[pygame.Rect], dt: float, trail_decay: int = 1, speed_multiplier: float = 1.0):
         """Process movement from controller and keyboard, apply velocity, handle collisions."""
+        if not hasattr(self, '_prev_health'):
+            self._prev_health = self.health
+
+        # Detect health reduction
+        if self.health < self._prev_health:
+            self.hurt_timer = 0.4
+            self.knockout_time_elapsed = 0.0
+            self._prev_health = self.health
+        elif self.health > self._prev_health:
+            self._prev_health = self.health
+
+        # Update hurt timer
+        if self.hurt_timer > 0:
+            self.hurt_timer -= dt
+
+        # Knocked out logic
+        if self.health <= 0:
+            self.state = "knockout"
+            self.knockout_time_elapsed += dt
+            if self.step_sound and self._is_stepping:
+                self.step_sound.stop()
+                self._is_stepping = False
+            
+            # Animate knockout (directional sitting pose)
+            anim_key = f"knockout_{self.direction.value}"
+            frames = self.animations.get(anim_key, [])
+            if not frames:
+                frames = self.animations.get("knockout", [])
+            if frames:
+                self.frame_index = min(len(frames) - 1, int(self.knockout_time_elapsed * 6.0))
+                self.image = frames[self.frame_index]
+            return
+
+        # Hurt / hitstun state
+        if self.hurt_timer > 0:
+            self.state = "hurt"
+            if self.step_sound and self._is_stepping:
+                self.step_sound.stop()
+                self._is_stepping = False
+            
+            # Animate hurt recoil
+            anim_key = f"hurt_{self.direction.value}"
+            frames = self.animations.get(anim_key, [])
+            if frames:
+                self.frame_index = int((0.4 - self.hurt_timer) * 10.0) % len(frames)
+                self.image = frames[self.frame_index]
+            return
+
         if self._dashing:
             self._update_dash(walls)
             return
@@ -184,20 +240,28 @@ class Player:
                 self.step_sound.play(-1)
                 self._is_stepping = True
 
+        if getattr(self, "is_attacking", False):
+            self.state = "attack"
+
         # Update animation frame
         anim_key = f"{self.state}_{self.direction.value}"
         frames = self.animations.get(anim_key, [])
         if frames:
-            # Animation speed: 12.0 frames/sec for walking, 6.0 frames/sec for idle
-            anim_speed = 12.0 if self.state == "walk" else 6.0
-            if sprinting:
-                anim_speed *= 1.5
-            
-            self.animation_timer += dt * anim_speed
-            if self.animation_timer >= len(frames):
-                self.animation_timer = 0.0
-            self.frame_index = int(self.animation_timer) % len(frames)
-            self.image = frames[self.frame_index]
+            if self.state == "attack":
+                # Advance attack animation based on attack_timer (active for 0.2s, 6 frames -> ~30fps)
+                self.frame_index = int((0.2 - getattr(self, "attack_timer", 0.0)) * 30.0) % len(frames)
+                self.image = frames[self.frame_index]
+            else:
+                # Animation speed: 12.0 frames/sec for walking, 6.0 frames/sec for idle
+                anim_speed = 12.0 if self.state == "walk" else 6.0
+                if sprinting:
+                    anim_speed *= 1.5
+                
+                self.animation_timer += dt * anim_speed
+                if self.animation_timer >= len(frames):
+                    self.animation_timer = 0.0
+                self.frame_index = int(self.animation_timer) % len(frames)
+                self.image = frames[self.frame_index]
 
         # Stamina regen
         if not sprinting:
@@ -205,11 +269,11 @@ class Player:
                                self.stamina + STAMINA_REGEN_RATE)
 
         # Real-time combat update
-        if self.attack_timer > 0:
+        if getattr(self, "attack_timer", 0) > 0:
             self.attack_timer -= dt
             if self.attack_timer <= 0:
                 self.is_attacking = False
-        if self.attack_cooldown > 0:
+        if getattr(self, "attack_cooldown", 0) > 0:
             self.attack_cooldown -= dt
 
         # Update dash trail
@@ -260,14 +324,21 @@ class Player:
     def start_attack(self):
         """Initiate an attack if enough stamina and off cooldown."""
         if self.attack_cooldown <= 0 and self.stamina >= 5:
+            # Dash-Strike detection
+            self.is_dash_strike = getattr(self, "_dashing", False)
+            
             # Controller rumble feedback
             controller = get_controller()
             if controller.connected:
-                controller.rumble(0.2, 0.4, 100)
+                if self.is_dash_strike:
+                    controller.rumble(0.6, 0.6, 150)
+                else:
+                    controller.rumble(0.2, 0.4, 100)
             self.stamina -= 5
             self.is_attacking = True
             self.attack_timer = 0.2  # 0.2s active hitbox
-            self.attack_cooldown = 1.0
+            # Lena has a faster attack cooldown than Aiden
+            self.attack_cooldown = 0.6 if self.character == Character.LENA else 1.0
             self._hit_npcs.clear()
 
     def get_attack_hitbox(self) -> pygame.Rect | None:
@@ -405,7 +476,16 @@ class Player:
         if self.image:
             # Align bottom-center of the sprite with bottom-center of the hitbox
             sprite_rect = self.image.get_rect(midbottom=draw_rect.midbottom)
-            screen.blit(self.image, sprite_rect)
+            if getattr(self, "hurt_timer", 0) > 0 and int(self.hurt_timer * 20) % 2 == 0:
+                # Premium silhouette/flash using mask
+                mask = pygame.mask.from_surface(self.image)
+                flash_col = getattr(self, "hit_flash_color", (255, 50, 50, 255))
+                mask_surf = mask.to_surface(setcolor=flash_col, unsetcolor=(0, 0, 0, 0))
+                screen.blit(self.image, sprite_rect)
+                mask_surf.set_alpha(150)
+                screen.blit(mask_surf, sprite_rect)
+            else:
+                screen.blit(self.image, sprite_rect)
             
             # Optional debug hitbox (can be removed later)
             # pygame.draw.rect(screen, (255, 0, 0), draw_rect, 1)
@@ -472,14 +552,16 @@ class Aiden(Player):
 
     def __init__(self, x: int, y: int):
         super().__init__(x, y, Character.AIDEN, AIDEN_COLOR, AIDEN_OUTLINE)
-        self.attack_damage = 12          # slightly higher base
+        self.max_health = 120
+        self.health = 120
+        self.attack_damage = 15          # heavy brawler base
         self.sprint_speed  = PLAYER_SPRINT_SPEED + 1
         self.hack_time_bonus = 2         # matched with Lena's base
         self.skill_tree    = build_aiden_tree()
         self._load_sprites()
 
     def _load_sprites(self):
-        """Extract idle and walk frames from the spritesheet."""
+        """Extract idle, walk, and combat frames from the spritesheet."""
         base_dir = os.path.dirname(os.path.dirname(__file__))
         path = os.path.join(base_dir, "assets", "Characters BEHIND THE SMILE", "PROTAGONISTS", "Aiden Parker.png")
         if not os.path.exists(path):
@@ -490,26 +572,47 @@ class Aiden(Player):
         frame_w, frame_h = 32, 64
 
         def get_frame(col, row):
-            rect = pygame.Rect(col * frame_w, row * frame_h, frame_w, frame_h)
-            return sheet.subsurface(rect).copy()
+            try:
+                rect = pygame.Rect(col * frame_w, row * frame_h, frame_w, frame_h)
+                return sheet.subsurface(rect).copy()
+            except ValueError:
+                # Safe fallback if bounds are exceeded
+                return self.animations.get("idle_down", [None])[0]
 
-        # Row 1 (Fila 2) (Idle): Right (0-5), Up (6-11), Left (12-17), Down (18-23)
+        # Row 1 (Idle): Right (0-5), Up (6-11), Left (12-17), Down (18-23)
         self.animations["idle_right"] = [get_frame(c, 1) for c in range(0, 6)]
         self.animations["idle_up"]    = [get_frame(c, 1) for c in range(6, 12)]
         self.animations["idle_left"]  = [get_frame(c, 1) for c in range(12, 18)]
         self.animations["idle_down"]  = [get_frame(c, 1) for c in range(18, 24)]
 
-        # Row 2 (Fila 3) (Walk/Run): Right (0-5), Up (6-11), Left (12-17), Down (18-23)
+        # Row 2 (Walk/Run): Right (0-5), Up (6-11), Left (12-17), Down (18-23)
         self.animations["walk_right"] = [get_frame(c, 2) for c in range(0, 6)]
         self.animations["walk_up"]    = [get_frame(c, 2) for c in range(6, 12)]
         self.animations["walk_left"]  = [get_frame(c, 2) for c in range(12, 18)]
         self.animations["walk_down"]  = [get_frame(c, 2) for c in range(18, 24)]
 
-        # Row 12 (8th from bottom) (Shoot): Right (0-5), Up (6-11), Left (12-17), Down (18-23)
+        # Row 12 (Shoot/Attack): Right (0-5), Up (6-11), Left (12-17), Down (18-23)
         self.animations["shoot_right"] = [get_frame(c, 12) for c in range(0, 6)]
         self.animations["shoot_up"]    = [get_frame(c, 12) for c in range(6, 12)]
         self.animations["shoot_left"]  = [get_frame(c, 12) for c in range(12, 18)]
         self.animations["shoot_down"]  = [get_frame(c, 12) for c in range(18, 24)]
+
+        self.animations["attack_right"] = self.animations["shoot_right"]
+        self.animations["attack_up"]    = self.animations["shoot_up"]
+        self.animations["attack_left"]  = self.animations["shoot_left"]
+        self.animations["attack_down"]  = self.animations["shoot_down"]
+
+        # Row 7, Cols 0-11: Hurt recoil (3 frames per direction: Right, Up, Left, Down)
+        self.animations["hurt_right"] = [get_frame(c, 7) for c in range(0, 3)]
+        self.animations["hurt_up"]    = [get_frame(c, 7) for c in range(3, 6)]
+        self.animations["hurt_left"]  = [get_frame(c, 7) for c in range(6, 9)]
+        self.animations["hurt_down"]  = [get_frame(c, 7) for c in range(9, 12)]
+
+        # Row 9, Cols 0-23: Sitting without book (6 frames per direction)
+        self.animations["knockout_right"] = [get_frame(c, 9) for c in range(0, 6)]
+        self.animations["knockout_up"]    = [get_frame(c, 9) for c in range(6, 12)]
+        self.animations["knockout_left"]  = [get_frame(c, 9) for c in range(12, 18)]
+        self.animations["knockout_down"]  = [get_frame(c, 9) for c in range(18, 24)]
 
         # Set default image
         self.image = self.animations["idle_down"][0]
@@ -528,14 +631,17 @@ class Lena(Player):
 
     def __init__(self, x: int, y: int):
         super().__init__(x, y, Character.LENA, LENA_COLOR, LENA_OUTLINE)
-        self.attack_damage = 12          # matched with Aiden's base
+        self.max_health = 90
+        self.health = 90
+        self.hit_flash_color = (0, 180, 255, 255) # electric cyan/blue!
+        self.attack_damage = 10          # fast strike base
         self.sprint_speed  = PLAYER_SPRINT_SPEED + 1  # matched with Aiden's base
         self.hack_time_bonus = 2         # starts with small bonus
         self.skill_tree      = build_lena_tree()
         self._load_sprites()
 
     def _load_sprites(self):
-        """Extract idle and walk frames from the spritesheet."""
+        """Extract idle, walk, and combat frames from the spritesheet."""
         base_dir = os.path.dirname(os.path.dirname(__file__))
         path = os.path.join(base_dir, "assets", "Characters BEHIND THE SMILE", "PROTAGONISTS", "Lena Parker.png")
         if not os.path.exists(path):
@@ -546,26 +652,47 @@ class Lena(Player):
         frame_w, frame_h = 32, 64
 
         def get_frame(col, row):
-            rect = pygame.Rect(col * frame_w, row * frame_h, frame_w, frame_h)
-            return sheet.subsurface(rect).copy()
+            try:
+                rect = pygame.Rect(col * frame_w, row * frame_h, frame_w, frame_h)
+                return sheet.subsurface(rect).copy()
+            except ValueError:
+                # Safe fallback if bounds are exceeded
+                return self.animations.get("idle_down", [None])[0]
 
-        # Row 1 (Fila 2) (Idle): Right (0-5), Up (6-11), Left (12-17), Down (18-23)
+        # Row 1 (Idle): Right (0-5), Up (6-11), Left (12-17), Down (18-23)
         self.animations["idle_right"] = [get_frame(c, 1) for c in range(0, 6)]
         self.animations["idle_up"]    = [get_frame(c, 1) for c in range(6, 12)]
         self.animations["idle_left"]  = [get_frame(c, 1) for c in range(12, 18)]
         self.animations["idle_down"]  = [get_frame(c, 1) for c in range(18, 24)]
 
-        # Row 2 (Fila 3) (Walk/Run): Right (0-5), Up (6-11), Left (12-17), Down (18-23)
+        # Row 2 (Walk/Run): Right (0-5), Up (6-11), Left (12-17), Down (18-23)
         self.animations["walk_right"] = [get_frame(c, 2) for c in range(0, 6)]
         self.animations["walk_up"]    = [get_frame(c, 2) for c in range(6, 12)]
         self.animations["walk_left"]  = [get_frame(c, 2) for c in range(12, 18)]
         self.animations["walk_down"]  = [get_frame(c, 2) for c in range(18, 24)]
 
-        # Row 12 (8th from bottom) (Shoot): Right (0-5), Up (6-11), Left (12-17), Down (18-23)
+        # Row 12 (Shoot/Attack): Right (0-5), Up (6-11), Left (12-17), Down (18-23)
         self.animations["shoot_right"] = [get_frame(c, 12) for c in range(0, 6)]
         self.animations["shoot_up"]    = [get_frame(c, 12) for c in range(6, 12)]
         self.animations["shoot_left"]  = [get_frame(c, 12) for c in range(12, 18)]
         self.animations["shoot_down"]  = [get_frame(c, 12) for c in range(18, 24)]
+
+        self.animations["attack_right"] = self.animations["shoot_right"]
+        self.animations["attack_up"]    = self.animations["shoot_up"]
+        self.animations["attack_left"]  = self.animations["shoot_left"]
+        self.animations["attack_down"]  = self.animations["shoot_down"]
+
+        # Row 7, Cols 0-11: Hurt recoil (3 frames per direction: Right, Up, Left, Down)
+        self.animations["hurt_right"] = [get_frame(c, 7) for c in range(0, 3)]
+        self.animations["hurt_up"]    = [get_frame(c, 7) for c in range(3, 6)]
+        self.animations["hurt_left"]  = [get_frame(c, 7) for c in range(6, 9)]
+        self.animations["hurt_down"]  = [get_frame(c, 7) for c in range(9, 12)]
+
+        # Row 9, Cols 0-23: Sitting without book (6 frames per direction)
+        self.animations["knockout_right"] = [get_frame(c, 9) for c in range(0, 6)]
+        self.animations["knockout_up"]    = [get_frame(c, 9) for c in range(6, 12)]
+        self.animations["knockout_left"]  = [get_frame(c, 9) for c in range(12, 18)]
+        self.animations["knockout_down"]  = [get_frame(c, 9) for c in range(18, 24)]
 
         # Set default image
         self.image = self.animations["idle_down"][0]
