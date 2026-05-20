@@ -55,6 +55,13 @@ class GameServer:
         # Latest data received from the client (Lena)
         self._remote_data: dict | None = None
 
+        # Asynchronous background sending fields
+        import queue
+        self._send_lock = threading.Lock()
+        self._to_send_pos: dict | None = None
+        self._send_queue = queue.Queue()
+        self._send_event = threading.Event()
+
     # ── lifecycle ─────────────────────────────────────────────
 
     def start(self):
@@ -70,13 +77,28 @@ class GameServer:
         if self._broadcaster:
             self._broadcaster.start()
 
+        # Reset sending buffers
+        with self._send_lock:
+            self._to_send_pos = None
+        while not self._send_queue.empty():
+            try:
+                self._send_queue.get_nowait()
+            except Exception:
+                break
+        self._send_event.clear()
+
+        # Start background threads
         t = threading.Thread(target=self._accept_loop, daemon=True)
         t.start()
+        
+        t_send = threading.Thread(target=self._send_loop, daemon=True)
+        t_send.start()
         print(f"[Server] Listening on {self.host}:{self.port}")
 
     def stop(self):
         """Shutdown server and close sockets."""
         self._running = False
+        self._send_event.set()
         if self._broadcaster:
             self._broadcaster.stop()
         try:
@@ -138,29 +160,77 @@ class GameServer:
             with self._lock:
                 self._remote_data = msg.get("data", {})
 
+    # ── send thread ───────────────────────────────────────────
+
+    def _send_loop(self):
+        import queue
+        while self._running:
+            self._send_event.wait(timeout=0.1)
+            if not self._running:
+                break
+
+            client = None
+            with self._lock:
+                client = self._client
+
+            if not client:
+                # Clear buffers since there is no connected client
+                with self._send_lock:
+                    self._to_send_pos = None
+                while not self._send_queue.empty():
+                    try:
+                        self._send_queue.get_nowait()
+                    except queue.Empty:
+                        break
+                self._send_event.clear()
+                continue
+
+            # 1. Process queued events first (guaranteed delivery)
+            while not self._send_queue.empty():
+                try:
+                    msg_type, msg_data = self._send_queue.get_nowait()
+                except queue.Empty:
+                    break
+                try:
+                    client.sendall(encode_message(msg_type, msg_data))
+                except OSError:
+                    with self._lock:
+                        self._client = None
+                    break
+
+            # 2. Process latest position update
+            pos_data = None
+            with self._send_lock:
+                if self._to_send_pos is not None:
+                    pos_data = self._to_send_pos
+                    self._to_send_pos = None
+                    self._send_event.clear()
+
+            if pos_data is not None and client:
+                try:
+                    client.sendall(encode_message(MessageType.POSITION, pos_data))
+                except OSError:
+                    with self._lock:
+                        self._client = None
+
     # ── public API ────────────────────────────────────────────
 
     def send_player_update(self, data: dict):
         """Send the host's (Aiden) state to the client."""
         with self._lock:
-            if self._client:
-                try:
-                    self._client.sendall(
-                        encode_message(MessageType.POSITION, data)
-                    )
-                except OSError:
-                    self._client = None
+            client_active = self._client is not None
+        if client_active:
+            with self._send_lock:
+                self._to_send_pos = data
+                self._send_event.set()
 
     def send_event(self, event_data: dict):
         """Send a game event to the client."""
         with self._lock:
-            if self._client:
-                try:
-                    self._client.sendall(
-                        encode_message(MessageType.EVENT, event_data)
-                    )
-                except OSError:
-                    self._client = None
+            client_active = self._client is not None
+        if client_active:
+            self._send_queue.put((MessageType.EVENT, event_data))
+            self._send_event.set()
 
     def get_remote_data(self) -> dict | None:
         """Return the latest data received from Lena (client)."""

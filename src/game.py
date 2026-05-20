@@ -125,6 +125,7 @@ class Game:
         self._marcus_win_dialogue_lines: list[tuple[str, str]] = []
         self._net_sync_accum: float = 0.0
         self._net_force_sync: bool = True
+        self._last_remote_data: dict | None = None
         self._net_last_mission_sig = None
         self._net_last_npc_sig = None
         self._net_mission_refresh_timer: float = 0.0
@@ -4657,6 +4658,8 @@ class Game:
             remote = self.network.get_remote_data()
             
             if remote and self.remote_player:
+                self._last_remote_data = remote
+                
                 if self.is_host:
                     c_m_progress = remote.get("client_mission_progress")
                     if c_m_progress:
@@ -4850,17 +4853,10 @@ class Game:
                             self.player.vx = 0
                             self.player.vy = 0
                             self.player._dashing = False
-                
-                # Apply floor-specific decay for remote player
-                in_main_building = self.current_floor in (FLOOR_1F, FLOOR_2F)
-                decay = 2 if in_main_building else 1
-                
-                self.remote_player.update_remote(remote, dt, trail_decay=decay)
-                rf = remote.get("floor", 1)
-                self.remote_player.current_floor = rf
 
                 # Auto teleport Client to Host's floor to keep them in perfect sync
                 if not self.is_host and self.state not in (GameState.PINGPONG, GameState.BASKETBALL):
+                    rf = remote.get("floor", 1)
                     if rf != self.current_floor:
                         self._go_to_floor(rf, remote.get("x", self.player.rect.centerx), remote.get("y", self.player.rect.centery))
 
@@ -4870,14 +4866,6 @@ class Game:
                 r_cheer = remote.get("pp_cheer")
                 if r_cheer and self.state == GameState.PINGPONG:
                     self.pingpong.spawn_cheer(r_cheer, is_local=False)
-                
-                # Update WorldMap with remote player position
-                if hasattr(self, "world_map"):
-                    rname = "Lena" if self.player.character.value == "aiden" else "Aiden"
-                    self.world_map.set_remote_player_pos(rf, self.remote_player.rect.centerx, self.remote_player.rect.centery, rname)
-
-                # Update health/stamina if provided
-                self.remote_player.health = remote.get("health", self.remote_player.health)
 
                 # Client: Apply NPC updates from host
                 if not self.is_host and "npc_sync" in remote:
@@ -4905,6 +4893,26 @@ class Game:
                             npc.state = nstate
                             if nfloor is not None:
                                 npc.current_floor = nfloor
+
+            # Continuous remote player logic running every frame
+            if getattr(self, "_last_remote_data", None) and self.remote_player:
+                r_data = self._last_remote_data
+                
+                # Apply floor-specific decay for remote player
+                in_main_building = self.current_floor in (FLOOR_1F, FLOOR_2F)
+                decay = 2 if in_main_building else 1
+                
+                self.remote_player.update_remote(r_data, dt, trail_decay=decay)
+                rf = r_data.get("floor", 1)
+                self.remote_player.current_floor = rf
+
+                # Update WorldMap with remote player position
+                if hasattr(self, "world_map"):
+                    rname = "Lena" if self.player.character.value == "aiden" else "Aiden"
+                    self.world_map.set_remote_player_pos(rf, self.remote_player.rect.centerx, self.remote_player.rect.centery, rname)
+
+                # Update health/stamina if provided
+                self.remote_player.health = r_data.get("health", self.remote_player.health)
         except Exception:
             pass
 
