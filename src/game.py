@@ -807,6 +807,9 @@ class Game:
 
     def _exit_mainframe_success(self):
         self.state = GameState.PLAYING
+        if self.multiplayer and not self.is_host:
+            self._net_mainframe_completed = True
+            return
         m_obj = self.mission_manager.missions.get("mission_high_school_mainframe")
         if m_obj:
             m_obj.status = MissionStatus.COMPLETED
@@ -3570,15 +3573,28 @@ class Game:
         # Check mainframe login collision for Mission 8
         self._computer_prompt_active = False
         if getattr(self, '_ava_needs_to_walk_to_computer', False):
-            if self.current_floor == FLOOR_1F and self.character == Character.LENA:
-                ava = self.npc_manager.get_npc_by_id("npc_ava_thompson")
-                if ava:
-                    ava.ai_enabled = True
-                    ava.ignore_schedule = True
-                    ava.stop_at_target = True
-                    ava.target_queue = [(180, 350)]
-                    ava.target_pos = (180, 350)
-                    self._ava_needs_to_walk_to_computer = False
+            has_lena_on_f1 = (self.current_floor == FLOOR_1F and self.character == Character.LENA)
+            if self.multiplayer and self.remote_player:
+                r_char = getattr(self.remote_player, "character", None)
+                r_char_name = ""
+                if r_char:
+                    if hasattr(r_char, "value"):
+                        r_char_name = r_char.value.lower()
+                    else:
+                        r_char_name = str(r_char).lower()
+                if self.remote_player.current_floor == FLOOR_1F and "lena" in r_char_name:
+                    has_lena_on_f1 = True
+            
+            if has_lena_on_f1:
+                if not (self.multiplayer and not self.is_host):
+                    ava = self.npc_manager.get_npc_by_id("npc_ava_thompson")
+                    if ava:
+                        ava.ai_enabled = True
+                        ava.ignore_schedule = True
+                        ava.stop_at_target = True
+                        ava.target_queue = [(180, 350)]
+                        ava.target_pos = (180, 350)
+                self._ava_needs_to_walk_to_computer = False
 
         if self.current_floor == FLOOR_1F:
             m_obj = self.mission_manager.missions.get("mission_high_school_mainframe")
@@ -3586,7 +3602,10 @@ class Game:
                 if self.player.rect.colliderect(pygame.Rect(90, 320, 90, 64).inflate(50, 50)):
                     if self.character != Character.LENA:
                         if getattr(self, '_lena_hack_warn_timer', 0) <= 0:
-                            self.ui.show_notification("Ava Thompson: 'Aiden, let Lena handle this computer. Switch characters!'", NOTIF_WARNING)
+                            if self.multiplayer:
+                                self.ui.show_notification("Ava Thompson: 'Aiden, let Lena handle this computer!'", NOTIF_WARNING)
+                            else:
+                                self.ui.show_notification("Ava Thompson: 'Aiden, let Lena handle this computer. Switch characters!'", NOTIF_WARNING)
                             self._lena_hack_warn_timer = 2.0
                     else:
                         self._computer_prompt_active = True
@@ -4296,7 +4315,10 @@ class Game:
                 self.ui.show_notification(f"Alan Chen shakes his head: 'You need 70 reputation (Current: {curr_disp}). I can't trust you yet.'", NOTIF_ERROR)
         if "give_hacked_credentials" in result:
             if self.inventory.has_item("Hacked Credentials"):
-                self.ui.show_notification("Ava Thompson: 'We have the credentials, but I need someone who really knows their way around this system. Aiden, call your sister Lena to complete the inspection—she's the one who handles technology best.'", NOTIF_SUCCESS, 8.0)
+                if self.multiplayer:
+                    self.ui.show_notification("Ava Thompson: 'We have the credentials, but I need someone who really knows their way around this system. Lena, can you help us with the mainframe computer?'", NOTIF_SUCCESS, 8.0)
+                else:
+                    self.ui.show_notification("Ava Thompson: 'We have the credentials, but I need someone who really knows their way around this system. Aiden, call your sister Lena to complete the inspection—she's the one who handles technology best.'", NOTIF_SUCCESS, 8.0)
                 self._ava_needs_to_walk_to_computer = True
                 m_obj = self.mission_manager.missions.get("mission_return_tech_lab")
                 if m_obj and m_obj.status != MissionStatus.COMPLETED:
@@ -4308,7 +4330,10 @@ class Game:
                     self.mission_manager.unlock_mission("mission_high_school_mainframe")
                     self.mission_manager.activate_mission("mission_high_school_mainframe")
                     self.mission_manager._refresh_availability()
-                    self._current_main_mission_text = "Mission 8: Switch to Lena, go to the computer marked with X in the Tech Lab and extract information."
+                    if self.multiplayer:
+                        self._current_main_mission_text = "Mission 8: Lena must go to the computer marked with X in the Tech Lab and extract information."
+                    else:
+                        self._current_main_mission_text = "Mission 8: Switch to Lena, go to the computer marked with X in the Tech Lab and extract information."
             else:
                 self.ui.show_notification("Ava Thompson looks at you: 'You don't have the credentials yet. Go talk to Alan Chen.'", NOTIF_ERROR)
         if "rooftop_check" in result:
@@ -4721,6 +4746,7 @@ class Game:
                         client_mission_progress[m_id] = [o.client_completed for o in m.objectives]
                 player_data["client_mission_progress"] = client_mission_progress
                 player_data["client_viewed_oscar_post"] = self._client_viewed_oscar_post
+                player_data["mainframe_completed"] = getattr(self, "_net_mainframe_completed", False)
 
             # Pack ping pong match won & cheers
             player_data["pp_match_won"] = self._pingpong_match_won
@@ -4747,6 +4773,8 @@ class Game:
                                     if idx < len(m.objectives):
                                         m.objectives[idx].client_completed = val
                     self._remote_client_viewed_oscar_post = remote.get("client_viewed_oscar_post", False)
+                    if remote.get("mainframe_completed"):
+                        self._exit_mainframe_success()
 
                 r_state = remote.get("game_state")
                 self._remote_game_state = r_state
@@ -4869,6 +4897,8 @@ class Game:
                                 if old_status == MissionStatus.ACTIVE and m.status == MissionStatus.COMPLETED:
                                     self.mission_manager.completed_ids.add(m_id)
                                     self.mission_manager._refresh_availability()
+                                    if m_id == "mission_high_school_mainframe":
+                                        self._net_mainframe_completed = False
                                     rewards = m.rewards
                                     if rewards:
                                         self._apply_rewards(rewards)
