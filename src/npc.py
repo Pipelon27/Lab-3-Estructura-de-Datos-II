@@ -705,6 +705,8 @@ class NPCManager:
             with open(path, "r", encoding="utf-8") as fp:
                 data = json.load(fp)
             for entry in data.get("npcs", []):
+                if entry.get("id", "").startswith("npc_oscar_obs"):
+                    continue
                 npc = NPC.from_dict(entry)
                 if npc.gender == "unspecified":
                     npc.gender = entry.get("gender") or random.choice(["male", "female"])

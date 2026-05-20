@@ -2592,6 +2592,17 @@ class Game:
     # ──────────────────────────────────────────────────────────
 
     def _update(self, dt: float):
+        # Rooftop entry populars management
+        from settings import FLOOR_ROOFTOP
+        if self.current_floor == FLOOR_ROOFTOP:
+            if not getattr(self, '_rooftop_populars_teleported', False):
+                self._place_populars_on_rooftop()
+                self._rooftop_populars_teleported = True
+        else:
+            if getattr(self, '_rooftop_populars_teleported', False):
+                self._reset_populars_from_rooftop()
+                self._rooftop_populars_teleported = False
+
         self._enforce_sibling_safe_location()
         if self.day_number == 2:
             floor1 = self.school_map.get_floor(FLOOR_1F)
@@ -5187,11 +5198,109 @@ class Game:
         # Draw Ava's phone sitting on a chair (Rooftop, Day 4)
         if self.current_floor == FLOOR_ROOFTOP:
             self._draw_ava_phone_on_chair(target_surf, self.camera)
+            self._apply_disco_filter(target_surf)
             
         if self.camera.zoom != 1.0:
             # Scale up to screen size and blit
             scaled = pygame.transform.scale(target_surf, (SCREEN_WIDTH, SCREEN_HEIGHT))
             self.screen.blit(scaled, (0, 0))
+
+    def _apply_disco_filter(self, surface: pygame.Surface):
+        """Draw dynamic shifting ambient lights and moving spotlights on the rooftop."""
+        import math
+        ticks = pygame.time.get_ticks()
+        
+        # 1. Shifting ambient color overlay
+        cycle = (ticks * 0.001) % (2 * math.pi)
+        r = int(127 + 127 * math.sin(cycle))
+        g = int(50 + 50 * math.cos(cycle * 1.5))
+        b = int(127 + 127 * math.sin(cycle + 2.0))
+        
+        ambient_surf = pygame.Surface(surface.get_size(), pygame.SRCALPHA)
+        ambient_surf.fill((r, g, b, 45))
+        surface.blit(ambient_surf, (0, 0))
+        
+        # 2. Moving colored spotlights with soft radial concentric circles
+        w, h = surface.get_size()
+        cx, cy = w // 2, h // 2
+        
+        spotlights = [
+            ((255, 0, 128), 120, ticks * 0.002, 0.4), # pink/magenta
+            ((0, 255, 255), 140, ticks * -0.0015, 0.5), # cyan
+            ((255, 255, 0), 100, ticks * 0.0025 + 1.0, 0.3) # yellow
+        ]
+        
+        light_surf = pygame.Surface((w, h), pygame.SRCALPHA)
+        for color, radius, angle, speed in spotlights:
+            orbit_r = min(w, h) // 4
+            lx = cx + int(math.cos(angle) * orbit_r)
+            ly = cy + int(math.sin(angle * 1.2) * orbit_r)
+            
+            # Simulated gradient with concentric circles of decreasing alpha
+            for r_offset in range(radius, 0, -8):
+                alpha = int(35 * (1 - r_offset / radius))
+                if alpha > 0:
+                    pygame.draw.circle(light_surf, (*color, alpha), (lx, ly), r_offset)
+                    
+        surface.blit(light_surf, (0, 0))
+
+    def _place_populars_on_rooftop(self):
+        """Teleport all popular NPCs to the rooftop and scatter them."""
+        from settings import SocialGroup, FLOOR_ROOFTOP
+        import random
+        populars = [
+            npc for npc in self.npc_manager.npcs.values()
+            if npc.group == SocialGroup.POPULARS and npc.id != "npc_ava_thompson"
+        ]
+        
+        for npc in populars:
+            npc.current_floor = FLOOR_ROOFTOP
+            npc.ai_enabled = True
+            npc.ignore_schedule = True
+            
+            # Place randomly in rt_terrace: x in [1250, 2350], y in [550, 1650]
+            placed = False
+            for _ in range(50):
+                rx = random.randint(1250, 2350)
+                ry = random.randint(550, 1650)
+                rect = pygame.Rect(rx, ry, npc.rect.width, npc.rect.height)
+                
+                # Check collision with floor walls/furniture
+                floor = self.school_map.get_floor(FLOOR_ROOFTOP)
+                collides = False
+                if floor:
+                    for wall in floor.walls:
+                        if rect.colliderect(wall):
+                            collides = True
+                            break
+                    if not collides:
+                        for furn in floor.furniture:
+                            if rect.colliderect(furn["rect"]):
+                                collides = True
+                                break
+                if not collides:
+                    npc.rect.x = rx
+                    npc.rect.y = ry
+                    placed = True
+                    break
+            
+            if not placed:
+                npc.rect.x = random.randint(1300, 2200)
+                npc.rect.y = random.randint(600, 1500)
+
+    def _reset_populars_from_rooftop(self):
+        """Reset popular NPCs back to their schedules."""
+        from settings import SocialGroup
+        populars = [
+            npc for npc in self.npc_manager.npcs.values()
+            if npc.group == SocialGroup.POPULARS and npc.id != "npc_ava_thompson"
+        ]
+        for npc in populars:
+            npc.ignore_schedule = False
+        
+        # Force schedule update on next frame by resetting current block
+        if hasattr(self, 'schedule_manager'):
+            self.schedule_manager._current_block = None
 
     def _draw_entry_prompt(self, building_name: str):
         panel_w, panel_h = 520, 54
