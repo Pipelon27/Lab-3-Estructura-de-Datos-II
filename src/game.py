@@ -2883,9 +2883,16 @@ class Game:
                     pass
                 self._pending_pingpong_result = None
 
-            # Handle spectating inputs & updates
-            if self._spectating_pingpong:
-                # ── Spectator inputs for cheering ──
+            # Symmetrical Waiting/Dismiss screen updates
+            if self.multiplayer and self._pingpong_match_won:
+                if self._remote_pingpong_match_won:
+                    # Both have won! Show exit instruction
+                    self.pingpong.end_message = "All Matches Won!\nPress SPACE/A to Exit"
+                else:
+                    # Waiting for the other player
+                    self.pingpong.end_message = "Match Won!\nWaiting for Ally..."
+
+                # Handle cheers while waiting
                 keys = pygame.key.get_pressed()
                 if not hasattr(self, "_cheer_cooldown"):
                     self._cheer_cooldown = 0.0
@@ -2916,13 +2923,6 @@ class Game:
                     self.pingpong.spawn_cheer(txt, is_local=True)
                     self._pending_pp_cheer = txt
 
-                # Check if ally won to stop spectating and show dismiss exit screen
-                if self._remote_pingpong_match_won:
-                    self._spectating_pingpong = False
-                    self.pingpong.waiting_for_dismiss = True
-                    self.pingpong.end_message = "All Matches Won!\nPress SPACE/A to Exit"
-                    self._pending_pingpong_result = "win"
-
             else:
                 result = self.pingpong.update(dt)
                 # 'settings' from the pause menu — exit minigame cleanly for now
@@ -2944,7 +2944,7 @@ class Game:
                             if self._remote_pingpong_match_won:
                                 self.pingpong.end_message = "All Matches Won!\nPress SPACE/A to Exit"
                             else:
-                                self.pingpong.end_message = "Match Won!\nPress SPACE/A to Spectate"
+                                self.pingpong.end_message = "Match Won!\nWaiting for Ally..."
                             self._pending_pingpong_result = "win"
                         else:
                             self.reputation.reputation_score = min(100, self.reputation.reputation_score + 20)
@@ -3057,11 +3057,10 @@ class Game:
                     self.pingpong.waiting_for_dismiss = True
                     self.pingpong.finished = False
                 else:
-                    # Transition to spectating
-                    self._spectating_pingpong = True
+                    # Just keep waiting! Do not allow exit yet.
+                    self.pingpong.waiting_for_dismiss = True
+                    self.pingpong.end_message = "Match Won!\nWaiting for Ally..."
                     self.pingpong.finished = False
-                    self.pingpong.waiting_for_dismiss = False
-                    self._pending_pingpong_result = None
             else:
                 # Single-player exit or default clean up
                 pingpong_result = getattr(self, "_pending_pingpong_result", None)
@@ -4634,40 +4633,7 @@ class Game:
                     self._net_last_npc_sig = npc_sig
                     self._net_npc_refresh_timer = 0.0
 
-            if self.state == GameState.PINGPONG or self._spectating_pingpong:
-                pp_dict = {
-                    "player_score": self.pingpong.player_score,
-                    "opponent_score": self.pingpong.opponent_score,
-                    "player_x": self.pingpong.player_x,
-                    "player_y": self.pingpong.player_y,
-                    "opp_x": self.pingpong.opp_x,
-                    "opp_y": self.pingpong.opp_y,
-                    "ball_cx": self.pingpong.ball.centerx,
-                    "ball_cy": self.pingpong.ball.centery,
-                    "ball_z": self.pingpong.ball_z,
-                    "ball_color": self.pingpong.ball_color,
-                    "ball_trail_color": self.pingpong.ball_trail_color,
-                    "ball_dash_timer": self.pingpong.ball_dash_timer,
-                    "super_points_spent": self.pingpong.super_points_spent,
-                    "countdown_active": self.pingpong.countdown_active,
-                    "countdown_timer": self.pingpong.countdown_timer,
-                    "countdown_go_shown": getattr(self.pingpong, "countdown_go_shown", False),
-                    "show_menu": self.pingpong.show_menu,
-                    "waiting_for_dismiss": self.pingpong.waiting_for_dismiss,
-                    "end_message": self.pingpong.end_message,
-                    "extra_balls": [
-                        {
-                            "cx": b["rect"].centerx,
-                            "cy": b["rect"].centery,
-                            "z": b.get("z", 0.0),
-                            "trail_color": b.get("trail_color", (255, 140, 0)),
-                            "dash_timer": b.get("dash_timer", 0.0),
-                            "vel": b.get("vel", [0.0, 0.0])
-                        }
-                        for b in self.pingpong.extra_balls
-                    ]
-                }
-                player_data["pp_data"] = pp_dict
+            # (Ping-pong spectator system removed, no pp_data packed)
 
             # Pack client mission progress to host
             if not self.is_host:
@@ -4721,7 +4687,7 @@ class Game:
                     self._apply_dialogue_result({"start_basketball": True})
 
                 # Auto teleport to pingpong (only client follows host)
-                if not self.is_host and r_state == GameState.PINGPONG.value and self.state != GameState.PINGPONG and not self._pingpong_match_won and not self._spectating_pingpong:
+                if not self.is_host and r_state == GameState.PINGPONG.value and self.state != GameState.PINGPONG and not self._pingpong_match_won:
                     self._apply_dialogue_result({"start_pingpong": True})
                 
                 # Auto exit basketball (client follows host out of the game)
@@ -4901,9 +4867,8 @@ class Game:
                 # Unpack ping pong sync data
                 self._remote_pingpong_match_won = remote.get("pp_match_won", False)
                 self._remote_pingpong_exit_voted = remote.get("pp_exit_voted", False)
-                self._remote_pp_data = remote.get("pp_data")
                 r_cheer = remote.get("pp_cheer")
-                if r_cheer and (self.state == GameState.PINGPONG or self._spectating_pingpong):
+                if r_cheer and self.state == GameState.PINGPONG:
                     self.pingpong.spawn_cheer(r_cheer, is_local=False)
                 
                 # Update WorldMap with remote player position
@@ -4956,7 +4921,7 @@ class Game:
             GameState.HACKING:           lambda: self.hacking_game.draw(self.screen),
             GameState.DIALOGUE:          lambda: (self._draw_world(), self.dialogue_system.draw(self.screen)),
             GameState.SOCIAL_INTERACTION: lambda: (self._draw_world(), self.social_ui.draw(self.screen)),
-            GameState.PINGPONG:          lambda: self.pingpong.draw(self.screen, remote_pp_data=(self._remote_pp_data if self._spectating_pingpong else None)),
+            GameState.PINGPONG:          lambda: self.pingpong.draw(self.screen),
             GameState.BASKETBALL:        lambda: (self._draw_world(), self.basketball.draw(self.screen, self.camera)),
             GameState.TRADING:           lambda: (self._draw_world(), self.trade_system.draw(self.screen)),
             GameState.PAUSED:            lambda: (
