@@ -121,6 +121,7 @@ class BasketballGame:
         self.ai_shoot_chance = 0.025
         self.ai_block_chance = 0.04
         self.ai_steal_range = 35
+        self.enemy_shot_quality_cap = 0.75
         
         # AI restructuring variables
         self.opp_ai_goal = 'drive'
@@ -656,6 +657,7 @@ class BasketballGame:
                     is_layup = True
             is_3pt = dist > self.three_point_radius
             quality = 1.0 if (is_dunk or is_layup) else (1.0 - abs(power_bar - target_quality) * 2.0)
+            quality = min(quality, self.enemy_shot_quality_cap)
             start_x = self.opp2.rect.centerx
             start_y = self.opp2.rect.centery
             start_z = self.opp2_z + 40
@@ -671,6 +673,7 @@ class BasketballGame:
                     is_layup = True
             is_3pt = dist > self.three_point_radius
             quality = 1.0 if (is_dunk or is_layup) else (1.0 - abs(power_bar - target_quality) * 2.0)
+            quality = min(quality, self.enemy_shot_quality_cap)
             start_x = self.opponent.rect.centerx
             start_y = self.opponent.rect.centery
             start_z = self.opp_z + 40
@@ -1115,9 +1118,13 @@ class BasketballGame:
                         self.opp2_pending_shot = self.opp2_shoot_bar
                         self.opp2_shooting = False
 
-            # AI actively blocks when player is shooting nearby
+            # AI can pressure ball handlers, but cannot interrupt active shot windups.
             holder = self.ball_held_by
-            if holder in ('player', 'ally'):
+            holder_is_shooting = (
+                (holder == 'player' and getattr(self, "shooting", False)) or
+                (holder == 'ally' and getattr(self, "ally_shooting", False))
+            )
+            if holder in ('player', 'ally') and not holder_is_shooting:
                 target_ent = self.player if holder == 'player' else self.ally
                 if target_ent:
                     pdist = math.hypot(target_ent.rect.centerx - self.opponent.rect.centerx,
@@ -1125,10 +1132,6 @@ class BasketballGame:
                     if pdist < 60 and random.random() < self.ai_block_chance:
                         self.opp_blocking = True
                         self.opp_block_timer = 0.3
-                        if getattr(self, "shooting", False) and holder == 'player':
-                            self.shooting = False
-                        if getattr(self, "ally_shooting", False) and holder == 'ally':
-                            self.ally_shooting = False
                         self.ball_held_by = 'opp'
                         self.possession = 'opp'
                         self._play_sound("steal")
@@ -1139,16 +1142,16 @@ class BasketballGame:
                         if pdist2 < 60 and random.random() < self.ai_block_chance:
                             self.opp2_blocking = True
                             self.opp2_block_timer = 0.3
-                            if getattr(self, "shooting", False) and holder == 'player':
-                                self.shooting = False
-                            if getattr(self, "ally_shooting", False) and holder == 'ally':
-                                self.ally_shooting = False
                             self.ball_held_by = 'opp2'
                             self.possession = 'opp2'
                             self._play_sound("steal")
 
             # AI steals when very close
-            if self.ball_held_by in ('player', 'ally') and not self.opp_blocking:
+            ball_handler_is_shooting = (
+                (self.ball_held_by == 'player' and getattr(self, "shooting", False)) or
+                (self.ball_held_by == 'ally' and getattr(self, "ally_shooting", False))
+            )
+            if self.ball_held_by in ('player', 'ally') and not self.opp_blocking and not ball_handler_is_shooting:
                 steal_target = self.player if self.ball_held_by == 'player' else (self.ally if self.ally else None)
                 if steal_target:
                     sdist = math.hypot(steal_target.rect.centerx - self.opponent.rect.centerx,
