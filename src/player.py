@@ -73,6 +73,8 @@ class Player:
         self.stamina     = PLAYER_MAX_STAMINA
         self.max_stamina = PLAYER_MAX_STAMINA
         self.current_floor = 1
+        self.hit_flash_color = (255, 50, 50, 255)
+        self.is_dash_strike = False
 
         # Real-time Combat
         self.is_attacking = False
@@ -322,14 +324,21 @@ class Player:
     def start_attack(self):
         """Initiate an attack if enough stamina and off cooldown."""
         if self.attack_cooldown <= 0 and self.stamina >= 5:
+            # Dash-Strike detection
+            self.is_dash_strike = getattr(self, "_dashing", False)
+            
             # Controller rumble feedback
             controller = get_controller()
             if controller.connected:
-                controller.rumble(0.2, 0.4, 100)
+                if self.is_dash_strike:
+                    controller.rumble(0.6, 0.6, 150)
+                else:
+                    controller.rumble(0.2, 0.4, 100)
             self.stamina -= 5
             self.is_attacking = True
             self.attack_timer = 0.2  # 0.2s active hitbox
-            self.attack_cooldown = 1.0
+            # Lena has a faster attack cooldown than Aiden
+            self.attack_cooldown = 0.6 if self.character == Character.LENA else 1.0
             self._hit_npcs.clear()
 
     def get_attack_hitbox(self) -> pygame.Rect | None:
@@ -468,9 +477,10 @@ class Player:
             # Align bottom-center of the sprite with bottom-center of the hitbox
             sprite_rect = self.image.get_rect(midbottom=draw_rect.midbottom)
             if getattr(self, "hurt_timer", 0) > 0 and int(self.hurt_timer * 20) % 2 == 0:
-                # Premium red silhouette/flash using mask
+                # Premium silhouette/flash using mask
                 mask = pygame.mask.from_surface(self.image)
-                mask_surf = mask.to_surface(setcolor=(255, 50, 50, 255), unsetcolor=(0, 0, 0, 0))
+                flash_col = getattr(self, "hit_flash_color", (255, 50, 50, 255))
+                mask_surf = mask.to_surface(setcolor=flash_col, unsetcolor=(0, 0, 0, 0))
                 screen.blit(self.image, sprite_rect)
                 mask_surf.set_alpha(150)
                 screen.blit(mask_surf, sprite_rect)
@@ -542,7 +552,9 @@ class Aiden(Player):
 
     def __init__(self, x: int, y: int):
         super().__init__(x, y, Character.AIDEN, AIDEN_COLOR, AIDEN_OUTLINE)
-        self.attack_damage = 12          # slightly higher base
+        self.max_health = 120
+        self.health = 120
+        self.attack_damage = 15          # heavy brawler base
         self.sprint_speed  = PLAYER_SPRINT_SPEED + 1
         self.hack_time_bonus = 2         # matched with Lena's base
         self.skill_tree    = build_aiden_tree()
@@ -619,7 +631,10 @@ class Lena(Player):
 
     def __init__(self, x: int, y: int):
         super().__init__(x, y, Character.LENA, LENA_COLOR, LENA_OUTLINE)
-        self.attack_damage = 12          # matched with Aiden's base
+        self.max_health = 90
+        self.health = 90
+        self.hit_flash_color = (0, 180, 255, 255) # electric cyan/blue!
+        self.attack_damage = 10          # fast strike base
         self.sprint_speed  = PLAYER_SPRINT_SPEED + 1  # matched with Aiden's base
         self.hack_time_bonus = 2         # starts with small bonus
         self.skill_tree      = build_lena_tree()

@@ -1412,6 +1412,8 @@ class Game:
                 if hackable:
                     self.hacking_game.start(hackable, self.player)
                     self.state = GameState.HACKING
+                else:
+                    self.player.start_attack()
 
     def _handle_controller_paused(self, controller):
         """Handle controller input during PAUSED state."""
@@ -1840,8 +1842,7 @@ class Game:
             if hackable:
                 self.hacking_game.start(hackable, self.player)
                 self.state = GameState.HACKING
-        elif (event.key == KEY_LIGHT_ATTACK
-              and (self.character == Character.AIDEN or getattr(self, "_final_reveal_finished", False))):
+        elif event.key == KEY_LIGHT_ATTACK:
             self.player.start_attack()
         
 
@@ -3242,8 +3243,48 @@ class Game:
                     if _npc.id not in getattr(self.player, '_hit_npcs', set()):
                         if hitbox.colliderect(_npc.rect):
                             self.player._hit_npcs.add(_npc.id)
-                            _npc.health -= self.player.attack_damage
-                            self.ui.show_notification(f"Hit {_npc.name} for {self.player.attack_damage} dmg!", NOTIF_SUCCESS)
+                            
+                            # Calculate damage (Dash-Strike deals +50% damage)
+                            is_ds = getattr(self.player, 'is_dash_strike', False)
+                            base_dmg = self.player.attack_damage
+                            dmg = int(base_dmg * 1.5) if is_ds else base_dmg
+                            _npc.health -= dmg
+                            
+                            # Apply safe knockback pushback
+                            push_dist = 40 if is_ds else 15
+                            dx, dy = 0, 0
+                            if self.player.direction == Direction.UP:
+                                dy = -push_dist
+                            elif self.player.direction == Direction.DOWN:
+                                dy = push_dist
+                            elif self.player.direction == Direction.LEFT:
+                                dx = -push_dist
+                            elif self.player.direction == Direction.RIGHT:
+                                dx = push_dist
+                                
+                            # Safe position adjustment with wall check
+                            old_rect = _npc.rect.copy()
+                            _npc.rect.x += dx
+                            for wall in walls:
+                                if _npc.rect.colliderect(wall):
+                                    _npc.rect.x = old_rect.x
+                                    break
+                            
+                            old_rect = _npc.rect.copy()
+                            _npc.rect.y += dy
+                            for wall in walls:
+                                if _npc.rect.colliderect(wall):
+                                    _npc.rect.y = old_rect.y
+                                    break
+
+                            # Trigger screenshake on hitting target
+                            shake_dur = 0.25 if is_ds else 0.15
+                            shake_amt = 8.0 if is_ds else 4.0
+                            self.camera.shake(shake_dur, shake_amt)
+
+                            strike_lbl = "Dash Strike! " if is_ds else ""
+                            self.ui.show_notification(f"{strike_lbl}Hit {_npc.name} for {dmg} dmg!", NOTIF_SUCCESS)
+                            
                             if _npc.health <= 0:
                                 _npc.health = 0
                                 _npc.knockout_timer = 120.0
@@ -3278,6 +3319,10 @@ class Game:
                             _npc.attack_timer = 0.2
                             _npc.state = "attack"
                             self.ui.show_notification(f"{_npc.name} attacked you!", NOTIF_ERROR)
+                            
+                            # Trigger screenshake when taking damage
+                            self.camera.shake(0.2, 5.0)
+                            
                             controller = get_controller()
                             if controller.connected:
                                 controller.rumble(0.5, 0.5, 200)
