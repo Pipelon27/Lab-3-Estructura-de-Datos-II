@@ -1217,7 +1217,7 @@ class BasketballGame:
         if self.shooting:
             dist = math.hypot(self.player.rect.centerx - self.right_rim[0], self.player.rect.centery - self.right_rim[1])
             is_3pt = dist > self.three_point_radius
-            bar_speed = 2.5 if is_3pt else 1.5
+            bar_speed = 1.4 if is_3pt else 0.95
             self.shoot_bar += self.shoot_dir * dt * bar_speed
             if self.shoot_bar >= 1.0:
                 self.shoot_bar = 1.0
@@ -1492,54 +1492,159 @@ class BasketballGame:
         setattr(self, smooth_val_attr, curr_smooth)
 
         # Apply camera position
-        bx, by = camera.apply_pos(x, y - z - 85)
+        bx, by = camera.apply_pos(x, y - z - 90)
         
-        bar_w = 70
-        bar_h = 10
+        bar_w = 130
+        bar_h = 14
         bar_x = bx - bar_w // 2
         bar_y = by
 
-        # 1. Draw outer border/shadow
-        shadow_rect = pygame.Rect(bar_x - 3, bar_y - 3, bar_w + 6, bar_h + 6)
-        pygame.draw.rect(screen, (10, 10, 20, 180), shadow_rect, border_radius=4)
-        
-        # 2. Draw background panel
-        bg_rect = pygame.Rect(bar_x, bar_y, bar_w, bar_h)
-        pygame.draw.rect(screen, (30, 30, 45), bg_rect, border_radius=3)
-        pygame.draw.rect(screen, (60, 60, 85), bg_rect, width=1, border_radius=3)
+        # The perfect zone matches the is_perfect check (0.8 +- 0.02)
+        perf_min = 0.78
+        perf_max = 0.82
+        in_perfect_zone = (perf_min <= value <= perf_max)
 
-        # 3. Draw Sweet Spot
-        green_min, green_max = (0.75, 0.85) if is_3pt else (0.7, 0.9)
+        # 1. Glow effect around the entire bar when inside the perfect release zone!
+        if in_perfect_zone:
+            pulse = abs(math.sin(pygame.time.get_ticks() * 0.015))
+            glow_alpha = int(80 + pulse * 120)
+            for thickness in range(1, 6):
+                glow_rect = pygame.Rect(bar_x - thickness, bar_y - thickness, bar_w + thickness * 2, bar_h + thickness * 2)
+                try:
+                    glow_surf = pygame.Surface((glow_rect.width, glow_rect.height), pygame.SRCALPHA)
+                    pygame.draw.rect(glow_surf, (255, 215, 0, int(glow_alpha / (thickness * 1.5))), (0, 0, glow_rect.width, glow_rect.height), border_radius=6 + thickness)
+                    screen.blit(glow_surf, glow_rect.topleft)
+                except:
+                    pass
+
+        # 2. Draw outer border/shadow
+        shadow_rect = pygame.Rect(bar_x - 3, bar_y - 3, bar_w + 6, bar_h + 6)
+        pygame.draw.rect(screen, (10, 10, 20, 180), shadow_rect, border_radius=6)
+        
+        # 3. Draw background panel
+        bg_rect = pygame.Rect(bar_x, bar_y, bar_w, bar_h)
+        pygame.draw.rect(screen, (25, 25, 35), bg_rect, border_radius=5)
+        pygame.draw.rect(screen, (70, 70, 95), bg_rect, width=1, border_radius=5)
+
+        # 4. Draw Good Release Zone (Soft Green/Cyan background area)
+        green_min, green_max = (0.72, 0.88) if is_3pt else (0.68, 0.92)
         green_x = bar_x + int(bar_w * green_min)
         green_w = int(bar_w * (green_max - green_min))
         
-        green_rect = pygame.Rect(green_x, bar_y + 1, green_w, bar_h - 2)
-        pygame.draw.rect(screen, (0, 220, 100), green_rect)
+        try:
+            green_surf = pygame.Surface((green_w, bar_h - 2), pygame.SRCALPHA)
+            green_surf.fill((0, 200, 100, 80))
+            screen.blit(green_surf, (green_x, bar_y + 1))
+        except:
+            pygame.draw.rect(screen, (0, 150, 70), (green_x, bar_y + 1, green_w, bar_h - 2))
+
+        # 5. Draw Perfect Release Spot (Brilliant neon yellow/gold area)
+        perf_x = bar_x + int(bar_w * perf_min)
+        perf_w = int(bar_w * (perf_max - perf_min))
         
-        # 4. Fill progress bar with dynamic color transitions
-        fill_w = int(bar_w * curr_smooth)
-        if fill_w > 0:
-            if green_min < curr_smooth < green_max:
-                color = (0, 255, 120)  # Neon Green
-            elif 0.5 < curr_smooth < 0.95:
-                color = (255, 220, 0)  # Vibrant Yellow
-            else:
-                color = (255, 70, 70)  # Bright Coral Red
-            
-            fill_rect = pygame.Rect(bar_x + 1, bar_y + 1, fill_w - 2, bar_h - 2)
-            pygame.draw.rect(screen, color, fill_rect, border_radius=2)
-            
-            # Gloss overlay sheen
+        try:
+            perf_surf = pygame.Surface((perf_w, bar_h - 2), pygame.SRCALPHA)
+            pulse_spot = 120 + int(60 * math.sin(pygame.time.get_ticks() * 0.01))
+            perf_surf.fill((255, 215, 0, pulse_spot))
+            screen.blit(perf_surf, (perf_x, bar_y + 1))
+        except:
+            pygame.draw.rect(screen, (230, 180, 0), (perf_x, bar_y + 1, perf_w, bar_h - 2))
+
+        # 5.1. Moving shine highlight (diagonal light sweep)
+        shine_offset = (pygame.time.get_ticks() // 4) % (bar_w + 60) - 30
+        if 0 <= shine_offset < bar_w:
             try:
-                sheen = pygame.Surface((fill_w - 2, (bar_h - 2) // 2), pygame.SRCALPHA)
-                sheen.fill((255, 255, 255, 60))
-                screen.blit(sheen, (bar_x + 1, bar_y + 1))
-            except Exception:
+                shine_surf = pygame.Surface((12, bar_h - 2), pygame.SRCALPHA)
+                pygame.draw.polygon(shine_surf, (255, 255, 255, 45), [(4, 0), (12, 0), (8, bar_h - 2), (0, bar_h - 2)])
+                screen.blit(shine_surf, (bar_x + shine_offset, bar_y + 1))
+            except:
                 pass
 
-        # 5. Draw target marker line
+        # 6. Fill progress bar with dynamic color transitions
+        fill_w = int(bar_w * curr_smooth)
+        if fill_w > 0:
+            if perf_min <= curr_smooth <= perf_max:
+                color = (0, 255, 255)
+            elif green_min <= curr_smooth <= green_max:
+                color = (0, 255, 120)
+            elif curr_smooth < green_min:
+                if curr_smooth < 0.4:
+                    color = (255, 80, 80)
+                else:
+                    color = (255, 160, 50)
+            else:
+                color = (255, 80, 80)
+
+            fill_rect = pygame.Rect(bar_x + 1, bar_y + 1, fill_w - 2, bar_h - 2)
+            pygame.draw.rect(screen, color, fill_rect, border_radius=4)
+            
+            try:
+                sheen = pygame.Surface((fill_w - 2, (bar_h - 2) // 2), pygame.SRCALPHA)
+                sheen.fill((255, 255, 255, 50))
+                screen.blit(sheen, (bar_x + 1, bar_y + 1))
+            except:
+                pass
+
+        # 6.1. Embers rising from the filling progress bar cursor
+        if fill_w > 0:
+            cursor_x = bar_x + fill_w
+            t = pygame.time.get_ticks()
+            for i in range(4):
+                offset_y = (t // (8 + i * 4) + i * 6) % 18
+                offset_x = int(4 * math.sin(t * 0.015 + i * 1.5))
+                ember_x = cursor_x + offset_x - 2
+                ember_y = bar_y - offset_y + 3
+                
+                alpha = max(0, 240 - offset_y * 13)
+                ember_size = max(1, 3 - offset_y // 6)
+                
+                color = (0, 255, 255, alpha) if in_perfect_zone else (255, 190, 0, alpha)
+                try:
+                    ember_surf = pygame.Surface((ember_size * 2, ember_size * 2), pygame.SRCALPHA)
+                    pygame.draw.circle(ember_surf, color, (ember_size, ember_size), ember_size)
+                    screen.blit(ember_surf, (ember_x - ember_size, ember_y - ember_size))
+                except:
+                    pass
+
+        # 7. Draw perfect target tick marker line at 0.8 with bouncing pointer triangles
         perfect_release_x = bar_x + int(bar_w * 0.8)
         pygame.draw.line(screen, (255, 255, 255), (perfect_release_x, bar_y - 2), (perfect_release_x, bar_y + bar_h + 2), 2)
+        
+        # Bouncing golden pointer pointers
+        bounce = int(3 * math.sin(pygame.time.get_ticks() * 0.015))
+        pygame.draw.polygon(screen, (255, 215, 0), [
+            (perfect_release_x, bar_y + bounce),
+            (perfect_release_x - 5, bar_y - 5 + bounce),
+            (perfect_release_x + 5, bar_y - 5 + bounce)
+        ])
+        pygame.draw.polygon(screen, (255, 215, 0), [
+            (perfect_release_x, bar_y + bar_h - bounce),
+            (perfect_release_x - 5, bar_y + bar_h + 5 - bounce),
+            (perfect_release_x + 5, bar_y + bar_h + 5 - bounce)
+        ])
+
+        # 8. Sparks when the value is in the perfect zone
+        if in_perfect_zone:
+            t = pygame.time.get_ticks()
+            try:
+                spark_surf = pygame.Surface((12, 12), pygame.SRCALPHA)
+                pygame.draw.line(spark_surf, (255, 255, 255, 220), (6, 0), (6, 12), 2)
+                pygame.draw.line(spark_surf, (255, 255, 255, 220), (0, 6), (12, 6), 2)
+                rotated = pygame.transform.rotate(spark_surf, t % 360)
+                screen.blit(rotated, rotated.get_rect(center=(perfect_release_x, bar_y + bar_h // 2)))
+            except:
+                pygame.draw.circle(screen, (255, 255, 255), (perfect_release_x, bar_y + bar_h // 2), 3)
+
+        # 9. Clear text overlay above the bar
+        if in_perfect_zone and self._font:
+            t = pygame.time.get_ticks()
+            text_color = (255, 215, 0) if (t // 80) % 2 == 0 else (255, 255, 255)
+            prompt_text = self._font.render("RELEASE!", True, text_color)
+            tx = bx - prompt_text.get_width() // 2
+            ty = bar_y - 20
+            shadow_text = self._font.render("RELEASE!", True, (0, 0, 0))
+            screen.blit(shadow_text, (tx + 1, ty + 1))
+            screen.blit(prompt_text, (tx, ty))
 
     def draw(self, screen: pygame.Surface, camera):
         # We don't fill the background. The actual map is drawn behind this!
