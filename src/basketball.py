@@ -609,7 +609,7 @@ class BasketballGame:
         self._play_sound("shot")
         
         target_quality = 0.8
-        is_perfect = (shooter in ('player', 'ally') and abs(power_bar - target_quality) < 0.05)
+        is_perfect = (shooter in ('player', 'ally') and abs(power_bar - target_quality) < 0.02)
         
         is_dunk = False
         is_layup = False
@@ -1499,8 +1499,9 @@ class BasketballGame:
         bar_x = bx - bar_w // 2
         bar_y = by
 
-        perf_min = 0.75
-        perf_max = 0.85
+        # The perfect zone matches the is_perfect check (0.8 +- 0.02)
+        perf_min = 0.78
+        perf_max = 0.82
         in_perfect_zone = (perf_min <= value <= perf_max)
 
         # 1. Glow effect around the entire bar when inside the perfect release zone!
@@ -1549,6 +1550,16 @@ class BasketballGame:
         except:
             pygame.draw.rect(screen, (230, 180, 0), (perf_x, bar_y + 1, perf_w, bar_h - 2))
 
+        # 5.1. Moving shine highlight (diagonal light sweep)
+        shine_offset = (pygame.time.get_ticks() // 4) % (bar_w + 60) - 30
+        if 0 <= shine_offset < bar_w:
+            try:
+                shine_surf = pygame.Surface((12, bar_h - 2), pygame.SRCALPHA)
+                pygame.draw.polygon(shine_surf, (255, 255, 255, 45), [(4, 0), (12, 0), (8, bar_h - 2), (0, bar_h - 2)])
+                screen.blit(shine_surf, (bar_x + shine_offset, bar_y + 1))
+            except:
+                pass
+
         # 6. Fill progress bar with dynamic color transitions
         fill_w = int(bar_w * curr_smooth)
         if fill_w > 0:
@@ -1574,20 +1585,42 @@ class BasketballGame:
             except:
                 pass
 
-        # 7. Draw perfect target tick marker line at 0.8
+        # 6.1. Embers rising from the filling progress bar cursor
+        if fill_w > 0:
+            cursor_x = bar_x + fill_w
+            t = pygame.time.get_ticks()
+            for i in range(4):
+                offset_y = (t // (8 + i * 4) + i * 6) % 18
+                offset_x = int(4 * math.sin(t * 0.015 + i * 1.5))
+                ember_x = cursor_x + offset_x - 2
+                ember_y = bar_y - offset_y + 3
+                
+                alpha = max(0, 240 - offset_y * 13)
+                ember_size = max(1, 3 - offset_y // 6)
+                
+                color = (0, 255, 255, alpha) if in_perfect_zone else (255, 190, 0, alpha)
+                try:
+                    ember_surf = pygame.Surface((ember_size * 2, ember_size * 2), pygame.SRCALPHA)
+                    pygame.draw.circle(ember_surf, color, (ember_size, ember_size), ember_size)
+                    screen.blit(ember_surf, (ember_x - ember_size, ember_y - ember_size))
+                except:
+                    pass
+
+        # 7. Draw perfect target tick marker line at 0.8 with bouncing pointer triangles
         perfect_release_x = bar_x + int(bar_w * 0.8)
         pygame.draw.line(screen, (255, 255, 255), (perfect_release_x, bar_y - 2), (perfect_release_x, bar_y + bar_h + 2), 2)
         
-        # Draw gorgeous gold triangular pointers
+        # Bouncing golden pointer pointers
+        bounce = int(3 * math.sin(pygame.time.get_ticks() * 0.015))
         pygame.draw.polygon(screen, (255, 215, 0), [
-            (perfect_release_x, bar_y),
-            (perfect_release_x - 5, bar_y - 5),
-            (perfect_release_x + 5, bar_y - 5)
+            (perfect_release_x, bar_y + bounce),
+            (perfect_release_x - 5, bar_y - 5 + bounce),
+            (perfect_release_x + 5, bar_y - 5 + bounce)
         ])
         pygame.draw.polygon(screen, (255, 215, 0), [
-            (perfect_release_x, bar_y + bar_h),
-            (perfect_release_x - 5, bar_y + bar_h + 5),
-            (perfect_release_x + 5, bar_y + bar_h + 5)
+            (perfect_release_x, bar_y + bar_h - bounce),
+            (perfect_release_x - 5, bar_y + bar_h + 5 - bounce),
+            (perfect_release_x + 5, bar_y + bar_h + 5 - bounce)
         ])
 
         # 8. Sparks when the value is in the perfect zone
