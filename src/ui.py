@@ -730,8 +730,14 @@ class UI:
         overlay.fill((0, 0, 0, 180))
         screen.blit(overlay, (0, 0))
 
-        # Main Panel
-        pw, ph = 960, 640
+        # Main Panel (adjusted dynamically to fit the missions text)
+        line_h = 42
+        start_y_offset = 110
+        bottom_padding = 30
+        ph = start_y_offset + len(mission_list) * line_h + bottom_padding
+        pw = 960
+        if ph > SCREEN_HEIGHT - 20:
+            ph = SCREEN_HEIGHT - 20
         px = (SCREEN_WIDTH - pw) // 2
         py = (SCREEN_HEIGHT - ph) // 2
         panel = pygame.Surface((pw, ph), pygame.SRCALPHA)

@@ -371,8 +371,6 @@ class Floor:
         font14 = pygame.font.Font(VT323_PATH, 14)
 
         for room in sorted(self.rooms.values(), key=lambda r: r.is_staircase):
-            if room.id == "c_fountain":
-                continue
             r = camera.apply_rect(room.rect)
             if r.right < 0 or r.left > sw or r.bottom < 0 or r.top > sh:
                 continue
@@ -2441,7 +2439,8 @@ class SchoolMap:
 
         f.add_room(Room("c_fountain", "Central Fountain",
                         "Grand fountain in the courtyard",
-                        1700, 2050, 600, 350, (42, 58, 62)))
+                        1700, 2050, 600, 350, (42, 58, 62),
+                        tile_path="data/tiles/piso_labs.png"))
         f.add_room(Room("c_gardens", "English Gardens",
                         "Manicured gardens with hedge maze",
                         100, 150, 1200, 1000, (32, 58, 32),
