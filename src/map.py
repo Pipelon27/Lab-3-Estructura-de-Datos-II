@@ -409,6 +409,76 @@ class Floor:
             elif r.width > 50:
                 pass  # labels drawn after walls
 
+        # Draw vertical road extension and fountain road ring on Campus (Floor 0)
+        if self.id == 0:
+            # 1. Vertical road extension from road up to fountain center
+            # Fountain center is at (2000, 2250). Main road is at y = 2850.
+            # Let's draw a vertical road from y = 2250 to y = 2850, width 120 (from x = 1940 to 2060)
+            road_color = (35, 35, 40)
+            vert_road_rect = camera.apply_rect(pygame.Rect(1940, 2250, 120, 600))
+            pygame.draw.rect(screen, road_color, vert_road_rect)
+
+            # 2. Circular road ring around the fountain
+            # Center (2000, 2250), outer radius 210, inner radius 95
+            fountain_cx, fountain_cy = 2000, 2250
+            scx, scy = camera.apply_pos(fountain_cx, fountain_cy)
+            
+            # Draw outer road circle
+            pygame.draw.circle(screen, road_color, (scx, scy), 210)
+            
+            # Draw inner grass circle
+            grass_radius = 95
+            grass_surf = pygame.Surface((grass_radius * 2, grass_radius * 2), pygame.SRCALPHA)
+            pygame.draw.circle(grass_surf, (255, 255, 255), (grass_radius, grass_radius), grass_radius)
+            tile_path = "data/tiles/ME_Singles_Terrains_and_Fences_32x32_Grass_Water_3_9.png"
+            if tile_path not in self._tile_cache:
+                try:
+                    self._tile_cache[tile_path] = pygame.image.load(tile_path).convert()
+                except Exception:
+                    self._tile_cache[tile_path] = None
+            tile_surf = self._tile_cache.get(tile_path)
+            if tile_surf:
+                tw, th = tile_surf.get_size()
+                # Tile it across grass_surf aligning to world coordinates
+                start_wx = ((fountain_cx - grass_radius) // tw) * tw
+                start_wy = ((fountain_cy - grass_radius) // th) * th
+                wx = start_wx
+                while wx < fountain_cx + grass_radius:
+                    wy = start_wy
+                    while wy < fountain_cy + grass_radius:
+                        lx = wx - (fountain_cx - grass_radius)
+                        ly = wy - (fountain_cy - grass_radius)
+                        grass_surf.blit(tile_surf, (lx, ly), special_flags=pygame.BLEND_RGBA_MIN)
+                        wy += th
+                    wx += tw
+            else:
+                pygame.draw.circle(grass_surf, (46, 82, 46), (grass_radius, grass_radius), grass_radius, special_flags=pygame.BLEND_RGBA_MIN)
+            
+            screen.blit(grass_surf, (scx - grass_radius, scy - grass_radius))
+
+            # 3. Add vertical dashed road line for the extension
+            # From y = 2460 to y = 2850
+            dash_len = 30
+            dash_gap = 20
+            dash_x = camera.apply_pos(2000, 0)[0]
+            for ly in range(2460, 2850, dash_len + dash_gap):
+                start_y = camera.apply_pos(0, ly)[1]
+                end_y = camera.apply_pos(0, min(ly + dash_len, 2850))[1]
+                if start_y < sh and end_y > 0:
+                    pygame.draw.line(screen, (220, 220, 220), (dash_x, start_y), (dash_x, end_y), 4)
+
+            # 4. Add a dashed white ring (circle) in the middle of the circular road
+            # Center (scx, scy), radius 152.
+            import math
+            dash_r = 152
+            for i in range(24):
+                if i % 2 == 0: # draw every second segment
+                    ang1 = i * (2 * math.pi / 24)
+                    ang2 = (i + 0.8) * (2 * math.pi / 24)
+                    p1 = (scx + int(math.cos(ang1) * dash_r), scy + int(math.sin(ang1) * dash_r))
+                    p2 = (scx + int(math.cos(ang2) * dash_r), scy + int(math.sin(ang2) * dash_r))
+                    pygame.draw.line(screen, (220, 220, 220), p1, p2, 3)
+
 
         if npcs is None:
             npcs = []
@@ -2554,8 +2624,10 @@ class SchoolMap:
         f.walls.append(f.ping_pong_table)
 
         # Fountain collision - sliced rectangles approximate the circular sprite.
-        # Room center: 1700+300=2000, 2050+175=2225
-        fountain_cx, fountain_cy = 2000, 2225
+        # Fountain center for the roundabout is (2000, 2250) (so it doesn't cross main building)
+        # Fountain sprite center is (2000, 2235) (raised by 15px to look visually centered)
+        fountain_cx, fountain_cy = 2000, 2250
+        fountain_sprite_cy = 2235
         fountain_base_r = 85
         fountain_slice_h = 24
         f.fountain_rects = []
@@ -2563,7 +2635,7 @@ class SchoolMap:
             half_width = int((fountain_base_r * fountain_base_r - y_offset * y_offset) ** 0.5)
             rect = pygame.Rect(
                 fountain_cx - half_width,
-                fountain_cy + y_offset - fountain_slice_h // 2,
+                fountain_sprite_cy + y_offset - fountain_slice_h // 2,
                 half_width * 2,
                 fountain_slice_h
             )
@@ -2646,8 +2718,103 @@ class SchoolMap:
                 f.garden_decorations.append(('sprite', px, py, prop))
                 f.walls.append(pygame.Rect(px - 10, py - 10, 20, 20))
         
-        # Use the fountain sprite only at the Central Fountain POI
-        f.garden_decorations.append(('sprite', 2000, 2225, fountain_3_3, 170, 170))
+        # Use the fountain sprite only at the Central Fountain POI (centered at 2235)
+        f.garden_decorations.append(('sprite', 2000, 2235, fountain_3_3, 170, 170))
+
+        # Trees around the main road (6 Tree_3 total)
+        for tx in (1350, 1550, 1750, 2250, 2450, 2650):
+            f.garden_decorations.append(('sprite', tx, 2800, 'ME_Singles_Villas_32x32_Tree_3.png'))
+            f.walls.append(pygame.Rect(tx - 10, 2800 - 10, 20, 20))
+
+        # Trees surrounding the fountain roundabout (6 Tree_3 total)
+        fountain_trees_coords = [
+            (1740, 2250), (2260, 2250),
+            (1815, 2065), (2185, 2065),
+            (1815, 2435), (2185, 2435)
+        ]
+        for tx, ty in fountain_trees_coords:
+            f.garden_decorations.append(('sprite', tx, ty, 'ME_Singles_Villas_32x32_Tree_3.png'))
+            f.walls.append(pygame.Rect(tx - 10, ty - 10, 20, 20))
+
+        # Flowers at the Entrance to both sides (8 Flowers_5/Flowers_9 copy 2 on each side)
+        entrance_flower_choices = [
+            'ME_Singles_Villas_32x32_Villa_Yard_Flowers_5.png',
+            'ME_Singles_Villas_32x32_Villa_Yard_Flowers_9 copy 2.png'
+        ]
+        # Left side of Entrance roundabout
+        for _ in range(8):
+            for _ in range(20):
+                fx = rng.randint(1450, 1850)
+                fy = rng.randint(2520, 2820)
+                rect = pygame.Rect(fx - 16, fy - 16, 32, 32)
+                if not any(rect.colliderect(w) for w in f.walls):
+                    f.garden_decorations.append(('sprite', fx, fy, rng.choice(entrance_flower_choices)))
+                    break
+        # Right side of Entrance roundabout
+        for _ in range(8):
+            for _ in range(20):
+                fx = rng.randint(2150, 2550)
+                fy = rng.randint(2520, 2820)
+                rect = pygame.Rect(fx - 16, fy - 16, 32, 32)
+                if not any(rect.colliderect(w) for w in f.walls):
+                    f.garden_decorations.append(('sprite', fx, fy, rng.choice(entrance_flower_choices)))
+                    break
+
+        # Flowers around the athletic coliseum (15 flowers total)
+        coliseum_flower_sprites = [
+            'ME_Singles_Villas_32x32_Villa_Yard_Flowers_5.png',
+            'ME_Singles_Villas_32x32_Villa_Yard_Flowers_6.png',
+            'ME_Singles_Villas_32x32_Villa_Yard_Flowers_7.png',
+            'ME_Singles_Villas_32x32_Villa_Yard_Flowers_8.png',
+            'ME_Singles_Villas_32x32_Villa_Yard_Flowers_9 copy 2.png',
+        ]
+        for _ in range(15):
+            for _ in range(20):
+                fx = rng.randint(2550, 3950)
+                fy = rng.randint(100, 1300)
+                # Coliseum building bounding box: x in [2800, 3880], y in [150, 1100]
+                if 2800 <= fx <= 3880 and 150 <= fy <= 1100:
+                    continue
+                rect = pygame.Rect(fx - 16, fy - 16, 32, 32)
+                if not any(rect.colliderect(w) for w in f.walls):
+                    f.garden_decorations.append(('sprite', fx, fy, rng.choice(coliseum_flower_sprites)))
+                    break
+
+        # Scattered campus flowers (avoiding buildings, roads, the roundabout, and the Parking Lot/Ping Pong Court)
+        for _ in range(50):
+            for _ in range(20):
+                fx = rng.randint(50, 3950)
+                fy = rng.randint(50, 2950)
+                
+                # Exclude Parking Lot bounds: x in [0, 1200], y in [2100, 2850]
+                if 0 <= fx <= 1200 and 2100 <= fy <= 2850:
+                    continue
+                # Exclude Ping Pong Court bounds: x in [3100, 3880], y in [2100, 2850]
+                if 3100 <= fx <= 3880 and 2100 <= fy <= 2850:
+                    continue
+
+                flower_rect = pygame.Rect(fx - 16, fy - 16, 32, 32)
+                if any(flower_rect.colliderect(w) for w in f.walls):
+                    continue
+                
+                # Roundabout exclusion
+                dx = fx - 2000
+                dy = fy - 2250
+                dist = (dx*dx + dy*dy) ** 0.5
+                if dist < 230:
+                    continue
+                
+                # Vertical road exclusion
+                if 1920 < fx < 2080 and 2230 < fy < 2870:
+                    continue
+                
+                # Main road exclusion
+                if fy > 2830:
+                    continue
+                    
+                flower = rng.choice(coliseum_flower_sprites)
+                f.garden_decorations.append(('sprite', fx, fy, flower))
+                break
         
         # New bush sprites to alternate
         bush_sprites = [
@@ -2663,12 +2830,14 @@ class SchoolMap:
             bush_idx = (bush_idx + 1) % len(bush_sprites)
             return b
 
-        # Roundabout bushes decoration (neat rows on each side)
-        for side_x in [1420, 2580]: # Left and Right edges
-            for by in range(2520, 2850, 45):
-                f.garden_decorations.append(('sprite', side_x, by, next_bush()))
-        
-        # Benches (removed - brown rects deleted)
+        # Trees along the vertical road extension
+        for ty in range(2450, 2850, 90):
+            # Left side
+            f.garden_decorations.append(('sprite', 1900, ty, tree_sprite))
+            f.walls.append(pygame.Rect(1900 - 10, ty - 10, 20, 20))
+            # Right side
+            f.garden_decorations.append(('sprite', 2100, ty, tree_sprite))
+            f.walls.append(pygame.Rect(2100 - 10, ty - 10, 20, 20))
         
         # Parking Lot bushes (strictly outside the perimeter)
         # Top edge (above the parking lot)
