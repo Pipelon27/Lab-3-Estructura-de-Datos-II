@@ -132,6 +132,7 @@ class Game:
         self._net_npc_refresh_timer: float = 0.0
         self._net_mission_refresh_interval: float = 0.75
         self._net_npc_refresh_interval: float = 0.20
+        self._normal_gameplay_music_playing: bool = False
         self._rooftop_party_music_playing: bool = False
         self._basement_mission_music_playing: bool = False
 
@@ -2612,7 +2613,12 @@ class Game:
                 if room:
                     self._clear_tech_lab_for_ava(room)
 
-        if self.rooftop_party.is_party_active_on_floor(self.current_floor, self.day_number):
+        ambient_music_allowed = self.state not in (GameState.PINGPONG, GameState.BASKETBALL)
+
+        if not ambient_music_allowed:
+            self._normal_gameplay_music_playing = False
+            self._pasillo_playing = False
+        elif self.rooftop_party.is_party_active_on_floor(self.current_floor, self.day_number):
             if not getattr(self, '_rooftop_party_music_playing', False):
                 try:
                     if pygame.mixer.get_init():
@@ -2626,41 +2632,22 @@ class Game:
                         self._rooftop_party_music_playing = True
                         self._basement_music_playing = False
                         self._pasillo_playing = False
+                        self._normal_gameplay_music_playing = False
                 except Exception:
                     pass
-        elif self.current_floor == FLOOR_BASEMENT:
-            if not getattr(self, '_basement_music_playing', False):
-                try:
-                    if pygame.mixer.get_init():
-                        pygame.mixer.music.load("sound/musica menu.mp3")
-                        pygame.mixer.music.set_volume(0.25)
-                        pygame.mixer.music.play(-1)
-                        self._basement_music_playing = True
-                        self._pasillo_playing = False
-                        self._rooftop_party_music_playing = False
-                except Exception:
-                    pass
-        # Hallway ambient music logic for main building (FLOOR_1F, FLOOR_2F)
-        elif self.current_floor in (FLOOR_1F, FLOOR_2F):
-            if not getattr(self, '_pasillo_playing', False):
-                try:
-                    if pygame.mixer.get_init():
-                        pygame.mixer.music.load("sound/pasillo.mp3")
-                        pygame.mixer.music.set_volume(0.25)
-                        pygame.mixer.music.play(-1)
-                        self._pasillo_playing = True
-                        self._basement_music_playing = False
-                        self._rooftop_party_music_playing = False
-                except Exception:
-                    pass
+        elif self.current_floor == FLOOR_BASEMENT and self._is_final_showdown_active():
+            self._normal_gameplay_music_playing = False
+            self._pasillo_playing = False
         else:
-            if (getattr(self, '_pasillo_playing', False) or
-                    getattr(self, '_basement_music_playing', False) or
-                    getattr(self, '_rooftop_party_music_playing', False)):
+            if not getattr(self, '_normal_gameplay_music_playing', False):
                 try:
                     if pygame.mixer.get_init():
-                        pygame.mixer.music.stop()
-                        self._pasillo_playing = False
+                        path = os.path.join("assets", "sounds", "pokemon and chill.mp3")
+                        pygame.mixer.music.load(path)
+                        pygame.mixer.music.set_volume(0.25)
+                        pygame.mixer.music.play(-1)
+                        self._normal_gameplay_music_playing = True
+                        self._pasillo_playing = True
                         self._basement_music_playing = False
                         self._rooftop_party_music_playing = False
                 except Exception:
@@ -2768,13 +2755,14 @@ class Game:
             new_text = getattr(self, '_current_main_mission_text', None)
             self._last_mission_text = new_text
             if old_text is not None and new_text is not None:
-                self.player.level += 1
-                from settings import SKILL_POINT_PER_LEVEL
-                self.player.skill_points += SKILL_POINT_PER_LEVEL
-                self.player.money += 10
-                if hasattr(self.ui, 'trigger_level_up'):
-                    self.ui.trigger_level_up(10)
-                self._last_known_level = self.player.level
+                if not (self.multiplayer and not self.is_host):
+                    self.player.level += 1
+                    from settings import SKILL_POINT_PER_LEVEL
+                    self.player.skill_points += SKILL_POINT_PER_LEVEL
+                    self.player.money += 10
+                    if hasattr(self.ui, 'trigger_level_up'):
+                        self.ui.trigger_level_up(10)
+                    self._last_known_level = self.player.level
 
         if self.player.level > self._last_known_level:
             self._last_known_level = self.player.level
@@ -3002,13 +2990,14 @@ class Game:
                 self.state = GameState.PLAYING
                 if player_won:
                     self.reputation.reputation_score = min(100, self.reputation.reputation_score + 20)
-                    self.player.level += 1
-                    from settings import SKILL_POINT_PER_LEVEL
-                    self.player.skill_points += SKILL_POINT_PER_LEVEL
-                    self.player.money += (self.player.level - 1) * 10
-                    if hasattr(self.ui, 'trigger_level_up'):
-                        self.ui.trigger_level_up()
-                    self._last_known_level = self.player.level
+                    if not (self.multiplayer and not self.is_host):
+                        self.player.level += 1
+                        from settings import SKILL_POINT_PER_LEVEL
+                        self.player.skill_points += SKILL_POINT_PER_LEVEL
+                        self.player.money += (self.player.level - 1) * 10
+                        if hasattr(self.ui, 'trigger_level_up'):
+                            self.ui.trigger_level_up()
+                        self._last_known_level = self.player.level
                     self._begin_marcus_win_dialogue()
                 else:
                     self.reputation.reputation_score = max(0, self.reputation.reputation_score - 10)
@@ -3433,6 +3422,46 @@ class Game:
                 restricted_rooms=restricted,
                 is_visible=self._is_npc_on_camera
             )
+            # Host in coop: also update NPCs on remote player's floor if it's different
+            if self.multiplayer and self.is_host and self.remote_player:
+                r_floor_id = self.remote_player.current_floor
+                if r_floor_id is not None and r_floor_id != self.current_floor:
+                    r_floor = self.school_map.get_floor(r_floor_id)
+                    if r_floor:
+                        r_npc_walls = list(r_floor.walls) if r_floor else []
+                        r_npc_walls.append(self.remote_player.rect)
+                        if self.player.current_floor == r_floor_id:
+                            r_npc_walls.append(self.player.rect)
+                        if r_floor_id == FLOOR_CAMPUS:
+                            r_npc_walls.extend(self._get_parked_vehicle_rects())
+                        for door in r_floor.doors:
+                            if door.locked:
+                                r_npc_walls.append(door.rect)
+                        stair_room_ids = {
+                            "f1_stairs_2f", "f1_basement_stairs", 
+                            "f2_stairs_1f", "f2_roof_stairs", 
+                            "b_stairs_up", "rt_stairs_down"
+                        }
+                        for rid in stair_room_ids:
+                            r = r_floor.rooms.get(rid)
+                            if r:
+                                r_npc_walls.append(r.rect)
+                        r_restricted = [
+                            "f1_stairs_2f", "f1_basement_stairs", "f2_stairs_1f", "f2_roof_stairs", "b_stairs_up", "rt_stairs_down"
+                        ]
+                        if r_floor_id == FLOOR_CAMPUS:
+                            r_restricted += ["c_building", "c_tennis", "c_coliseum", "c_b_hall", "c_b_lab", "c_b_lib"]
+                        
+                        def is_near_remote(npc):
+                            return (abs(npc.rect.centerx - self.remote_player.rect.centerx) < 600 and 
+                                    abs(npc.rect.centery - self.remote_player.rect.centery) < 600)
+                        
+                        self.npc_manager.update_on_floor(
+                            current_dt, r_floor_id, r_floor, r_npc_walls,
+                            classrooms_restricted=True,
+                            restricted_rooms=r_restricted,
+                            is_visible=is_near_remote
+                        )
         if (self.current_floor == FLOOR_BASEMENT
                 and getattr(self, "_final_reveal_finished", False)
                 and not getattr(self, "_final_office_started", False)):
@@ -4414,6 +4443,12 @@ class Game:
     def _build_global_sync_data(self) -> dict:
         """Authoritative co-op story/cinematic state owned by the host."""
         return {
+            "host_player_level": self.player.level,
+            "host_player_xp": self.player.xp,
+            "host_player_skill_points": self.player.skill_points,
+            "party_exit_cinematic_active": getattr(self, "_party_exit_cinematic_active", False),
+            "party_exit_phase": getattr(self, "_party_exit_phase", ""),
+            "party_exit_timer": getattr(self, "_party_exit_timer", 0.0),
             "day_number": self.day_number,
             "time_of_day_minutes": self.time_of_day_minutes,
             "day_timer": self.day_timer,
@@ -4460,8 +4495,24 @@ class Game:
         if not data:
             return
 
+        # Synchronize player level authoritatively from host
+        r_level = data.get("host_player_level")
+        if r_level is not None and r_level != self.player.level:
+            self.player.level = r_level
+            self.player.xp = data.get("host_player_xp", self.player.xp)
+            self.player.skill_points = data.get("host_player_skill_points", self.player.skill_points)
+            if hasattr(self.ui, 'trigger_level_up'):
+                self.ui.trigger_level_up(10)
+            self._last_known_level = r_level
+
         host_day = data.get("day_number", self.day_number)
-        if host_day != self.day_number:
+        if host_day > self.day_number:
+            while self.day_number < host_day:
+                self._start_next_day()
+            self.aiden_phone.update_day_schedule(self.day_number)
+            self.lena_phone.update_day_schedule(self.day_number)
+            self._net_force_sync = True
+        elif host_day < self.day_number:
             self.day_number = host_day
             self.aiden_phone.update_day_schedule(self.day_number)
             self.lena_phone.update_day_schedule(self.day_number)
@@ -4481,6 +4532,7 @@ class Game:
                 pass
 
         self._current_main_mission_text = data.get("main_mission_text", self._current_main_mission_text)
+        self._last_mission_text = self._current_main_mission_text
         self._day1_story_complete = data.get("day1_story_complete", self._day1_story_complete)
         self._day2_story_complete = data.get("day2_story_complete", getattr(self, "_day2_story_complete", False))
         self._day3_story_complete = data.get("day3_story_complete", getattr(self, "_day3_story_complete", False))
@@ -4495,6 +4547,20 @@ class Game:
         self._car_depart_phase = data.get("car_depart_phase", self._car_depart_phase)
         self._car_depart_wx = data.get("car_depart_wx", getattr(self, "_car_depart_wx", float(self._parked_car_rect.centerx)))
         self._car_depart_wy = data.get("car_depart_wy", getattr(self, "_car_depart_wy", float(self._parked_car_rect.centery)))
+
+        # Synchronize party exit cinematic
+        r_party_exit = data.get("party_exit_cinematic_active", False)
+        if r_party_exit and not getattr(self, "_party_exit_cinematic_active", False):
+            self._start_party_exit_cinematic()
+        
+        new_phase = data.get("party_exit_phase", "")
+        old_phase = getattr(self, "_party_exit_phase", "")
+        if new_phase == "pan_back" and old_phase != "pan_back":
+            self._party_exit_cam_origin = (self.camera.offset.x, self.camera.offset.y)
+            
+        self._party_exit_cinematic_active = r_party_exit
+        self._party_exit_phase = new_phase
+        self._party_exit_timer = data.get("party_exit_timer", getattr(self, "_party_exit_timer", 0.0))
 
         self._ava_rooftop_dialogue_completed = data.get("ava_rooftop_dialogue_completed", getattr(self, "_ava_rooftop_dialogue_completed", False))
         self._ava_rooftop_dialogue_part2_active = data.get("ava_rooftop_dialogue_part2_active", getattr(self, "_ava_rooftop_dialogue_part2_active", False))
@@ -4865,11 +4931,11 @@ class Game:
                             self.player.vy = 0
                             self.player._dashing = False
 
-                # Auto teleport Client to Host's floor to keep them in perfect sync
-                if not self.is_host and self.state not in (GameState.PINGPONG, GameState.BASKETBALL):
-                    rf = remote.get("floor", 1)
-                    if rf != self.current_floor:
-                        self._go_to_floor(rf, remote.get("x", self.player.rect.centerx), remote.get("y", self.player.rect.centery))
+                # Auto teleport Client to Host's floor to keep them in perfect sync (decoupled in floor-free coop)
+                # if not self.is_host and self.state not in (GameState.PINGPONG, GameState.BASKETBALL):
+                #     rf = remote.get("floor", 1)
+                #     if rf != self.current_floor:
+                #         self._go_to_floor(rf, remote.get("x", self.player.rect.centerx), remote.get("y", self.player.rect.centery))
 
                 # Unpack ping pong sync data
                 self._remote_pingpong_match_won = remote.get("pp_match_won", False)
@@ -5470,10 +5536,11 @@ class Game:
                 self.state = GameState.PLAYING
                 
                 # Level Up 
-                self.player.level = 2
-                self.player.xp = 0
-                self.player.money += 10
-                self.ui.trigger_level_up(10)
+                if not (self.multiplayer and not self.is_host):
+                    self.player.level = 2
+                    self.player.xp = 0
+                    self.player.money += 10
+                    self.ui.trigger_level_up(10)
                 
                 self._add_noah_contact()
                 self._start_oscar_mission()
@@ -5495,10 +5562,11 @@ class Game:
         self.state = GameState.PLAYING
         
         # Level Up
-        self.player.level = 2
-        self.player.xp = 0
-        self.player.money += 10
-        self.ui.trigger_level_up(10)
+        if not (self.multiplayer and not self.is_host):
+            self.player.level = 2
+            self.player.xp = 0
+            self.player.money += 10
+            self.ui.trigger_level_up(10)
         
         self._add_noah_contact()
         self._start_oscar_mission()
@@ -5660,13 +5728,14 @@ class Game:
             self.mission_manager.completed_ids.add("mission_server_room")
         
         # Trigger Level Up after conversation finishes
-        self.player.level += 1
-        from settings import SKILL_POINT_PER_LEVEL
-        self.player.skill_points += SKILL_POINT_PER_LEVEL
-        self.player.money += 10
-        if hasattr(self.ui, 'trigger_level_up'):
-            self.ui.trigger_level_up(10)
-        self._last_known_level = self.player.level
+        if not (self.multiplayer and not self.is_host):
+            self.player.level += 1
+            from settings import SKILL_POINT_PER_LEVEL
+            self.player.skill_points += SKILL_POINT_PER_LEVEL
+            self.player.money += 10
+            if hasattr(self.ui, 'trigger_level_up'):
+                self.ui.trigger_level_up(10)
+            self._last_known_level = self.player.level
 
         self._complete_day3_story()
 
@@ -5897,7 +5966,8 @@ class Game:
                 self._party_exit_phase         = "done"
                 self._party_exit_cinematic_active = False
                 # Start part 2 of dialogue
-                self._begin_ava_rooftop_dialogue_part2()
+                if not (self.multiplayer and not self.is_host):
+                    self._begin_ava_rooftop_dialogue_part2()
 
     def _show_bad_feeling_monologue(self):
         """Narrative text box: player senses something is wrong."""
@@ -6240,6 +6310,10 @@ class Game:
                     pygame.mixer.music.set_volume(0.28)
                     pygame.mixer.music.play(-1)
                     self._basement_mission_music_playing = True
+                    self._normal_gameplay_music_playing = False
+                    self._pasillo_playing = False
+                    self._basement_music_playing = False
+                    self._rooftop_party_music_playing = False
         except Exception as e:
             print(f"[Game] Could not play basement mission music: {e}")
             self._basement_mission_music_playing = False
