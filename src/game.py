@@ -2982,7 +2982,7 @@ class Game:
                 self.camera.offset.x += random.randint(-intensity, intensity)
                 self.camera.offset.y += random.randint(-intensity, intensity)
             
-            result = self.basketball.update(dt)
+            result = self.basketball.update(dt, camera=self.camera)
             if getattr(self.basketball, 'finished', False):
                 self.basketball.finished = False
                 player_won = self.basketball.player_score > self.basketball.opp_score
