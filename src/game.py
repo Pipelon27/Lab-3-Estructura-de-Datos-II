@@ -132,6 +132,7 @@ class Game:
         self._net_mission_refresh_interval: float = 0.75
         self._net_npc_refresh_interval: float = 0.20
         self._rooftop_party_music_playing: bool = False
+        self._basement_mission_music_playing: bool = False
 
         # ── Day 4: Rooftop party scene state ──
         self._day4_npcs_placed: bool = False              # Ava/Marcus/Noah on rooftop
@@ -5984,17 +5985,46 @@ class Game:
             return True
         return bool(getattr(self, "_final_reveal_active", False) or getattr(self, "_final_reveal_finished", False))
 
+    def _play_basement_mission_music(self):
+        if getattr(self, "_basement_mission_music_playing", False):
+            return
+        try:
+            if pygame.mixer.get_init():
+                path = os.path.join("assets", "sounds", "Pokemon BlueRed - Lavender Town.mp3")
+                if os.path.exists(path):
+                    pygame.mixer.music.load(path)
+                    pygame.mixer.music.set_volume(0.28)
+                    pygame.mixer.music.play(-1)
+                    self._basement_mission_music_playing = True
+        except Exception as e:
+            print(f"[Game] Could not play basement mission music: {e}")
+            self._basement_mission_music_playing = False
+
+    def _stop_basement_mission_music(self):
+        if not getattr(self, "_basement_mission_music_playing", False):
+            return
+        try:
+            if pygame.mixer.get_init():
+                pygame.mixer.music.stop()
+        except Exception as e:
+            print(f"[Game] Could not stop basement mission music: {e}")
+        self._basement_mission_music_playing = False
+
     def _update_final_showdown(self, dt: float):
         if not self._is_final_showdown_active() or getattr(self, "_final_office_started", False):
+            self._stop_basement_mission_music()
             return
         if not getattr(self, "_final_reveal_started", False):
             self._setup_smile_club_room()
         if self.current_floor == FLOOR_BASEMENT:
+            self._play_basement_mission_music()
             if not getattr(self, "_final_reveal_finished", False):
                 self._current_main_mission_text = "Explore the Labyrinth"
             room = self._get_smile_club_room()
             if room and room.rect.collidepoint(self.player.rect.center) and not getattr(self, "_final_reveal_started", False):
                 self._start_final_reveal()
+        else:
+            self._stop_basement_mission_music()
 
     def _start_final_reveal(self):
         self._setup_smile_club_room()
@@ -6057,6 +6087,7 @@ class Game:
             self._start_final_office_scene()
 
     def _start_final_office_scene(self):
+        self._stop_basement_mission_music()
         self._final_office_started = True
         self._final_office_active = True
         self._set_smile_club_room_locked(False)
