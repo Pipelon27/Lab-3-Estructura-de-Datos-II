@@ -1412,8 +1412,6 @@ class Game:
                 if hackable:
                     self.hacking_game.start(hackable, self.player)
                     self.state = GameState.HACKING
-                else:
-                    self.player.start_attack()
 
     def _handle_controller_paused(self, controller):
         """Handle controller input during PAUSED state."""
@@ -1842,7 +1840,8 @@ class Game:
             if hackable:
                 self.hacking_game.start(hackable, self.player)
                 self.state = GameState.HACKING
-        elif event.key == KEY_LIGHT_ATTACK:
+        elif (event.key == KEY_LIGHT_ATTACK
+              and (self.character == Character.AIDEN or getattr(self, "_final_reveal_finished", False))):
             self.player.start_attack()
         
 
@@ -2983,7 +2982,7 @@ class Game:
                 self.camera.offset.x += random.randint(-intensity, intensity)
                 self.camera.offset.y += random.randint(-intensity, intensity)
             
-            result = self.basketball.update(dt, camera=self.camera)
+            result = self.basketball.update(dt)
             if getattr(self.basketball, 'finished', False):
                 self.basketball.finished = False
                 player_won = self.basketball.player_score > self.basketball.opp_score
@@ -3243,48 +3242,8 @@ class Game:
                     if _npc.id not in getattr(self.player, '_hit_npcs', set()):
                         if hitbox.colliderect(_npc.rect):
                             self.player._hit_npcs.add(_npc.id)
-                            
-                            # Calculate damage (Dash-Strike deals +50% damage)
-                            is_ds = getattr(self.player, 'is_dash_strike', False)
-                            base_dmg = self.player.attack_damage
-                            dmg = int(base_dmg * 1.5) if is_ds else base_dmg
-                            _npc.health -= dmg
-                            
-                            # Apply safe knockback pushback
-                            push_dist = 40 if is_ds else 15
-                            dx, dy = 0, 0
-                            if self.player.direction == Direction.UP:
-                                dy = -push_dist
-                            elif self.player.direction == Direction.DOWN:
-                                dy = push_dist
-                            elif self.player.direction == Direction.LEFT:
-                                dx = -push_dist
-                            elif self.player.direction == Direction.RIGHT:
-                                dx = push_dist
-                                
-                            # Safe position adjustment with wall check
-                            old_rect = _npc.rect.copy()
-                            _npc.rect.x += dx
-                            for wall in walls:
-                                if _npc.rect.colliderect(wall):
-                                    _npc.rect.x = old_rect.x
-                                    break
-                            
-                            old_rect = _npc.rect.copy()
-                            _npc.rect.y += dy
-                            for wall in walls:
-                                if _npc.rect.colliderect(wall):
-                                    _npc.rect.y = old_rect.y
-                                    break
-
-                            # Trigger screenshake on hitting target
-                            shake_dur = 0.25 if is_ds else 0.15
-                            shake_amt = 8.0 if is_ds else 4.0
-                            self.camera.shake(shake_dur, shake_amt)
-
-                            strike_lbl = "Dash Strike! " if is_ds else ""
-                            self.ui.show_notification(f"{strike_lbl}Hit {_npc.name} for {dmg} dmg!", NOTIF_SUCCESS)
-                            
+                            _npc.health -= self.player.attack_damage
+                            self.ui.show_notification(f"Hit {_npc.name} for {self.player.attack_damage} dmg!", NOTIF_SUCCESS)
                             if _npc.health <= 0:
                                 _npc.health = 0
                                 _npc.knockout_timer = 120.0
@@ -3316,13 +3275,7 @@ class Game:
                             dmg = getattr(_npc, 'target_damage', 8)
                             self.player.take_damage(dmg)
                             _npc.attack_cooldown = 1.0
-                            _npc.attack_timer = 0.2
-                            _npc.state = "attack"
                             self.ui.show_notification(f"{_npc.name} attacked you!", NOTIF_ERROR)
-                            
-                            # Trigger screenshake when taking damage
-                            self.camera.shake(0.2, 5.0)
-                            
                             controller = get_controller()
                             if controller.connected:
                                 controller.rumble(0.5, 0.5, 200)
@@ -6752,12 +6705,10 @@ class Game:
         # 1F stair door: y=1896-1976 on x=2150
         # 2F stair door: y=1750-1830 on x=2150
         self._noah_route = [
-            ("campus", (2000, 2400)),      # Walk up vertical road
-            ("campus", (2106, 2356)),      # Bottom-right curve of roundabout
-            ("campus", (2150, 2250)),      # Right side of roundabout
-            ("campus", (2106, 2144)),      # Top-right curve of roundabout
-            ("campus", (2000, 2100)),      # Top of roundabout
-            ("campus", (2000, 2030)),      # Straight up towards building entrance
+            ("campus", (2000, 2400)),      # Walk up from entrance
+            ("campus", (2250, 2350)),      # Go right to avoid fountain (east side)
+            ("campus", (2250, 2150)),      # Go up past fountain
+            ("campus", (2000, 2050)),      # Then left towards building entrance
             ("portal_1f", None),            # Trigger floor switch to 1F
             ("1f", (1600, 2100)),           # Reception area
             ("1f", (1600, 1936)),           # Just past reception→main hall door
