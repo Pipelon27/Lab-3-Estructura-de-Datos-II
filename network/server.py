@@ -104,6 +104,9 @@ class GameServer:
                 )
                 client.settimeout(1.5)
                 join_msg = recv_message(client)
+                if join_msg and join_msg.get("data", {}).get("_probe"):
+                    client.close()
+                    continue
                 if not join_msg or not join_msg.get("data", {}).get("_join"):
                     client.close()
                     continue

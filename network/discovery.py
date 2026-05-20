@@ -8,7 +8,7 @@ import socket
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from network.protocol import recv_message
+from network.protocol import encode_message, recv_message, MessageType
 
 class RoomBroadcaster:
     """Periodically broadcasts a room code over UDP on the LAN."""
@@ -123,6 +123,7 @@ def _probe_room_host(ip: str, target_code: str, tcp_port: int, timeout: float = 
         msg = recv_message(sock)
         data = msg.get("data", {}) if msg else {}
         if data.get("room_code") == target_code:
+            sock.sendall(encode_message(MessageType.EVENT, {"_probe": True}))
             return (ip, tcp_port)
     except OSError:
         return None
