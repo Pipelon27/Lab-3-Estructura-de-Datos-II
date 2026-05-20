@@ -5284,62 +5284,59 @@ class Game:
         surface.blit(light_surf, (0, 0))
 
     def _place_populars_on_rooftop(self):
-        """Teleport all popular NPCs to the rooftop and place them in conversation groups."""
-        from settings import SocialGroup, FLOOR_ROOFTOP, Direction
+        """Teleport all popular NPCs (except Ava, Marcus, Noah) to the rooftop and scatter them with free-roaming enabled."""
+        from settings import FLOOR_ROOFTOP, SocialGroup
         import random
-        import math
+        
         excluded = {"npc_ava_thompson", "npc_marcus", "npc_noah_carter"}
-        populars = [
+        npcs_to_teleport = [
             npc for npc in self.npc_manager.npcs.values()
             if npc.group == SocialGroup.POPULARS and npc.id not in excluded
         ]
         
-        # 5 Safe group centers around rooftop terrace tables
-        centers = [(1630, 680), (1280, 920), (2080, 920), (1680, 1180), (1680, 1500)]
-        num_groups = len(centers)
-        
-        # Distribute populars into groups
-        groups = [[] for _ in range(num_groups)]
-        for i, npc in enumerate(populars):
-            groups[i % num_groups].append(npc)
+        for npc in npcs_to_teleport:
+            npc.current_floor = FLOOR_ROOFTOP
+            npc.ai_enabled = True # Keep wandering/AI active
+            npc.ignore_schedule = True
             
-        for g_idx, group_npcs in enumerate(groups):
-            cx, cy = centers[g_idx]
-            n_in_g = len(group_npcs)
-            if n_in_g == 0:
-                continue
-            radius = 45 # Close conversational radius
-            for i, npc in enumerate(group_npcs):
-                angle = (i / n_in_g) * (2 * math.pi)
-                ox = int(math.cos(angle) * radius)
-                oy = int(math.sin(angle) * radius)
+            # Place randomly in rt_terrace: x in [1250, 2350], y in [550, 1650]
+            placed = False
+            for _ in range(100):
+                rx = random.randint(1250, 2350)
+                ry = random.randint(550, 1650)
+                rect = pygame.Rect(rx, ry, npc.rect.width, npc.rect.height)
                 
-                npc.current_floor = FLOOR_ROOFTOP
-                npc.ai_enabled = False # Disable wandering so they stay in groups
-                npc.ignore_schedule = True
-                
-                npc.rect.centerx = cx + ox
-                npc.rect.centery = cy + oy
-                
-                # Face towards group center (cx, cy)
-                dx = cx - npc.rect.centerx
-                dy = cy - npc.rect.centery
-                if abs(dx) > abs(dy):
-                    npc.direction = Direction.LEFT if dx < 0 else Direction.RIGHT
-                else:
-                    npc.direction = Direction.UP if dy < 0 else Direction.DOWN
+                # Check collision with floor walls/furniture
+                floor = self.school_map.get_floor(FLOOR_ROOFTOP)
+                collides = False
+                if floor:
+                    for wall in floor.walls:
+                        if rect.colliderect(wall):
+                            collides = True
+                            break
+                    if not collides:
+                        for furn in floor.furniture:
+                            if rect.colliderect(furn["rect"]):
+                                collides = True
+                                break
+                if not collides:
+                    npc.rect.x = rx
+                    npc.rect.y = ry
+                    placed = True
+                    break
+            
+            if not placed:
+                npc.rect.x = random.randint(1300, 2200)
+                npc.rect.y = random.randint(600, 1500)
 
     def _reset_populars_from_rooftop(self):
-        """Reset popular NPCs back to their schedules."""
+        """Reset popular NPCs back to their normal schedules."""
         from settings import SocialGroup
         excluded = {"npc_ava_thompson", "npc_marcus", "npc_noah_carter"}
-        populars = [
-            npc for npc in self.npc_manager.npcs.values()
-            if npc.group == SocialGroup.POPULARS and npc.id not in excluded
-        ]
-        for npc in populars:
-            npc.ignore_schedule = False
-            npc.ai_enabled = True # Re-enable AI/wandering
+        for npc in self.npc_manager.npcs.values():
+            if npc.group == SocialGroup.POPULARS and npc.id not in excluded:
+                npc.ignore_schedule = False
+                npc.ai_enabled = True
         
         # Force schedule update on next frame by resetting current block
         if hasattr(self, 'schedule_manager'):

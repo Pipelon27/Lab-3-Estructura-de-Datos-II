@@ -2425,7 +2425,8 @@ class SchoolMap:
 
         f.add_room(Room("c_roundabout", "Entrance Roundabout",
                         "Main entrance to Ravenside High",
-                        1400, 2500, 1200, 350, (50, 58, 50)))
+                        1400, 2500, 1200, 350, (50, 58, 50),
+                        tile_path="data/tiles/ME_Singles_Terrains_and_Fences_32x32_Grass_Water_3_9.png"))
         f.add_room(Room("c_parking", "Parking Lot",
                         "Student and staff parking",
                         0, 2100, 1200, 750, (48, 48, 48)))
@@ -2440,7 +2441,7 @@ class SchoolMap:
         f.add_room(Room("c_fountain", "Central Fountain",
                         "Grand fountain in the courtyard",
                         1700, 2050, 600, 350, (42, 58, 62),
-                        tile_path="data/tiles/piso_labs.png"))
+                        tile_path="data/tiles/ME_Singles_Terrains_and_Fences_32x32_Grass_Water_3_9.png"))
         f.add_room(Room("c_gardens", "English Gardens",
                         "Manicured gardens with hedge maze",
                         100, 150, 1200, 1000, (32, 58, 32),
