@@ -304,24 +304,29 @@ class UI:
             init = self.font_hud_lg.render(init_char, True, WHITE)
             screen.blit(init, init.get_rect(center=(av_x + av_radius, av_y + av_radius)))
 
-        # ── reputation bar (replaces health bar) ──
+        # ── health bar ──
         bars_x = av_x + av_radius * 2 + 12
+        self._bar(screen, bars_x, 16, 180, 14,
+                  player.health, player.max_health,
+                  HEALTH_RED, HEALTH_BG, "HP")
+
+        # ── reputation bar ──
         try:
             rep_avg = int(reputation.average()) if reputation else 50
         except Exception:
             rep_avg = 50
-        self._bar(screen, bars_x, 16, 180, 14,
+        self._bar(screen, bars_x, 36, 180, 14,
                   rep_avg, 100,
                   UI_ACCENT, UI_PANEL, "REP")
 
         # ── stamina bar ──
-        self._bar(screen, bars_x, 36, 180, 14,
+        self._bar(screen, bars_x, 56, 180, 14,
                   player.stamina, player.max_stamina,
                   STAMINA_YELLOW, STAMINA_BG, "SP")
 
         # ── Level bar ──
         MAX_LEVEL = 30
-        self._bar(screen, bars_x, 56, 180, 10,
+        self._bar(screen, bars_x, 76, 180, 10,
                   player.level, MAX_LEVEL,
                   XP_BLUE, XP_BG, "Lv")
 
@@ -332,7 +337,7 @@ class UI:
             # Since I can't easily change draw_hud signature across all files without a big refactor,
             # I can stick the detection level onto the player object from game.py or access it via world_map.
             det_lvl = getattr(player, 'detection_level', 0.0) 
-            self._bar(screen, bars_x, 72, 180, 10,
+            self._bar(screen, bars_x, 92, 180, 10,
                       det_lvl, 100,
                       (255, 60, 60), (40, 20, 20), "DETECT")
 
@@ -345,7 +350,7 @@ class UI:
         phase_str = current_phase.value.replace("_", " ").title()
         day_text = f"Day {day_number}  —  {phase_str}"
         screen.blit(self.font_hud_sm.render(day_text, True, WHITE),
-                    (bars_x, 76))
+                    (bars_x, 106))
 
         # ── location (top-right): floor name + room name ──
         floor_name = floor.name if floor else "Unknown"

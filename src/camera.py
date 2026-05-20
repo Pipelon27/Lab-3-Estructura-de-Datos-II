@@ -31,6 +31,13 @@ class Camera:
         self.zoom       = 1.0
         self.view_w     = SCREEN_WIDTH
         self.view_h     = SCREEN_HEIGHT
+        self.shake_timer = 0.0
+        self.shake_amount = 0.0
+
+    def shake(self, duration: float, amount: float):
+        """Trigger screenshake."""
+        self.shake_timer = duration
+        self.shake_amount = amount
 
     def set_zoom(self, zoom: float):
         self.zoom = zoom
@@ -44,7 +51,7 @@ class Camera:
         self.map_width  = map_width
         self.map_height = map_height
 
-    def update(self, target):
+    def update(self, target, dt: float = 0.016):
         """Move the camera towards *target* (must have a ``rect``).
 
         Uses linear interpolation for smooth following and clamps
@@ -61,6 +68,13 @@ class Camera:
         # Clamp so we never scroll past map edges
         self.offset.x = max(0, min(self.offset.x, self.map_width  - self.view_w))
         self.offset.y = max(0, min(self.offset.y, self.map_height - self.view_h))
+
+        # Apply screenshake
+        if self.shake_timer > 0:
+            self.shake_timer -= dt
+            import random
+            self.offset.x += random.uniform(-self.shake_amount, self.shake_amount)
+            self.offset.y += random.uniform(-self.shake_amount, self.shake_amount)
 
     def apply(self, entity) -> pygame.Rect:
         """Return a copy of *entity.rect* shifted by the camera offset.
