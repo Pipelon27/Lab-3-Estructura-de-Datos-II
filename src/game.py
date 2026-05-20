@@ -120,6 +120,14 @@ class Game:
         self._marcus_win_dialogue_index: int = 0
         self._marcus_win_dialogue_completed: bool = False
         self._marcus_win_dialogue_lines: list[tuple[str, str]] = []
+        self._net_sync_accum: float = 0.0
+        self._net_force_sync: bool = True
+        self._net_last_mission_sig = None
+        self._net_last_npc_sig = None
+        self._net_mission_refresh_timer: float = 0.0
+        self._net_npc_refresh_timer: float = 0.0
+        self._net_mission_refresh_interval: float = 0.75
+        self._net_npc_refresh_interval: float = 0.20
 
         # ── Day 4: Rooftop party scene state ──
         self._day4_npcs_placed: bool = False              # Ava/Marcus/Noah on rooftop
@@ -4317,8 +4325,57 @@ class Game:
         except Exception:
             pass
 
+    def _network_should_sync(self, dt: float) -> bool:
+        """Throttle regular co-op updates while keeping minigames responsive."""
+        state = self.state
+        hz = 60.0 if state in (GameState.BASKETBALL, GameState.PINGPONG) or self._spectating_pingpong else 30.0
+        self._net_sync_accum += dt
+        interval = 1.0 / hz
+        if self._net_force_sync or self._net_sync_accum >= interval:
+            self._net_sync_accum = 0.0
+            self._net_force_sync = False
+            return True
+        return False
+
+    def _build_mission_sync_data(self) -> tuple[dict, tuple]:
+        mission_data = {}
+        signature = []
+        for m_id, m in self.mission_manager.missions.items():
+            objectives = [
+                {
+                    "progress": o.progress,
+                    "completed": o.completed,
+                    "host_completed": o.host_completed,
+                    "client_completed": o.client_completed
+                }
+                for o in m.objectives
+            ]
+            mission_data[m_id] = {
+                "status": m.status.value,
+                "objectives": objectives
+            }
+            signature.append((
+                m_id,
+                m.status.value,
+                tuple((o["progress"], o["completed"], o["host_completed"], o["client_completed"]) for o in objectives)
+            ))
+        return mission_data, tuple(signature)
+
+    def _build_npc_sync_data(self) -> tuple[list, tuple]:
+        npc_sync = []
+        signature = []
+        for n in self.npc_manager.npcs.values():
+            item = (n.id, n.rect.x, n.rect.y, n.direction.value, n.state, n.current_floor)
+            npc_sync.append(item)
+            signature.append((n.id, n.direction.value, n.state, n.current_floor))
+        return npc_sync, tuple(signature)
+
     def _sync_network(self, dt: float = 0.016):
         if not self.network:
+            return
+        self._net_mission_refresh_timer += dt
+        self._net_npc_refresh_timer += dt
+        if not self._network_should_sync(dt):
             return
         try:
             player_data = self.player.to_dict()
@@ -4386,22 +4443,13 @@ class Game:
                     player_data["active_node_id"] = None
                     player_data["dialogue_choice_index"] = 0
 
-                # Sync mission data
-                mission_data = {}
-                for m_id, m in self.mission_manager.missions.items():
-                    mission_data[m_id] = {
-                        "status": m.status.value,
-                        "objectives": [
-                            {
-                                "progress": o.progress,
-                                "completed": o.completed,
-                                "host_completed": o.host_completed,
-                                "client_completed": o.client_completed
-                            }
-                            for o in m.objectives
-                        ]
-                    }
-                player_data["mission_data"] = mission_data
+                # Sync mission data only when it changes, with a periodic refresh for safety.
+                mission_data, mission_sig = self._build_mission_sync_data()
+                mission_refresh_due = self._net_mission_refresh_timer >= self._net_mission_refresh_interval
+                if mission_sig != self._net_last_mission_sig or mission_refresh_due:
+                    player_data["mission_data"] = mission_data
+                    self._net_last_mission_sig = mission_sig
+                    self._net_mission_refresh_timer = 0.0
                 player_data["main_mission_text"] = self._current_main_mission_text
 
                 # Sync cinematic variables
@@ -4411,12 +4459,13 @@ class Game:
             
             # Host: also send NPC data for synchronization (skip in BASKETBALL state to save bandwidth & CPU)
             if self.is_host and self.state != GameState.BASKETBALL:
-                npcs = list(self.npc_manager.npcs.values())
-                # Pack minimal NPC data including current_floor to save bandwidth
-                player_data["npc_sync"] = [
-                    (n.id, n.rect.x, n.rect.y, n.direction.value, n.state, n.current_floor) 
-                    for n in npcs
-                ]
+                # NPCs are the heaviest regular payload; send changed snapshots or periodic refreshes.
+                npc_sync, npc_sig = self._build_npc_sync_data()
+                npc_refresh_due = self._net_npc_refresh_timer >= self._net_npc_refresh_interval
+                if npc_sig != self._net_last_npc_sig or npc_refresh_due:
+                    player_data["npc_sync"] = npc_sync
+                    self._net_last_npc_sig = npc_sig
+                    self._net_npc_refresh_timer = 0.0
 
             if self.state == GameState.PINGPONG or self._spectating_pingpong:
                 pp_dict = {
@@ -4487,6 +4536,7 @@ class Game:
                     self._remote_client_viewed_oscar_post = remote.get("client_viewed_oscar_post", False)
 
                 r_state = remote.get("game_state")
+                self._remote_game_state = r_state
                 
                 # Update remote votes
                 self.remote_dialogue_continue = remote.get("dialogue_continue", False)

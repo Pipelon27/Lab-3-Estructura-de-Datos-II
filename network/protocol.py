@@ -53,7 +53,7 @@ def encode_message(msg_type: MessageType | str, data: dict) -> bytes:
     payload = json.dumps({
         "type": msg_type,
         "data": data,
-    }).encode("utf-8")
+    }, separators=(",", ":")).encode("utf-8")
 
     header = struct.pack("!I", len(payload))   # big-endian uint32
     return header + payload
@@ -104,10 +104,12 @@ def recv_message(sock) -> dict | None:
 
 def _recv_exact(sock, n: int) -> bytes | None:
     """Read exactly *n* bytes from *sock*.  Returns ``None`` on EOF."""
-    buf = b""
-    while len(buf) < n:
-        chunk = sock.recv(n - len(buf))
+    buf = bytearray(n)
+    view = memoryview(buf)
+    received = 0
+    while received < n:
+        chunk = sock.recv_into(view[received:], n - received)
         if not chunk:
             return None
-        buf += chunk
-    return buf
+        received += chunk
+    return bytes(buf)
