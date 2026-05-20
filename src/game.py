@@ -112,6 +112,9 @@ class Game:
         self._library_block_timer: float = 0.0
         self._pending_pingpong_result: str | None = None
         self._day1_story_complete: bool = False
+        self._remote_day1_story_complete: bool = False
+        self._remote_day2_story_complete: bool = False
+        self._remote_day3_story_complete: bool = False
         self._oscar_win_dialogue_active: bool = False
         self._oscar_win_dialogue_index: int = 0
         self._oscar_win_dialogue_completed: bool = False
@@ -1310,8 +1313,7 @@ class Game:
             if controller.is_confirm_pressed():
                 sel = getattr(self, "_car_panel_selection", "accept")
                 if sel == "accept":
-                    can_leave = self._day1_story_complete or getattr(self, '_day2_story_complete', False) or getattr(self, '_day3_story_complete', False) or self.time_of_day_minutes >= 16 * 60
-                    if can_leave:
+                    if self._can_end_school_day():
                         if self.multiplayer:
                             self.car_departure_voted = True
                         else:
@@ -1773,8 +1775,7 @@ class Game:
             if self._car_panel_input_delay > 0:
                 return  # ignore input during delay
             if event.key == pygame.K_e:
-                can_leave = self._day1_story_complete or getattr(self, '_day2_story_complete', False) or getattr(self, '_day3_story_complete', False) or self.time_of_day_minutes >= 16 * 60
-                if can_leave:
+                if self._can_end_school_day():
                     if self.multiplayer:
                         self.car_departure_voted = True
                     else:
@@ -3327,7 +3328,7 @@ class Game:
             self._car_panel_input_delay -= dt
         if self.current_floor == FLOOR_CAMPUS and not self._car_panel_active and self._car_panel_cooldown <= 0:
             if self.player.rect.inflate(12, 12).colliderect(self._parked_car_rect):
-                if not (self._day1_story_complete or self.time_of_day_minutes >= 16 * 60):
+                if not self._can_end_school_day():
                     self.ui.show_notification("You cannot leave school early.", NOTIF_ERROR)
                     self._car_panel_cooldown = 1.0
                 else:
@@ -4388,6 +4389,9 @@ class Game:
             player_data["cinematic_skip"] = self.cinematic_skip_voted
             player_data["request_dialogue"] = self._pending_dialogue_request
             player_data["car_departure_voted"] = self.car_departure_voted
+            player_data["day1_story_complete"] = self._day1_story_complete
+            player_data["day2_story_complete"] = getattr(self, "_day2_story_complete", False)
+            player_data["day3_story_complete"] = getattr(self, "_day3_story_complete", False)
             
             if self.state == GameState.BASKETBALL:
                 bb_data = {
@@ -4543,6 +4547,9 @@ class Game:
                 self.remote_cinematic_continue = remote.get("cinematic_continue", False)
                 self.remote_cinematic_skip = remote.get("cinematic_skip", False)
                 self.remote_car_departure_voted = remote.get("car_departure_voted", False)
+                self._remote_day1_story_complete = remote.get("day1_story_complete", False)
+                self._remote_day2_story_complete = remote.get("day2_story_complete", False)
+                self._remote_day3_story_complete = remote.get("day3_story_complete", False)
                 
                 # Auto teleport to basketball (only client follows host)
                 if not self.is_host and r_state == GameState.BASKETBALL.value and self.state != GameState.BASKETBALL:
@@ -6921,9 +6928,8 @@ class Game:
 
         # Handle mouse clicks
         if pygame.mouse.get_pressed()[0] and getattr(self, "_car_panel_input_delay", 0) <= 0:
-            can_leave = self._day1_story_complete or getattr(self, '_day2_story_complete', False) or getattr(self, '_day3_story_complete', False) or self.time_of_day_minutes >= 16 * 60
             if hover_accept:
-                if can_leave:
+                if self._can_end_school_day():
                     if self.multiplayer:
                         self.car_departure_voted = True
                     else:
@@ -6937,6 +6943,27 @@ class Game:
                 self._car_panel_active = False
                 self.car_departure_voted = False
                 self._car_panel_cooldown = 1.0
+
+    def _can_end_school_day(self) -> bool:
+        """Return True when the current day can advance, including co-op host progress."""
+        if self.time_of_day_minutes >= 16 * 60:
+            return True
+        story_flags = {
+            1: (
+                self._day1_story_complete,
+                getattr(self, "_remote_day1_story_complete", False),
+            ),
+            2: (
+                getattr(self, "_day2_story_complete", False),
+                getattr(self, "_remote_day2_story_complete", False),
+            ),
+            3: (
+                getattr(self, "_day3_story_complete", False),
+                getattr(self, "_remote_day3_story_complete", False),
+            ),
+        }
+        local_done, remote_done = story_flags.get(self.day_number, (False, False))
+        return local_done or (self.multiplayer and remote_done)
 
     def _draw_day_transition(self):
         """Draw fullscreen black screen with 'Day X' text."""
