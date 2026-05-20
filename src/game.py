@@ -131,6 +131,7 @@ class Game:
         self._net_npc_refresh_timer: float = 0.0
         self._net_mission_refresh_interval: float = 0.75
         self._net_npc_refresh_interval: float = 0.20
+        self._rooftop_party_music_playing: bool = False
 
         # ── Day 4: Rooftop party scene state ──
         self._day4_npcs_placed: bool = False              # Ava/Marcus/Noah on rooftop
@@ -2595,7 +2596,23 @@ class Game:
                 if room:
                     self._clear_tech_lab_for_ava(room)
 
-        if self.current_floor == FLOOR_BASEMENT:
+        if self.rooftop_party.is_party_active_on_floor(self.current_floor, self.day_number):
+            if not getattr(self, '_rooftop_party_music_playing', False):
+                try:
+                    if pygame.mixer.get_init():
+                        party_track = os.path.join(
+                            "assets", "sounds",
+                            "Hugel, SOLTO (FR) - Jamaican (Bam Bam) (Original Mix).mp3",
+                        )
+                        pygame.mixer.music.load(party_track)
+                        pygame.mixer.music.set_volume(0.25)
+                        pygame.mixer.music.play(-1)
+                        self._rooftop_party_music_playing = True
+                        self._basement_music_playing = False
+                        self._pasillo_playing = False
+                except Exception:
+                    pass
+        elif self.current_floor == FLOOR_BASEMENT:
             if not getattr(self, '_basement_music_playing', False):
                 try:
                     if pygame.mixer.get_init():
@@ -2604,6 +2621,7 @@ class Game:
                         pygame.mixer.music.play(-1)
                         self._basement_music_playing = True
                         self._pasillo_playing = False
+                        self._rooftop_party_music_playing = False
                 except Exception:
                     pass
         # Hallway ambient music logic for main building (FLOOR_1F, FLOOR_2F)
@@ -2616,15 +2634,19 @@ class Game:
                         pygame.mixer.music.play(-1)
                         self._pasillo_playing = True
                         self._basement_music_playing = False
+                        self._rooftop_party_music_playing = False
                 except Exception:
                     pass
         else:
-            if getattr(self, '_pasillo_playing', False) or getattr(self, '_basement_music_playing', False):
+            if (getattr(self, '_pasillo_playing', False) or
+                    getattr(self, '_basement_music_playing', False) or
+                    getattr(self, '_rooftop_party_music_playing', False)):
                 try:
                     if pygame.mixer.get_init():
                         pygame.mixer.music.stop()
                         self._pasillo_playing = False
                         self._basement_music_playing = False
+                        self._rooftop_party_music_playing = False
                 except Exception:
                     pass
 
