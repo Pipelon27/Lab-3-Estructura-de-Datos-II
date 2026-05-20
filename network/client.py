@@ -67,6 +67,10 @@ class GameClient:
         else:
             print("[Client] Warning: no handshake received")
 
+        # The connect timeout is only for the initial join. Gameplay receives must
+        # block, otherwise a slow host load is mistaken for a lost connection.
+        self._sock.settimeout(None)
+
         # Start background receiver
         t = threading.Thread(target=self._recv_loop, daemon=True)
         t.start()
