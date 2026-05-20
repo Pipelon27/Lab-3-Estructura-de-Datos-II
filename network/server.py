@@ -96,19 +96,27 @@ class GameServer:
             try:
                 client, addr = self._sock.accept()
                 print(f"[Server] Client connected: {addr}")
+                client.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+
+                # Send handshake with seed
+                client.sendall(
+                    encode_message(MessageType.HANDSHAKE, {"status": "ok", "seed": self.seed, "room_code": self.room_code})
+                )
+                client.settimeout(1.5)
+                join_msg = recv_message(client)
+                if not join_msg or not join_msg.get("data", {}).get("_join"):
+                    client.close()
+                    continue
+                client.settimeout(None)
+
                 with self._lock:
                     self._client = client
-                    self._client.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
                 
-                # Stop broadcasting once someone connects
+                # Stop broadcasting once a real game client joins.
                 if self._broadcaster:
                     self._broadcaster.stop()
                     self._broadcaster = None
 
-                # Send handshake with seed
-                self._client.sendall(
-                    encode_message(MessageType.HANDSHAKE, {"status": "ok", "seed": self.seed})
-                )
                 self._recv_loop()
             except socket.timeout:
                 continue

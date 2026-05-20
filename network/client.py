@@ -71,6 +71,10 @@ class GameClient:
         # block, otherwise a slow host load is mistaken for a lost connection.
         self._sock.settimeout(None)
 
+        self._sock.sendall(
+            encode_message(MessageType.EVENT, {"_join": True})
+        )
+
         # Start background receiver
         t = threading.Thread(target=self._recv_loop, daemon=True)
         t.start()
