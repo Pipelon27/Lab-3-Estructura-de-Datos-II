@@ -371,6 +371,8 @@ class Floor:
         font14 = pygame.font.Font(VT323_PATH, 14)
 
         for room in sorted(self.rooms.values(), key=lambda r: r.is_staircase):
+            if room.id == "c_fountain":
+                continue
             r = camera.apply_rect(room.rect)
             if r.right < 0 or r.left > sw or r.bottom < 0 or r.top > sh:
                 continue
@@ -2567,6 +2569,7 @@ class SchoolMap:
             )
             f.fountain_rects.append(rect)
             f.walls.append(rect)
+        f.invisible_walls.extend(f.fountain_rects)
 
         # Basketball court
         f.basketball_court = pygame.Rect(2800 + WT, 150 + WT, 1080 - 2 * WT, 950 - 2 * WT)

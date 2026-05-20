@@ -316,6 +316,8 @@ class JoinLobbyMenu:
         if ip_port:
             ip, port = ip_port
             try:
+                import time
+                time.sleep(0.25)  # Allow host socket accept loop to recycle after probe
                 client = GameClient(host=ip, port=port)
                 client.connect()
                 self.client = client
