@@ -130,7 +130,7 @@ class Game:
         self._net_mission_refresh_timer: float = 0.0
         self._net_npc_refresh_timer: float = 0.0
         self._net_mission_refresh_interval: float = 0.75
-        self._net_npc_refresh_interval: float = 0.20
+        self._net_npc_refresh_interval: float = 0.10
 
         # ── Day 4: Rooftop party scene state ──
         self._day4_npcs_placed: bool = False              # Ava/Marcus/Noah on rooftop
@@ -2154,6 +2154,9 @@ class Game:
                     and npc.id == "npc_ava_thompson"
                     and self.day_number >= 4
                     and not getattr(self, "_ava_rooftop_dialogue_completed", False)):
+                if self.multiplayer and not self.is_host:
+                    self._pending_dialogue_request = {"special": "ava_rooftop", "npc_id": npc.id}
+                    return
                 self._begin_ava_rooftop_dialogue()
                 self.player.vx = 0
                 self.player.vy = 0
@@ -3115,7 +3118,8 @@ class Game:
 
         if getattr(self, "_ava_phone_timer_active", False):
             self._update_ava_phone_timer(dt)
-        self._update_final_showdown(dt)
+        if not (self.multiplayer and not self.is_host):
+            self._update_final_showdown(dt)
         if getattr(self, "_final_reveal_active", False) or getattr(self, "_final_office_active", False):
             return
         
@@ -3192,7 +3196,8 @@ class Game:
         self._enforce_cafeteria_access(floor, previous_rect, dt)
         self._enforce_tech_lab_access(floor, previous_rect, dt)
         self._enforce_library_access(floor, previous_rect, dt)
-        if (self.current_floor == FLOOR_BASEMENT
+        if (not (self.multiplayer and not self.is_host)
+                and self.current_floor == FLOOR_BASEMENT
                 and getattr(self, "_final_reveal_finished", False)
                 and not getattr(self, "_final_office_started", False)):
             self._keep_player_in_smile_room()
@@ -3406,7 +3411,7 @@ class Game:
 
         # NPC-NPC collision separation inside the cafeteria
         floor1_ref = self.school_map.get_floor(FLOOR_1F)
-        if floor1_ref and self.current_floor == FLOOR_1F:
+        if floor1_ref and self.current_floor == FLOOR_1F and not (self.multiplayer and not self.is_host):
             caf = floor1_ref.rooms.get("f1_cafeteria")
             if caf:
                 caf_npcs = [
@@ -3453,7 +3458,8 @@ class Game:
                                     if any(a.rect.colliderect(w) for w in floor1_ref.walls):
                                         a.rect.y -= 1
 
-        if (self.current_floor == FLOOR_BASEMENT
+        if (not (self.multiplayer and not self.is_host)
+                and self.current_floor == FLOOR_BASEMENT
                 and getattr(self, "_final_reveal_finished", False)
                 and not getattr(self, "_final_office_started", False)):
             self._keep_player_in_smile_room()
@@ -4371,6 +4377,139 @@ class Game:
             signature.append((n.id, n.direction.value, n.state, n.current_floor))
         return npc_sync, tuple(signature)
 
+    def _build_global_sync_data(self) -> dict:
+        """Authoritative co-op story/cinematic state owned by the host."""
+        return {
+            "day_number": self.day_number,
+            "time_of_day_minutes": self.time_of_day_minutes,
+            "day_timer": self.day_timer,
+            "current_phase": self.current_phase.value,
+            "school_day_ended": self._school_day_ended,
+            "main_mission_text": self._current_main_mission_text,
+            "day1_story_complete": self._day1_story_complete,
+            "day2_story_complete": getattr(self, "_day2_story_complete", False),
+            "day3_story_complete": getattr(self, "_day3_story_complete", False),
+            "cine_phase": self._cine_phase,
+            "cine_dlg_index": self._cine_dlg_index,
+            "noah_final_dlg_index": self._noah_final_dlg_index,
+            "day_transition_active": self._day_transition_active,
+            "day_transition_target_day": self._day_transition_target_day,
+            "day_transition_timer": self._day_transition_timer,
+            "car_departure_active": self._car_departure_active,
+            "car_depart_phase": self._car_depart_phase,
+            "car_depart_wx": getattr(self, "_car_depart_wx", float(self._parked_car_rect.centerx)),
+            "car_depart_wy": getattr(self, "_car_depart_wy", float(self._parked_car_rect.centery)),
+            "ava_rooftop_dialogue_active": getattr(self, "_ava_rooftop_dialogue_active", False),
+            "ava_rooftop_dialogue_index": getattr(self, "_ava_rooftop_dialogue_index", 0),
+            "ava_rooftop_dialogue_completed": getattr(self, "_ava_rooftop_dialogue_completed", False),
+            "ava_rooftop_dialogue_part2_active": getattr(self, "_ava_rooftop_dialogue_part2_active", False),
+            "bad_feeling_active": getattr(self, "_bad_feeling_active", False),
+            "bad_feeling_index": getattr(self, "_bad_feeling_index", 0),
+            "player_bad_feeling_shown": getattr(self, "_player_bad_feeling_shown", False),
+            "post_phone_active": getattr(self, "_post_phone_active", False),
+            "post_phone_index": getattr(self, "_post_phone_index", 0),
+            "ava_phone_on_chair": getattr(self, "_ava_phone_on_chair", False),
+            "ava_phone_timer": getattr(self, "_ava_phone_timer", 15.0),
+            "ava_phone_timer_active": getattr(self, "_ava_phone_timer_active", False),
+            "ava_phone_completed": getattr(self, "_ava_phone_completed", False),
+            "final_reveal_started": getattr(self, "_final_reveal_started", False),
+            "final_reveal_finished": getattr(self, "_final_reveal_finished", False),
+            "final_reveal_active": getattr(self, "_final_reveal_active", False),
+            "final_reveal_phase": getattr(self, "_final_reveal_phase", "pan"),
+            "final_reveal_index": getattr(self, "_final_reveal_index", 0),
+            "final_office_started": getattr(self, "_final_office_started", False),
+            "final_office_active": getattr(self, "_final_office_active", False),
+            "final_office_index": getattr(self, "_final_office_index", 0),
+        }
+
+    def _apply_global_sync_data(self, data: dict):
+        if not data:
+            return
+
+        host_day = data.get("day_number", self.day_number)
+        if host_day != self.day_number:
+            self.day_number = host_day
+            self.aiden_phone.update_day_schedule(self.day_number)
+            self.lena_phone.update_day_schedule(self.day_number)
+            if hasattr(self, "schedule_manager"):
+                self.schedule_manager.reset_day()
+            self._net_force_sync = True
+
+        self.time_of_day_minutes = data.get("time_of_day_minutes", self.time_of_day_minutes)
+        self._last_time_minutes = self.time_of_day_minutes
+        self.day_timer = data.get("day_timer", self.day_timer)
+        self._school_day_ended = data.get("school_day_ended", self._school_day_ended)
+        phase_value = data.get("current_phase")
+        if phase_value:
+            try:
+                self.current_phase = DayPhase(phase_value)
+            except ValueError:
+                pass
+
+        self._current_main_mission_text = data.get("main_mission_text", self._current_main_mission_text)
+        self._day1_story_complete = data.get("day1_story_complete", self._day1_story_complete)
+        self._day2_story_complete = data.get("day2_story_complete", getattr(self, "_day2_story_complete", False))
+        self._day3_story_complete = data.get("day3_story_complete", getattr(self, "_day3_story_complete", False))
+
+        self._cine_phase = data.get("cine_phase", self._cine_phase)
+        self._cine_dlg_index = data.get("cine_dlg_index", self._cine_dlg_index)
+        self._noah_final_dlg_index = data.get("noah_final_dlg_index", self._noah_final_dlg_index)
+        self._day_transition_active = data.get("day_transition_active", self._day_transition_active)
+        self._day_transition_target_day = data.get("day_transition_target_day", self._day_transition_target_day)
+        self._day_transition_timer = data.get("day_transition_timer", self._day_transition_timer)
+        self._car_departure_active = data.get("car_departure_active", self._car_departure_active)
+        self._car_depart_phase = data.get("car_depart_phase", self._car_depart_phase)
+        self._car_depart_wx = data.get("car_depart_wx", getattr(self, "_car_depart_wx", float(self._parked_car_rect.centerx)))
+        self._car_depart_wy = data.get("car_depart_wy", getattr(self, "_car_depart_wy", float(self._parked_car_rect.centery)))
+
+        self._ava_rooftop_dialogue_completed = data.get("ava_rooftop_dialogue_completed", getattr(self, "_ava_rooftop_dialogue_completed", False))
+        self._ava_rooftop_dialogue_part2_active = data.get("ava_rooftop_dialogue_part2_active", getattr(self, "_ava_rooftop_dialogue_part2_active", False))
+        if data.get("ava_rooftop_dialogue_active", False) and not getattr(self, "_ava_rooftop_dialogue_active", False):
+            if data.get("ava_rooftop_dialogue_part2_active", False):
+                self._begin_ava_rooftop_dialogue_part2()
+            else:
+                self._begin_ava_rooftop_dialogue()
+            if (getattr(self, "_pending_dialogue_request", None) or {}).get("special") == "ava_rooftop":
+                self._pending_dialogue_request = None
+        self._ava_rooftop_dialogue_active = data.get("ava_rooftop_dialogue_active", getattr(self, "_ava_rooftop_dialogue_active", False))
+        self._ava_rooftop_dialogue_index = data.get("ava_rooftop_dialogue_index", getattr(self, "_ava_rooftop_dialogue_index", 0))
+        if self._ava_rooftop_dialogue_completed and (getattr(self, "_pending_dialogue_request", None) or {}).get("special") == "ava_rooftop":
+            self._pending_dialogue_request = None
+
+        if data.get("bad_feeling_active", False) and not getattr(self, "_bad_feeling_active", False):
+            self._show_bad_feeling_monologue()
+        self._bad_feeling_active = data.get("bad_feeling_active", getattr(self, "_bad_feeling_active", False))
+        self._bad_feeling_index = data.get("bad_feeling_index", getattr(self, "_bad_feeling_index", 0))
+        self._player_bad_feeling_shown = data.get("player_bad_feeling_shown", getattr(self, "_player_bad_feeling_shown", False))
+
+        if data.get("post_phone_active", False) and not getattr(self, "_post_phone_active", False):
+            self._show_post_phone_monologue()
+        self._post_phone_active = data.get("post_phone_active", getattr(self, "_post_phone_active", False))
+        self._post_phone_index = data.get("post_phone_index", getattr(self, "_post_phone_index", 0))
+        self._ava_phone_on_chair = data.get("ava_phone_on_chair", getattr(self, "_ava_phone_on_chair", False))
+        self._ava_phone_timer = data.get("ava_phone_timer", getattr(self, "_ava_phone_timer", 15.0))
+        self._ava_phone_timer_active = data.get("ava_phone_timer_active", getattr(self, "_ava_phone_timer_active", False))
+        self._ava_phone_completed = data.get("ava_phone_completed", getattr(self, "_ava_phone_completed", False))
+
+        self._final_reveal_started = data.get("final_reveal_started", getattr(self, "_final_reveal_started", False))
+        self._final_reveal_finished = data.get("final_reveal_finished", getattr(self, "_final_reveal_finished", False))
+        self._final_reveal_active = data.get("final_reveal_active", getattr(self, "_final_reveal_active", False))
+        self._final_reveal_phase = data.get("final_reveal_phase", getattr(self, "_final_reveal_phase", "pan"))
+        self._final_reveal_index = data.get("final_reveal_index", getattr(self, "_final_reveal_index", 0))
+        if self._final_reveal_active and not getattr(self, "_final_reveal_lines", None):
+            self._start_final_reveal()
+            self._final_reveal_active = data.get("final_reveal_active", True)
+            self._final_reveal_phase = data.get("final_reveal_phase", self._final_reveal_phase)
+            self._final_reveal_index = data.get("final_reveal_index", self._final_reveal_index)
+
+        self._final_office_started = data.get("final_office_started", getattr(self, "_final_office_started", False))
+        self._final_office_active = data.get("final_office_active", getattr(self, "_final_office_active", False))
+        self._final_office_index = data.get("final_office_index", getattr(self, "_final_office_index", 0))
+        if self._final_office_active and not getattr(self, "_final_office_lines", None):
+            self._start_final_office_scene()
+            self._final_office_active = data.get("final_office_active", True)
+            self._final_office_index = data.get("final_office_index", self._final_office_index)
+
     def _sync_network(self, dt: float = 0.016):
         if not self.network:
             return
@@ -4457,6 +4596,7 @@ class Game:
                 player_data["main_mission_text"] = self._current_main_mission_text
 
                 # Sync cinematic variables
+                player_data["global_sync"] = self._build_global_sync_data()
                 player_data["cine_phase"] = self._cine_phase
                 player_data["cine_dlg_index"] = self._cine_dlg_index
                 player_data["noah_final_dlg_index"] = self._noah_final_dlg_index
@@ -4550,6 +4690,8 @@ class Game:
                 self._remote_day1_story_complete = remote.get("day1_story_complete", False)
                 self._remote_day2_story_complete = remote.get("day2_story_complete", False)
                 self._remote_day3_story_complete = remote.get("day3_story_complete", False)
+                if not self.is_host:
+                    self._apply_global_sync_data(remote.get("global_sync", {}))
                 
                 # Auto teleport to basketball (only client follows host)
                 if not self.is_host and r_state == GameState.BASKETBALL.value and self.state != GameState.BASKETBALL:
@@ -4700,14 +4842,25 @@ class Game:
                     # Host-specific processing: handle dialogue request from Client
                     r_req_dlg = remote.get("request_dialogue")
                     if r_req_dlg and self.state != GameState.DIALOGUE:
-                        r_dlg_id = r_req_dlg["dialogue_id"]
-                        r_npc_id = r_req_dlg["npc_id"]
-                        npc = self.npc_manager.get_npc_by_id(r_npc_id) if r_npc_id else None
-                        self.dialogue_system.start_dialogue(r_dlg_id, npc, self.player, self.reputation)
-                        self.state = GameState.DIALOGUE
-                        self.player.vx = 0
-                        self.player.vy = 0
-                        self.player._dashing = False
+                        if r_req_dlg.get("special") == "ava_rooftop":
+                            if (not getattr(self, "_ava_rooftop_dialogue_active", False)
+                                    and self.current_floor == FLOOR_ROOFTOP
+                                    and self.day_number >= 4
+                                    and not getattr(self, "_ava_rooftop_dialogue_completed", False)):
+                                self._begin_ava_rooftop_dialogue()
+                                self.player.vx = 0
+                                self.player.vy = 0
+                                self.player._dashing = False
+                        else:
+                            r_dlg_id = r_req_dlg["dialogue_id"]
+                            r_npc_id = r_req_dlg["npc_id"]
+                            npc = self.npc_manager.get_npc_by_id(r_npc_id) if r_npc_id else None
+                            self.dialogue_system.start_dialogue(r_dlg_id, npc, self.player, self.reputation)
+                            self.state = GameState.DIALOGUE
+                            self.mission_manager.advance_objective_event("talk_to", r_npc_id)
+                            self.player.vx = 0
+                            self.player.vy = 0
+                            self.player._dashing = False
                 
                 # Apply floor-specific decay for remote player
                 in_main_building = self.current_floor in (FLOOR_1F, FLOOR_2F)
@@ -4748,9 +4901,14 @@ class Game:
                             nfloor = None
                         npc = self.npc_manager.get_npc_by_id(nid)
                         if npc:
-                            # Use simple LERP for NPCs too to keep them smooth
-                            npc.rect.x += (nx - npc.rect.x) * 0.5
-                            npc.rect.y += (ny - npc.rect.y) * 0.5
+                            floor_changed = nfloor is not None and npc.current_floor != nfloor
+                            far_away = abs(nx - npc.rect.x) > 600 or abs(ny - npc.rect.y) > 600
+                            if floor_changed or far_away:
+                                npc.rect.x = nx
+                                npc.rect.y = ny
+                            else:
+                                npc.rect.x += int((nx - npc.rect.x) * 0.5)
+                                npc.rect.y += int((ny - npc.rect.y) * 0.5)
                             from settings import Direction
                             try:
                                 npc.direction = Direction(ndir)
