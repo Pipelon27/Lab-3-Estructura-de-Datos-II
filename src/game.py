@@ -132,6 +132,7 @@ class Game:
         self._net_npc_refresh_timer: float = 0.0
         self._net_mission_refresh_interval: float = 0.75
         self._net_npc_refresh_interval: float = 0.20
+        self._normal_gameplay_music_playing: bool = False
         self._rooftop_party_music_playing: bool = False
         self._basement_mission_music_playing: bool = False
 
@@ -2612,7 +2613,12 @@ class Game:
                 if room:
                     self._clear_tech_lab_for_ava(room)
 
-        if self.rooftop_party.is_party_active_on_floor(self.current_floor, self.day_number):
+        ambient_music_allowed = self.state not in (GameState.PINGPONG, GameState.BASKETBALL)
+
+        if not ambient_music_allowed:
+            self._normal_gameplay_music_playing = False
+            self._pasillo_playing = False
+        elif self.rooftop_party.is_party_active_on_floor(self.current_floor, self.day_number):
             if not getattr(self, '_rooftop_party_music_playing', False):
                 try:
                     if pygame.mixer.get_init():
@@ -2626,41 +2632,22 @@ class Game:
                         self._rooftop_party_music_playing = True
                         self._basement_music_playing = False
                         self._pasillo_playing = False
+                        self._normal_gameplay_music_playing = False
                 except Exception:
                     pass
-        elif self.current_floor == FLOOR_BASEMENT:
-            if not getattr(self, '_basement_music_playing', False):
-                try:
-                    if pygame.mixer.get_init():
-                        pygame.mixer.music.load("sound/musica menu.mp3")
-                        pygame.mixer.music.set_volume(0.25)
-                        pygame.mixer.music.play(-1)
-                        self._basement_music_playing = True
-                        self._pasillo_playing = False
-                        self._rooftop_party_music_playing = False
-                except Exception:
-                    pass
-        # Hallway ambient music logic for main building (FLOOR_1F, FLOOR_2F)
-        elif self.current_floor in (FLOOR_1F, FLOOR_2F):
-            if not getattr(self, '_pasillo_playing', False):
-                try:
-                    if pygame.mixer.get_init():
-                        pygame.mixer.music.load("sound/pasillo.mp3")
-                        pygame.mixer.music.set_volume(0.25)
-                        pygame.mixer.music.play(-1)
-                        self._pasillo_playing = True
-                        self._basement_music_playing = False
-                        self._rooftop_party_music_playing = False
-                except Exception:
-                    pass
+        elif self.current_floor == FLOOR_BASEMENT and self._is_final_showdown_active():
+            self._normal_gameplay_music_playing = False
+            self._pasillo_playing = False
         else:
-            if (getattr(self, '_pasillo_playing', False) or
-                    getattr(self, '_basement_music_playing', False) or
-                    getattr(self, '_rooftop_party_music_playing', False)):
+            if not getattr(self, '_normal_gameplay_music_playing', False):
                 try:
                     if pygame.mixer.get_init():
-                        pygame.mixer.music.stop()
-                        self._pasillo_playing = False
+                        path = os.path.join("assets", "sounds", "pokemon and chill.mp3")
+                        pygame.mixer.music.load(path)
+                        pygame.mixer.music.set_volume(0.25)
+                        pygame.mixer.music.play(-1)
+                        self._normal_gameplay_music_playing = True
+                        self._pasillo_playing = True
                         self._basement_music_playing = False
                         self._rooftop_party_music_playing = False
                 except Exception:
@@ -6319,6 +6306,10 @@ class Game:
                     pygame.mixer.music.set_volume(0.28)
                     pygame.mixer.music.play(-1)
                     self._basement_mission_music_playing = True
+                    self._normal_gameplay_music_playing = False
+                    self._pasillo_playing = False
+                    self._basement_music_playing = False
+                    self._rooftop_party_music_playing = False
         except Exception as e:
             print(f"[Game] Could not play basement mission music: {e}")
             self._basement_mission_music_playing = False
