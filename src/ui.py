@@ -350,7 +350,7 @@ class UI:
         phase_str = current_phase.value.replace("_", " ").title()
         day_text = f"Day {day_number}  —  {phase_str}"
         screen.blit(self.font_hud_sm.render(day_text, True, WHITE),
-                    (bars_x, 106))
+                    (bars_x, 90))
 
         # ── location (top-right): floor name + room name ──
         floor_name = floor.name if floor else "Unknown"
