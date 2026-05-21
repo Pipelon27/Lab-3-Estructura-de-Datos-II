@@ -6705,10 +6705,12 @@ class Game:
         # 1F stair door: y=1896-1976 on x=2150
         # 2F stair door: y=1750-1830 on x=2150
         self._noah_route = [
-            ("campus", (2000, 2400)),      # Walk up from entrance
-            ("campus", (2250, 2350)),      # Go right to avoid fountain (east side)
-            ("campus", (2250, 2150)),      # Go up past fountain
-            ("campus", (2000, 2050)),      # Then left towards building entrance
+            ("campus", (2000, 2402)),      # Bottom of roundabout entrance
+            ("campus", (2107, 2357)),      # Bottom-right roundabout
+            ("campus", (2152, 2250)),      # Right roundabout
+            ("campus", (2107, 2143)),      # Top-right roundabout
+            ("campus", (2000, 2098)),      # Top of roundabout
+            ("campus", (2000, 2010)),      # Near building entrance
             ("portal_1f", None),            # Trigger floor switch to 1F
             ("1f", (1600, 2100)),           # Reception area
             ("1f", (1600, 1936)),           # Just past reception→main hall door

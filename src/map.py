@@ -283,8 +283,15 @@ class Floor:
         return None
 
     def _load_sprite(self, sprite_name):
-        """Load a sprite by name from data/tiles or assets folders."""
+        """Load a sprite by name from direct path, data/tiles or assets folders."""
         import os
+        
+        # Try direct path first
+        if os.path.isfile(sprite_name):
+            try:
+                return pygame.image.load(sprite_name).convert_alpha()
+            except Exception as e:
+                print(f"Failed to load sprite from direct path {sprite_name}: {e}")
         
         # Try data/tiles first
         data_tiles_path = os.path.join(
@@ -415,16 +422,57 @@ class Floor:
             # Fountain center is at (2000, 2250). Main road is at y = 2850.
             # Let's draw a vertical road from y = 2250 to y = 2850, width 120 (from x = 1940 to 2060)
             road_color = (35, 35, 40)
-            vert_road_rect = camera.apply_rect(pygame.Rect(1940, 2250, 120, 600))
-            pygame.draw.rect(screen, road_color, vert_road_rect)
-
-            # 2. Circular road ring around the fountain
-            # Center (2000, 2250), outer radius 210, inner radius 95
+            vert_road_rect = pygame.Rect(1940, 2250, 120, 600)
             fountain_cx, fountain_cy = 2000, 2250
             scx, scy = camera.apply_pos(fountain_cx, fountain_cy)
-            
-            # Draw outer road circle
-            pygame.draw.circle(screen, road_color, (scx, scy), 210)
+
+            tile_path = "data/tiles/piso_hall.png"
+            if tile_path not in self._tile_cache:
+                try:
+                    self._tile_cache[tile_path] = pygame.image.load(tile_path).convert()
+                except Exception:
+                    self._tile_cache[tile_path] = None
+            tile_surf = self._tile_cache.get(tile_path)
+
+            if tile_surf:
+                tw, th = tile_surf.get_size()
+                cam_ox = int(camera.offset.x)
+                cam_oy = int(camera.offset.y)
+
+                # Draw vertical road extension tiled (User Request #5)
+                r_screen = camera.apply_rect(vert_road_rect)
+                old_clip = screen.get_clip()
+                screen.set_clip(r_screen)
+                start_wx = (1940 // tw) * tw
+                start_wy = (2250 // th) * th
+                wx = start_wx
+                while wx < 2060:
+                    wy = start_wy
+                    while wy < 2850:
+                        screen.blit(tile_surf, (wx - cam_ox, wy - cam_oy))
+                        wy += th
+                    wx += tw
+                screen.set_clip(old_clip)
+
+                # Draw outer road circle tiled (User Request #5)
+                road_radius = 210
+                road_surf = pygame.Surface((road_radius * 2, road_radius * 2), pygame.SRCALPHA)
+                pygame.draw.circle(road_surf, (255, 255, 255), (road_radius, road_radius), road_radius)
+                start_wx = ((fountain_cx - road_radius) // tw) * tw
+                start_wy = ((fountain_cy - road_radius) // th) * th
+                wx = start_wx
+                while wx < fountain_cx + road_radius:
+                    wy = start_wy
+                    while wy < fountain_cy + road_radius:
+                        lx = wx - (fountain_cx - road_radius)
+                        ly = wy - (fountain_cy - road_radius)
+                        road_surf.blit(tile_surf, (lx, ly), special_flags=pygame.BLEND_RGBA_MIN)
+                        wy += th
+                    wx += tw
+                screen.blit(road_surf, (scx - road_radius, scy - road_radius))
+            else:
+                pygame.draw.rect(screen, road_color, camera.apply_rect(vert_road_rect))
+                pygame.draw.circle(screen, road_color, (scx, scy), 210)
             
             # Draw inner grass circle
             grass_radius = 95
@@ -455,29 +503,6 @@ class Floor:
                 pygame.draw.circle(grass_surf, (46, 82, 46), (grass_radius, grass_radius), grass_radius, special_flags=pygame.BLEND_RGBA_MIN)
             
             screen.blit(grass_surf, (scx - grass_radius, scy - grass_radius))
-
-            # 3. Add vertical dashed road line for the extension
-            # From y = 2460 to y = 2850
-            dash_len = 30
-            dash_gap = 20
-            dash_x = camera.apply_pos(2000, 0)[0]
-            for ly in range(2460, 2850, dash_len + dash_gap):
-                start_y = camera.apply_pos(0, ly)[1]
-                end_y = camera.apply_pos(0, min(ly + dash_len, 2850))[1]
-                if start_y < sh and end_y > 0:
-                    pygame.draw.line(screen, (220, 220, 220), (dash_x, start_y), (dash_x, end_y), 4)
-
-            # 4. Add a dashed white ring (circle) in the middle of the circular road
-            # Center (scx, scy), radius 152.
-            import math
-            dash_r = 152
-            for i in range(24):
-                if i % 2 == 0: # draw every second segment
-                    ang1 = i * (2 * math.pi / 24)
-                    ang2 = (i + 0.8) * (2 * math.pi / 24)
-                    p1 = (scx + int(math.cos(ang1) * dash_r), scy + int(math.sin(ang1) * dash_r))
-                    p2 = (scx + int(math.cos(ang2) * dash_r), scy + int(math.sin(ang2) * dash_r))
-                    pygame.draw.line(screen, (220, 220, 220), p1, p2, 3)
 
 
         if npcs is None:
@@ -706,6 +731,8 @@ class Floor:
                 for item in self.garden_decorations:
                     if item[0] == 'sprite':
                         sx_world, sy_world, sprite_name = item[1], item[2], item[3]
+                        if 'tree' in sprite_name.lower():
+                            continue
                         sx, sy = camera.apply_pos(sx_world, sy_world)
                         
                         # Try to load sprite if not cached
@@ -754,6 +781,9 @@ class Floor:
                     dash_len = 80
                     dash_gap = 60
                     for lx in range(road_room.x, road_room.right, dash_len + dash_gap):
+                        # Skip drawing the dash if it falls in the intersection with the vertical road (User Request #4)
+                        if 1900 < lx < 2100 or 1900 < lx + dash_len < 2100:
+                            continue
                         start_pos = camera.apply_pos(lx, road_y)
                         end_pos = camera.apply_pos(min(lx + dash_len, road_room.right), road_y)
                         if start_pos[0] < sw and end_pos[0] > 0:
@@ -2081,8 +2111,8 @@ class Floor:
                         facade_h = max(90, int(rr.height * 0.45))
                         body_rect = pygame.Rect(rr.x, rr.y, rr.width, rr.height)
                         facade_rect = pygame.Rect(rr.x, rr.bottom - facade_h, rr.width, facade_h)
-                        roof_rect = pygame.Rect(rr.x, rr.y, rr.width, roof_h)
                         sidewalk_rect = pygame.Rect(rr.x, rr.bottom + 2, rr.width, 20)
+
 
                         pygame.draw.rect(screen, spec["wall_color"], body_rect)
                         pygame.draw.line(screen, spec["trim_color"],
@@ -2300,7 +2330,34 @@ class Floor:
                                         1,
                                     )
 
-                        pygame.draw.rect(screen, (168, 168, 176), sidewalk_rect)
+                        if rid == "c_building":
+                            sw_tile_path = "data/tiles/piso_hall.png"
+                            if sw_tile_path not in self._tile_cache:
+                                try:
+                                    self._tile_cache[sw_tile_path] = pygame.image.load(sw_tile_path).convert()
+                                except Exception:
+                                    self._tile_cache[sw_tile_path] = None
+                            sw_tile = self._tile_cache.get(sw_tile_path)
+                            if sw_tile is not None:
+                                old_clip = screen.get_clip()
+                                screen.set_clip(sidewalk_rect)
+                                tw, th = sw_tile.get_size()
+                                cam_ox = int(camera.offset.x)
+                                cam_oy = int(camera.offset.y)
+                                start_wx = (room.rect.x // tw) * tw
+                                start_wy = ((room.rect.bottom + 2) // th) * th
+                                wy = start_wy
+                                while wy < room.rect.bottom + 22:
+                                    wx = start_wx
+                                    while wx < room.rect.right:
+                                        screen.blit(sw_tile, (wx - cam_ox, wy - cam_oy))
+                                        wx += tw
+                                    wy += th
+                                screen.set_clip(old_clip)
+                            else:
+                                pygame.draw.rect(screen, (168, 168, 176), sidewalk_rect)
+                        else:
+                            pygame.draw.rect(screen, (168, 168, 176), sidewalk_rect)
                         pygame.draw.line(screen, (210, 210, 220),
                                          (sidewalk_rect.x, sidewalk_rect.y + 2),
                                          (sidewalk_rect.right, sidewalk_rect.y + 2), 2)
@@ -2347,6 +2404,8 @@ class Floor:
         sw, sh = screen.get_width(), screen.get_height()
         if self.id == 0:
             if hasattr(self, 'garden_decorations'):
+                if not hasattr(self, '_sprite_cache'):
+                    self._sprite_cache = {}
                 for item in self.garden_decorations:
                     if item[0] == 'tree':
                         _, tx, ty, rad = item
@@ -2361,6 +2420,19 @@ class Floor:
                             pygame.draw.circle(screen, (40, 120, 40),
                                                (sx - int(draw_rad * 0.2), sy - int(draw_rad * 0.2)),
                                                int(draw_rad * 0.7))
+                    elif item[0] == 'top_sprite' or (item[0] == 'sprite' and 'tree' in str(item[3]).lower()):
+                        sx_world, sy_world, sprite_name = item[1], item[2], item[3]
+                        sx, sy = camera.apply_pos(sx_world, sy_world)
+                        if sprite_name not in self._sprite_cache:
+                            self._sprite_cache[sprite_name] = self._load_sprite(sprite_name)
+                        sprite_surf = self._sprite_cache.get(sprite_name)
+                        if sprite_surf is not None:
+                            if len(item) == 6:
+                                _, _, _, _, sprite_w, sprite_h = item
+                                sprite_surf = pygame.transform.smoothscale(sprite_surf, (sprite_w, sprite_h))
+                            sprite_rect = sprite_surf.get_rect(center=(sx, sy))
+                            if -250 < sprite_rect.centerx < sw + 250 and -250 < sprite_rect.centery < sh + 250:
+                                screen.blit(sprite_surf, sprite_rect)
         elif self.id == 5 and hasattr(self, "basketball_court"):
             bc = self.basketball_court
             cam_ox = int(camera.offset.x)
@@ -2499,7 +2571,8 @@ class SchoolMap:
                         tile_path="data/tiles/ME_Singles_Terrains_and_Fences_32x32_Grass_Water_3_9.png"))
         f.add_room(Room("c_parking", "Parking Lot",
                         "Student and staff parking",
-                        0, 2100, 1200, 750, (48, 48, 48)))
+                        0, 2100, 1200, 750, (48, 48, 48),
+                        tile_path="data/tiles/piso_parking.png"))
         f.add_room(Room("c_road", "Main Road",
                         "Paved street with curved ending",
                         0, 2850, 2900, 150, (35, 35, 40)))
@@ -2527,6 +2600,17 @@ class SchoolMap:
         f.add_room(Room("c_coliseum_court", "Basketball Court",
                         "The main court",
                         2800 + WT + 100, 150 + WT + 100, 1080 - 2 * WT - 200, 950 - 2 * WT - 200, (176, 110, 66)))
+
+        # Pedestrian paths (User Request #3)
+        f.add_room(Room("path_gardens_h", "Path to Gardens", "", 1100, 1970, 300, 60, (50, 50, 50), tile_path="data/tiles/piso_hall.png"))
+        f.add_room(Room("path_gardens_v", "Path to Gardens", "", 1100, 1150, 60, 820, (50, 50, 50), tile_path="data/tiles/piso_hall.png"))
+        f.add_room(Room("path_building_h", "Path Around Building", "", 1400, 1970, 1200, 60, (50, 50, 50), tile_path="data/tiles/piso_hall.png"))
+        f.add_room(Room("path_coliseum_h", "Path to Coliseum", "", 2600, 1970, 770, 60, (50, 50, 50), tile_path="data/tiles/piso_hall.png"))
+        f.add_room(Room("path_coliseum_v", "Path to Coliseum", "", 3310, 1100, 60, 870, (50, 50, 50), tile_path="data/tiles/piso_hall.png"))
+        f.add_room(Room("path_pingpong_v", "Path to Ping Pong", "", 2920, 2030, 60, 820, (50, 50, 50), tile_path="data/tiles/piso_hall.png"))
+        f.add_room(Room("path_pingpong_h", "Path to Ping Pong", "", 2920, 2790, 570, 60, (50, 50, 50), tile_path="data/tiles/piso_hall.png"))
+        # Vertical connector: building path bottom (y=2030) → roundabout, wider (100px)
+        f.add_room(Room("path_fountain_v", "", "", 1950, 2030, 100, 230, (50, 50, 50), tile_path="data/tiles/piso_hall.png"))
 
         # Outer boundary
         outer_bounds = [
@@ -2681,7 +2765,9 @@ class SchoolMap:
                 treect = pygame.Rect(tx - rad//2, ty - rad//2, rad, rad)
                 if not any(treect.colliderect(w) for w in f.walls):
                     f.garden_decorations.append(('sprite', tx, ty, tree_sprite))
-                    f.walls.append(pygame.Rect(tx - 10, ty - 10, 20, 20))
+                    tree_w = pygame.Rect(tx - 12, ty + 8, 24, 14)
+                    f.walls.append(tree_w)
+                    f.invisible_walls.append(tree_w)
                     break
         
         # Flower groups - reduced by 70% (12 remaining), uniformly distributed
@@ -2724,17 +2810,56 @@ class SchoolMap:
         # Trees around the main road (6 Tree_3 total)
         for tx in (1350, 1550, 1750, 2250, 2450, 2650):
             f.garden_decorations.append(('sprite', tx, 2800, 'ME_Singles_Villas_32x32_Tree_3.png'))
-            f.walls.append(pygame.Rect(tx - 10, 2800 - 10, 20, 20))
+            tree_w = pygame.Rect(tx - 12, 2800 + 8, 24, 14)
+            f.walls.append(tree_w)
+            f.invisible_walls.append(tree_w)
 
         # Trees surrounding the fountain roundabout (6 Tree_3 total)
         fountain_trees_coords = [
             (1740, 2250), (2260, 2250),
-            (1815, 2065), (2185, 2065),
+            (1815, 2100), (2185, 2100),  # lowered from 2065 to 2100 (User Request #4)
             (1815, 2435), (2185, 2435)
         ]
         for tx, ty in fountain_trees_coords:
             f.garden_decorations.append(('sprite', tx, ty, 'ME_Singles_Villas_32x32_Tree_3.png'))
-            f.walls.append(pygame.Rect(tx - 10, ty - 10, 20, 20))
+            tree_w = pygame.Rect(tx - 12, ty + 8, 24, 14)
+            f.walls.append(tree_w)
+            f.invisible_walls.append(tree_w)
+
+        # Trees along the vertical road extension
+        for ty in range(2450, 2850, 90):
+            # Left side
+            if ty not in (2450, 2720, 2810):
+                f.garden_decorations.append(('sprite', 1900, ty, tree_sprite))
+                tree_w = pygame.Rect(1900 - 12, ty + 8, 24, 14)
+                f.walls.append(tree_w)
+                f.invisible_walls.append(tree_w)
+            # Right side
+            if ty not in (2450, 2720, 2810):
+                f.garden_decorations.append(('sprite', 2100, ty, tree_sprite))
+                tree_w = pygame.Rect(2100 - 12, ty + 8, 24, 14)
+                f.walls.append(tree_w)
+                f.invisible_walls.append(tree_w)
+        
+        # First Garden Arch (top-layer sprite, drawn above characters - User Request #3)
+        f.garden_decorations.append(('top_sprite', 2000, 2680, 'assets/UI/garden.png'))
+        # Solid walls for the left and right pillars of the first arch (User Request #2 - invisible walls)
+        arch_wall1_l = pygame.Rect(1900 - 15, 2835 - 15, 30, 30)
+        arch_wall1_r = pygame.Rect(2100 - 15, 2835 - 15, 30, 30)
+        f.walls.append(arch_wall1_l)
+        f.walls.append(arch_wall1_r)
+        f.invisible_walls.append(arch_wall1_l)
+        f.invisible_walls.append(arch_wall1_r)
+
+        # Second Garden Arch (top-layer sprite, drawn above characters - User Request #3)
+        f.garden_decorations.append(('top_sprite', 2000, 2380, 'assets/UI/garden.png'))
+        # Solid walls for the left and right pillars of the second arch (User Request #2 - invisible walls)
+        arch_wall2_l = pygame.Rect(1900 - 15, 2495 - 15, 30, 30)
+        arch_wall2_r = pygame.Rect(2100 - 15, 2495 - 15, 30, 30)
+        f.walls.append(arch_wall2_l)
+        f.walls.append(arch_wall2_r)
+        f.invisible_walls.append(arch_wall2_l)
+        f.invisible_walls.append(arch_wall2_r)
 
         # Flowers at the Entrance to both sides (8 Flowers_5/Flowers_9 copy 2 on each side)
         entrance_flower_choices = [
@@ -2748,8 +2873,19 @@ class SchoolMap:
                 fy = rng.randint(2520, 2820)
                 rect = pygame.Rect(fx - 16, fy - 16, 32, 32)
                 if not any(rect.colliderect(w) for w in f.walls):
-                    f.garden_decorations.append(('sprite', fx, fy, rng.choice(entrance_flower_choices)))
-                    break
+                    # Filter out the specific flowers we want to remove (User Request #1)
+                    if not (fx > 1800 and fy > 2780):
+                        # Avoid placing flowers too close to trees to clear the canopy (increased to 60px)
+                        too_close = False
+                        for item in f.garden_decorations:
+                            if item[0] == 'sprite' and 'Tree' in str(item[3]):
+                                tx, ty = item[1], item[2]
+                                if ((fx - tx)**2 + (fy - ty)**2) ** 0.5 < 60:
+                                    too_close = True
+                                    break
+                        if not too_close:
+                            f.garden_decorations.append(('sprite', fx, fy, rng.choice(entrance_flower_choices)))
+                            break
         # Right side of Entrance roundabout
         for _ in range(8):
             for _ in range(20):
@@ -2757,8 +2893,17 @@ class SchoolMap:
                 fy = rng.randint(2520, 2820)
                 rect = pygame.Rect(fx - 16, fy - 16, 32, 32)
                 if not any(rect.colliderect(w) for w in f.walls):
-                    f.garden_decorations.append(('sprite', fx, fy, rng.choice(entrance_flower_choices)))
-                    break
+                    # Avoid placing flowers too close to trees to clear the canopy (increased to 60px)
+                    too_close = False
+                    for item in f.garden_decorations:
+                        if item[0] == 'sprite' and 'Tree' in str(item[3]):
+                            tx, ty = item[1], item[2]
+                            if ((fx - tx)**2 + (fy - ty)**2) ** 0.5 < 60:
+                                too_close = True
+                                break
+                    if not too_close:
+                        f.garden_decorations.append(('sprite', fx, fy, rng.choice(entrance_flower_choices)))
+                        break
 
         # Flowers around the athletic coliseum (15 flowers total)
         coliseum_flower_sprites = [
@@ -2777,10 +2922,27 @@ class SchoolMap:
                     continue
                 rect = pygame.Rect(fx - 16, fy - 16, 32, 32)
                 if not any(rect.colliderect(w) for w in f.walls):
-                    f.garden_decorations.append(('sprite', fx, fy, rng.choice(coliseum_flower_sprites)))
-                    break
+                    # Avoid placing flowers too close to trees to clear the canopy (increased to 60px)
+                    too_close = False
+                    for item in f.garden_decorations:
+                        if item[0] == 'sprite' and 'Tree' in str(item[3]):
+                            tx, ty = item[1], item[2]
+                            if ((fx - tx)**2 + (fy - ty)**2) ** 0.5 < 60:
+                                too_close = True
+                                break
+                    if not too_close:
+                        f.garden_decorations.append(('sprite', fx, fy, rng.choice(coliseum_flower_sprites)))
+                        break
 
         # Scattered campus flowers (avoiding buildings, roads, the roundabout, and the Parking Lot/Ping Pong Court)
+        path_rects = [
+            pygame.Rect(1100, 1970, 300, 60),
+            pygame.Rect(1100, 1150, 60, 820),
+            pygame.Rect(2600, 1970, 770, 60),
+            pygame.Rect(3310, 1100, 60, 870),
+            pygame.Rect(2920, 2030, 60, 760),
+            pygame.Rect(2980, 2790, 510, 60),
+        ]
         for _ in range(50):
             for _ in range(20):
                 fx = rng.randint(50, 3950)
@@ -2797,6 +2959,10 @@ class SchoolMap:
                 if any(flower_rect.colliderect(w) for w in f.walls):
                     continue
                 
+                # Exclude pedestrian paths (User Request #3)
+                if any(flower_rect.colliderect(pr) for pr in path_rects):
+                    continue
+
                 # Roundabout exclusion
                 dx = fx - 2000
                 dy = fy - 2250
@@ -2810,6 +2976,17 @@ class SchoolMap:
                 
                 # Main road exclusion
                 if fy > 2830:
+                    continue
+
+                # Avoid placing flowers too close to trees to clear the canopy (increased to 60px)
+                too_close = False
+                for item in f.garden_decorations:
+                    if item[0] == 'sprite' and 'Tree' in str(item[3]):
+                        tx, ty = item[1], item[2]
+                        if ((fx - tx)**2 + (fy - ty)**2) ** 0.5 < 60:
+                            too_close = True
+                            break
+                if too_close:
                     continue
                     
                 flower = rng.choice(coliseum_flower_sprites)
@@ -2830,15 +3007,6 @@ class SchoolMap:
             bush_idx = (bush_idx + 1) % len(bush_sprites)
             return b
 
-        # Trees along the vertical road extension
-        for ty in range(2450, 2850, 90):
-            # Left side
-            f.garden_decorations.append(('sprite', 1900, ty, tree_sprite))
-            f.walls.append(pygame.Rect(1900 - 10, ty - 10, 20, 20))
-            # Right side
-            f.garden_decorations.append(('sprite', 2100, ty, tree_sprite))
-            f.walls.append(pygame.Rect(2100 - 10, ty - 10, 20, 20))
-        
         # Parking Lot bushes (strictly outside the perimeter)
         # Top edge (above the parking lot)
         for px in range(20, 1180, 50):
@@ -2867,6 +3035,14 @@ class SchoolMap:
         for ty in range(2100, 2750, 60): # Sides
             f.garden_decorations.append(('sprite', 3100 - 25, ty, next_bush()))
             f.garden_decorations.append(('sprite', 3880 + 25, ty, next_bush()))
+
+        # Parking Lot lights (faros) - moved inside parking lot area
+        f.garden_decorations.append(('top_sprite', 0, 2150, 'assets/UI/faro.png'))
+        f.garden_decorations.append(('top_sprite', 1150, 2150, 'assets/UI/faro.png'))
+        f.garden_decorations.append(('top_sprite', 0, 2600, 'assets/UI/faro.png'))
+        f.garden_decorations.append(('top_sprite', 1150, 2600, 'assets/UI/faro.png'))
+        f.garden_decorations.append(('top_sprite', 600, 2150, 'assets/UI/faro.png'))
+        f.garden_decorations.append(('top_sprite', 600, 2600, 'assets/UI/faro.png'))
 
         # Portal: building entrance → 1F reception
         f.transitions.append(FloorTransition(
