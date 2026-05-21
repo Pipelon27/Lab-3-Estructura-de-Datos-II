@@ -6926,6 +6926,7 @@ class Game:
             "Lena": "npc_lena",
             "Aiden Parker": "npc_aiden",
             "Lena Parker": "npc_lena",
+            "Director Walsh": "npc_director",
         }
         avatar_id = avatar_ids.get(speaker, "npc_noah_carter")
 
