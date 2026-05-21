@@ -2735,6 +2735,7 @@ class SchoolMap:
         import random
         rng = random.Random(42)
         f.garden_decorations = []
+        f.garden_decorations.append(('sprite', 1130, 1110, 'ME_Singles_Garden_32x32_Statue_Putto_1.png'))
         
         # Tree sprite
         tree_sprite = 'ME_Singles_City_Props_32x32_Tree_12.png'
@@ -2809,8 +2810,8 @@ class SchoolMap:
 
         # Trees around the main road (6 Tree_3 total)
         for tx in (1350, 1550, 1750, 2250, 2450, 2650):
-            f.garden_decorations.append(('sprite', tx, 2800, 'ME_Singles_Villas_32x32_Tree_3.png'))
-            tree_w = pygame.Rect(tx - 12, 2800 + 8, 24, 14)
+            f.garden_decorations.append(('sprite', tx, 2765, 'ME_Singles_Villas_32x32_Tree_3.png'))
+            tree_w = pygame.Rect(tx - 12, 2765 + 8, 24, 14)
             f.walls.append(tree_w)
             f.invisible_walls.append(tree_w)
 
@@ -2843,23 +2844,9 @@ class SchoolMap:
         
         # First Garden Arch (top-layer sprite, drawn above characters - User Request #3)
         f.garden_decorations.append(('top_sprite', 2000, 2680, 'assets/UI/garden.png'))
-        # Solid walls for the left and right pillars of the first arch (User Request #2 - invisible walls)
-        arch_wall1_l = pygame.Rect(1900 - 15, 2835 - 15, 30, 30)
-        arch_wall1_r = pygame.Rect(2100 - 15, 2835 - 15, 30, 30)
-        f.walls.append(arch_wall1_l)
-        f.walls.append(arch_wall1_r)
-        f.invisible_walls.append(arch_wall1_l)
-        f.invisible_walls.append(arch_wall1_r)
 
         # Second Garden Arch (top-layer sprite, drawn above characters - User Request #3)
         f.garden_decorations.append(('top_sprite', 2000, 2380, 'assets/UI/garden.png'))
-        # Solid walls for the left and right pillars of the second arch (User Request #2 - invisible walls)
-        arch_wall2_l = pygame.Rect(1900 - 15, 2495 - 15, 30, 30)
-        arch_wall2_r = pygame.Rect(2100 - 15, 2495 - 15, 30, 30)
-        f.walls.append(arch_wall2_l)
-        f.walls.append(arch_wall2_r)
-        f.invisible_walls.append(arch_wall2_l)
-        f.invisible_walls.append(arch_wall2_r)
 
         # Flowers at the Entrance to both sides (8 Flowers_5/Flowers_9 copy 2 on each side)
         entrance_flower_choices = [
@@ -3040,7 +3027,7 @@ class SchoolMap:
         f.garden_decorations.append(('top_sprite', 0, 2150, 'assets/UI/faro.png'))
         f.garden_decorations.append(('top_sprite', 1150, 2150, 'assets/UI/faro.png'))
         f.garden_decorations.append(('top_sprite', 0, 2600, 'assets/UI/faro.png'))
-        f.garden_decorations.append(('top_sprite', 1150, 2600, 'assets/UI/faro.png'))
+        f.garden_decorations.append(('top_sprite', 1150, 2760, 'assets/UI/faro.png'))
         f.garden_decorations.append(('top_sprite', 600, 2150, 'assets/UI/faro.png'))
         f.garden_decorations.append(('top_sprite', 600, 2600, 'assets/UI/faro.png'))
 

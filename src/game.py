@@ -430,7 +430,7 @@ class Game:
         noah_carter = self.npc_manager.get_npc_by_id("npc_noah_carter")
         if noah_carter:
             noah_carter.current_floor = FLOOR_CAMPUS
-            noah_carter.rect.center = (2000, 2650)
+            noah_carter.rect.center = (2000, 2672)
             noah_carter.ai_enabled = False
             noah_carter.ignore_schedule = True
             noah_carter.show_name = True
@@ -5461,7 +5461,7 @@ class Game:
         noah = self.npc_manager.get_npc_by_id("npc_noah_carter")
         if not noah or noah.current_floor != FLOOR_CAMPUS:
             return
-        if abs(noah.rect.centerx - 2000) > 80 or abs(noah.rect.centery - 2650) > 80:
+        if abs(noah.rect.centerx - 2000) > 80 or abs(noah.rect.centery - 2672) > 80:
             return
         noah.direction = Direction.DOWN
         noah.state = "idle"
