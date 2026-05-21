@@ -1216,12 +1216,15 @@ class Floor:
     def _draw_ping_pong_table(self, screen: pygame.Surface, rect: pygame.Rect):
         """Draw a top-down ping pong table."""
         pygame.draw.rect(screen, (24, 105, 40), rect)
-        pygame.draw.rect(screen, WHITE, rect, 3)
-        pygame.draw.line(screen, WHITE, (rect.centerx, rect.top + 3), (rect.centerx, rect.bottom - 3), 3)
-        pygame.draw.line(screen, WHITE, (rect.left + 3, rect.centery), (rect.right - 3, rect.centery), 2)
-        net = pygame.Rect(rect.centerx - 3, rect.top - 5, 6, rect.height + 10)
+        pygame.draw.rect(screen, WHITE, rect, 4)
+        # Vertical center line (net line)
+        pygame.draw.line(screen, WHITE, (rect.centerx, rect.top + 4), (rect.centerx, rect.bottom - 4), 4)
+        # Horizontal center line
+        pygame.draw.line(screen, WHITE, (rect.left + 4, rect.centery), (rect.right - 4, rect.centery), 3)
+        # Net (more visible)
+        net = pygame.Rect(rect.centerx - 4, rect.top - 5, 8, rect.height + 10)
         pygame.draw.rect(screen, (225, 235, 245), net)
-        pygame.draw.rect(screen, (55, 65, 75), net, 1)
+        pygame.draw.rect(screen, (55, 65, 75), net, 2)
 
     def _draw_bookshelf(self, screen: pygame.Surface, rect: pygame.Rect):
         """Draw a compact library bookshelf with colored books."""
@@ -2736,6 +2739,10 @@ class SchoolMap:
         rng = random.Random(42)
         f.garden_decorations = []
         f.garden_decorations.append(('sprite', 1130, 1110, 'ME_Singles_Garden_32x32_Statue_Putto_1.png'))
+        # Add invisible collision for the statue
+        statue_collision = pygame.Rect(1130 - 16, 1110 - 16, 32, 32)
+        f.walls.append(statue_collision)
+        f.invisible_walls.append(statue_collision)
         
         # Tree sprite
         tree_sprite = 'ME_Singles_City_Props_32x32_Tree_12.png'
