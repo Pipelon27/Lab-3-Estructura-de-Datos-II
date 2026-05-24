@@ -861,7 +861,7 @@ class UI:
             ("Talk to NPCs to uncover the Smile Club.", ""),
             ("Your actions affect your reputation!", ""),
             ("Help others during 'bad day' events.", ""),
-            ("Multiple endings based on your choices.", ""),
+            ("Discover the truth behind the Smile Club.", ""),
         ]
 
         y = 100
@@ -896,66 +896,91 @@ class UI:
     # ── game over / victory ───────────────────────────────────
 
     def draw_game_over(self, screen: pygame.Surface, ending: Ending):
-        """Full-screen ending screen."""
+        """Full-screen game over screen."""
         screen.fill(UI_BG)
         cx = SCREEN_WIDTH // 2
 
-        colour_map = {
-            Ending.GOOD:    NOTIF_SUCCESS,
-            Ending.NEUTRAL: NOTIF_WARNING,
-            Ending.DARK:    NOTIF_ERROR,
-        }
-        title_map = {
-            Ending.GOOD:    "THE TRUTH PREVAILS",
-            Ending.NEUTRAL: "A FRAGILE PEACE",
-            Ending.DARK:    "BEHIND THE SMILE",
-        }
-        desc_map = {
-            Ending.GOOD: (
-                "You exposed the Smile Club, helped the victims, and\n"
-                "changed Ravenside High for the better.\n\n"
-                "The director was removed. Students finally feel safe.\n"
-                "Every voice mattered — including yours."
-            ),
-            Ending.NEUTRAL: (
-                "The Smile Club was weakened but not destroyed.\n"
-                "Some students still suffer in silence.\n\n"
-                "You made a difference, but the fight isn't over."
-            ),
-            Ending.DARK: (
-                "The Smile Club tightened its grip.\n"
-                "Fear rules the halls of Ravenside High.\n\n"
-                "Sometimes doing nothing is the worst choice of all."
-            ),
-        }
+        # Draw a beautiful, clean Game Over screen
+        title_surf = self.font_title.render("GAME OVER", True, NOTIF_ERROR)
+        screen.blit(title_surf, title_surf.get_rect(center=(cx, 260)))
 
-        col = colour_map.get(ending, WHITE)
-        screen.blit(
-            self.font_title.render(title_map.get(ending, "THE END"), True, col),
-            self.font_title.render(title_map.get(ending, "THE END"), True, col)
-            .get_rect(center=(cx, 160)),
-        )
-
-        # Multi-line description
-        desc = desc_map.get(ending, "")
-        y = 260
-        for line in desc.split("\n"):
-            surf = self.font_hud_md.render(line, True, UI_TEXT)
-            screen.blit(surf, surf.get_rect(center=(cx, y)))
-            y += 28
-
-        # Ending label
-        y += 20
-        screen.blit(
-            self.font_menu.render(f"— {ending.value.upper()} ENDING —", True, col),
-            self.font_menu.render(f"— {ending.value.upper()} ENDING —", True, col)
-            .get_rect(center=(cx, y)),
-        )
+        desc_surf = self.font_hud_md.render("You were defeated. The Smile Club remains in the shadows.", True, UI_TEXT)
+        screen.blit(desc_surf, desc_surf.get_rect(center=(cx, 340)))
 
         screen.blit(
             self.font_hint.render("Press ESC to return to menu", True, UI_TEXT_DIM),
-            (cx - 100, SCREEN_HEIGHT - 40),
+            self.font_hint.render("Press ESC to return to menu", True, UI_TEXT_DIM).get_rect(center=(cx, SCREEN_HEIGHT - 60))
         )
+
+    def draw_victory_credits(self, screen: pygame.Surface, game):
+        """Full-screen victory credits screen."""
+        screen.fill(UI_BG)
+        cx = SCREEN_WIDTH // 2
+        
+        # Title of the game
+        title_surf = self.font_title.render("BEHIND THE SMILE", True, UI_ACCENT)
+        screen.blit(title_surf, title_surf.get_rect(center=(cx, 80)))
+        
+        # Subtitle
+        sub_surf = self.font_hud_lg.render("— THE TRUTH HAS BEEN REVEALED —", True, NOTIF_SUCCESS)
+        screen.blit(sub_surf, sub_surf.get_rect(center=(cx, 130)))
+        
+        # Credits panel
+        panel_rect = pygame.Rect(cx - 300, 170, 600, 420)
+        pygame.draw.rect(screen, UI_PANEL, panel_rect, border_radius=12)
+        pygame.draw.rect(screen, UI_BORDER, panel_rect, 2, border_radius=12)
+        
+        credits_lines = [
+            ("DEVELOPED BY", ""),
+            ("Student Group", "Estructura de Datos II"),
+            ("", ""),
+            ("CAST & ROLES", ""),
+            ("Aiden Parker", "Lead Investigator"),
+            ("Lena Parker", "Lead Programmer & Hacker"),
+            ("Director Walsh", "Ravenside High Principal"),
+            ("Ava Thompson", "Smile Club Planner"),
+            ("Noah Carter", "Smile Club Liaison"),
+            ("Marcus Green", "Smile Club Rumors"),
+            ("", ""),
+            ("SPECIAL THANKS", ""),
+            ("Tech Club, Athletes, Academics,", "Rebels & Outsiders"),
+            ("And You,", "For revealing the truth!"),
+        ]
+        
+        y_offset = panel_rect.y + 25
+        for col1, col2 in credits_lines:
+            if col1 == "" and col2 == "":
+                y_offset += 14
+                continue
+            
+            if col2 == "":
+                # Section Header
+                surf = self.font_hud_md.render(col1, True, UI_ACCENT)
+                screen.blit(surf, surf.get_rect(center=(cx, y_offset)))
+                y_offset += 24
+            else:
+                # Key - Value
+                surf1 = self.font_hud_sm.render(col1, True, UI_TEXT)
+                surf2 = self.font_hud_sm.render(col2, True, UI_TEXT_DIM)
+                screen.blit(surf1, (panel_rect.x + 40, y_offset))
+                screen.blit(surf2, (panel_rect.right - 40 - surf2.get_width(), y_offset))
+                y_offset += 20
+                
+        # Draw Return to Menu Button
+        btn_w, btn_h = 240, 45
+        btn_rect = pygame.Rect(cx - btn_w // 2, 615, btn_w, btn_h)
+        mouse_pos = pygame.mouse.get_pos()
+        hover = btn_rect.collidepoint(mouse_pos)
+        
+        bg_col = (100, 50, 25) if hover else (50, 30, 18)
+        border_col = UI_ACCENT if hover else (100, 75, 45)
+        text_col = WHITE if hover else UI_TEXT
+        
+        pygame.draw.rect(screen, bg_col, btn_rect, border_radius=8)
+        pygame.draw.rect(screen, border_col, btn_rect, 2, border_radius=8)
+        
+        btn_text = self.font_hud_md.render("Volver al Menú", True, text_col)
+        screen.blit(btn_text, btn_text.get_rect(center=btn_rect.center))
 
     # ── wallet ui ─────────────────────────────────────────────
 

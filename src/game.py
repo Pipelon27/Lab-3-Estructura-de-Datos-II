@@ -1749,6 +1749,7 @@ class Game:
             GameState.PAUSED:           self._keys_paused,
             GameState.MISSION_SELECT:   self._keys_mission_select,
             GameState.GAME_OVER:        self._keys_game_over,
+            GameState.VICTORY:          self._keys_victory,
         }.get(self.state)
         if handler:
             handler(event)
@@ -1885,6 +1886,19 @@ class Game:
     def _keys_game_over(self, event: pygame.event.Event):
         if event.key == KEY_PAUSE:
             self.running = False
+
+    def _keys_victory(self, event: pygame.event.Event):
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            cx = SCREEN_WIDTH // 2
+            btn_w, btn_h = 240, 45
+            btn_rect = pygame.Rect(cx - btn_w // 2, 615, btn_w, btn_h)
+            if btn_rect.collidepoint(event.pos):
+                self.return_to_menu = True
+                self.running = False
+        elif event.type == pygame.KEYDOWN:
+            if event.key in (pygame.K_ESCAPE, pygame.K_RETURN, pygame.K_SPACE):
+                self.return_to_menu = True
+                self.running = False
 
     def _get_mission_select_list(self):
         return [
@@ -5072,6 +5086,7 @@ class Game:
             ),
             GameState.MAINFRAME:         lambda: (self._draw_world(), self.ui.draw_mainframe(self.screen, self)),
             GameState.GAME_OVER:         lambda: self.ui.draw_game_over(self.screen, self.reputation.calculate_ending()),
+            GameState.VICTORY:           lambda: self.ui.draw_victory_credits(self.screen, self),
             GameState.MAP:               lambda: self._draw_map(),
 
             GameState.INTRO_CINEMATIC:    lambda: self._draw_cinematic(),
@@ -6500,6 +6515,7 @@ class Game:
                     obj.progress = obj.required
                 self.mission_manager.completed_ids.add("mission_final_showdown")
             self.ui.show_notification("Smile Club storyline resolved.", NOTIF_SUCCESS, 5.0)
+            self.state = GameState.VICTORY
 
     def _draw_final_reveal_dialogue(self):
         if self._final_reveal_index < len(self._final_reveal_lines):
