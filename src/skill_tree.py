@@ -375,12 +375,12 @@ def build_aiden_tree() -> SkillTree:
         cost=10, effect={"attack_damage": 5},
     ))
     strength.add_child(SkillNode(
-        "Combo Master", "Chain hits faster",
-        cost=20, effect={"combo_speed": 2},
+        "Fighter Stance", "Combat stance that increases attack damage",
+        cost=20, effect={"attack_damage": 10},
     ))
     strength.add_child(SkillNode(
-        "Knockback", "Push enemies back on hit",
-        cost=20, effect={"knockback_force": 3},
+        "Warrior Might", "Unleash power to heavily boost attack damage",
+        cost=20, effect={"attack_damage": 15},
     ))
     root.add_child(strength)
 
@@ -392,8 +392,8 @@ def build_aiden_tree() -> SkillTree:
         cost=10, effect={"sprint_speed": 2},
     ))
     athleticism.add_child(SkillNode(
-        "Dodge Roll", "Roll to evade attacks",
-        cost=20, effect={"dodge_distance": 3},
+        "Fleet Footed", "Increases base movement speed",
+        cost=20, effect={"speed": 1},
     ))
     athleticism.add_child(SkillNode(
         "Stamina+", "Increase max stamina",
@@ -405,16 +405,16 @@ def build_aiden_tree() -> SkillTree:
     popularity = SkillNode("Popularity", "Social influence branch", cost=0)
     popularity.unlocked = True
     popularity.add_child(SkillNode(
-        "Team Leader", "+reputation gain with Athletes",
-        cost=10, effect={"rep_athletes_bonus": 5},
+        "Iron Will", "Boosts maximum health",
+        cost=10, effect={"max_health": 30},
     ))
     popularity.add_child(SkillNode(
-        "Crowd Support", "NPCs may help in combat",
-        cost=20, effect={"crowd_chance": 10},
+        "Second Wind", "Significantly increases maximum stamina",
+        cost=20, effect={"max_stamina": 30},
     ))
     popularity.add_child(SkillNode(
-        "Influence Aura", "Nearby NPCs respect you more",
-        cost=30, effect={"respect_aura": 5},
+        "Battle Rush", "Improves combat focus, boosting damage and speed",
+        cost=30, effect={"attack_damage": 5, "speed": 1},
     ))
     root.add_child(popularity)
 
@@ -424,59 +424,59 @@ def build_aiden_tree() -> SkillTree:
 def build_lena_tree() -> SkillTree:
     """Construct Lena's skill tree.
 
-    Branches: Hacking, Intelligence, Social Engineering.
+    Branches: Cyber-Combat, Intelligence, Agility.
     """
     root = SkillNode("Lena Skills", "Lena's abilities")
 
-    # ── Hacking ──
-    hacking = SkillNode("Hacking", "Digital infiltration branch", cost=0)
-    hacking.unlocked = True
-    hacking.add_child(SkillNode(
-        "Faster Cracking", "Reduce hack minigame timer",
-        cost=10, effect={"hack_time_bonus": 3},
+    # ── Cyber-Combat ──
+    combat = SkillNode("Cyber-Combat", "Technological defense branch", cost=0)
+    combat.unlocked = True
+    combat.add_child(SkillNode(
+        "Fast Strike", "Quick, calculated jab that increases damage",
+        cost=10, effect={"attack_damage": 5},
     ))
-    hacking.add_child(SkillNode(
-        "Security Override", "Bypass tougher locks",
-        cost=20, effect={"hack_difficulty_reduction": 1},
+    combat.add_child(SkillNode(
+        "Cyber Strike", "Upgrades weapons to increase attack damage",
+        cost=20, effect={"attack_damage": 10},
     ))
-    hacking.add_child(SkillNode(
-        "Camera Control", "Remote-view security cameras",
-        cost=20, effect={"camera_range": 2},
+    combat.add_child(SkillNode(
+        "System Overload", "Releases raw power to maximize attack damage",
+        cost=20, effect={"attack_damage": 15},
     ))
-    root.add_child(hacking)
+    root.add_child(combat)
 
     # ── Intelligence ──
     intelligence = SkillNode("Intelligence", "Knowledge & analysis branch", cost=0)
     intelligence.unlocked = True
     intelligence.add_child(SkillNode(
-        "Better Clues", "Highlight hidden interactables",
-        cost=10, effect={"clue_radius": 50},
-    ))
-    intelligence.add_child(SkillNode(
-        "Puzzle Solver", "Extra hints in puzzles",
-        cost=20, effect={"puzzle_hints": 1},
-    ))
-    intelligence.add_child(SkillNode(
         "XP Boost", "Earn 20% more XP",
-        cost=20, effect={"xp_multiplier": 20},
+        cost=10, effect={"xp_multiplier": 20},
+    ))
+    intelligence.add_child(SkillNode(
+        "Study Habits", "Improves maximum stamina",
+        cost=20, effect={"max_stamina": 20},
+    ))
+    intelligence.add_child(SkillNode(
+        "Deep Focus", "Further increases maximum stamina",
+        cost=20, effect={"max_stamina": 30},
     ))
     root.add_child(intelligence)
 
-    # ── Social Engineering ──
-    social = SkillNode("Social Engineering", "Manipulation & persuasion", cost=0)
-    social.unlocked = True
-    social.add_child(SkillNode(
-        "Better Trades", "Improved trade values",
-        cost=10, effect={"trade_bonus": 10},
+    # ── Agility ──
+    agility = SkillNode("Agility", "Movement & vitality branch", cost=0)
+    agility.unlocked = True
+    agility.add_child(SkillNode(
+        "Quick Step", "Increases normal walking speed",
+        cost=10, effect={"speed": 1},
     ))
-    social.add_child(SkillNode(
-        "Persuasion", "Unlock new dialogue options",
-        cost=20, effect={"persuasion_level": 1},
+    agility.add_child(SkillNode(
+        "Sprint Boost", "Increases speed while sprinting",
+        cost=20, effect={"sprint_speed": 2},
     ))
-    social.add_child(SkillNode(
-        "Lie Detection", "See NPC private face sooner",
-        cost=30, effect={"trust_reveal_threshold": -15},
+    agility.add_child(SkillNode(
+        "Vitality", "Improves maximum health",
+        cost=30, effect={"max_health": 30},
     ))
-    root.add_child(social)
+    root.add_child(agility)
 
     return SkillTree(root)

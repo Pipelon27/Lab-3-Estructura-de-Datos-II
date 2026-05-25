@@ -838,22 +838,14 @@ class UI:
             ("Pause",        "ESC"),
         ]
 
-        if character == Character.AIDEN:
-            lines += [
-                ("", ""),
-                ("── COMBAT (Aiden) ──", ""),
-                ("Heavy Attack", "U"),
-                ("Block",        "L"),
-                ("Dash",         "SHIFT"),
-            ]
-        else:
-            lines += [
-                ("", ""),
-                ("── HACKING (Lena) ──", ""),
-                ("Start Hack",      "F"),
-                ("Type characters",   "keyboard"),
-                ("Abort",            "ESC"),
-            ]
+        lines += [
+            ("", ""),
+            ("── COMBAT ──", ""),
+            ("Light Attack", "J"),
+            ("Heavy Attack", "U"),
+            ("Block",        "L"),
+            ("Dash",         "SPACE"),
+        ]
 
         lines += [
             ("", ""),
@@ -932,7 +924,8 @@ class UI:
         
         credits_lines = [
             ("DEVELOPED BY", ""),
-            ("Student Group", "Estructura de Datos II"),
+            ("Jairo Molina", "Santiago Molina"),
+            ("Santiago Florez", "Jonathan Calles"),
             ("", ""),
             ("CAST & ROLES", ""),
             ("Aiden Parker", "Lead Investigator"),

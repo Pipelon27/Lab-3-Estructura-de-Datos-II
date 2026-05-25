@@ -39,8 +39,6 @@ from src.inventory  import Inventory
 from src.mission    import MissionManager, EventQueue
 from src.reputation import ReputationSystem
 from src.combat     import CombatSystem
-from src.hack       import HackingMinigame
-from src.trade      import TradeSystem
 from src.dialogue   import DialogueSystem
 from src.ui         import UI
 from src.world_map  import WorldMap
@@ -460,8 +458,6 @@ class Game:
         self.mission_manager.is_host = self.is_host
         self.mission_manager.load_missions_from_json()
         self.combat_system   = CombatSystem()
-        self.hacking_game    = HackingMinigame()
-        self.trade_system    = TradeSystem()
         self.dialogue_system = DialogueSystem()
         self.dialogue_system.game = self
         self.dialogue_system.load_dialogues_from_json()
@@ -1403,15 +1399,9 @@ class Game:
                 if not npc:  # Only dash if not interacting
                     self.player.start_dash()
 
-        # RB = Light Attack (Aiden) or Hack (Lena)
+        # RB = Light Attack
         if controller.is_attack_pressed():
-            if self.character == Character.AIDEN:
-                self.player.start_attack()
-            elif self.character == Character.LENA:
-                hackable = self._get_hackable()
-                if hackable:
-                    self.hacking_game.start(hackable, self.player)
-                    self.state = GameState.HACKING
+            self.player.start_attack()
 
     def _handle_controller_paused(self, controller):
         """Handle controller input during PAUSED state."""
@@ -1836,13 +1826,7 @@ class Game:
             self.wallet_focus_item = None
         elif event.key == KEY_PHONE:
             self.phone.toggle_phone()
-        elif event.key == KEY_HACK and self.character == Character.LENA:
-            hackable = self._get_hackable()
-            if hackable:
-                self.hacking_game.start(hackable, self.player)
-                self.state = GameState.HACKING
-        elif (event.key == KEY_LIGHT_ATTACK
-              and (self.character == Character.AIDEN or getattr(self, "_final_reveal_finished", False))):
+        elif event.key == KEY_LIGHT_ATTACK:
             self.player.start_attack()
         
 
@@ -1885,6 +1869,7 @@ class Game:
 
     def _keys_game_over(self, event: pygame.event.Event):
         if event.key == KEY_PAUSE:
+            self.return_to_menu = True
             self.running = False
 
     def _keys_victory(self, event: pygame.event.Event):
@@ -3020,20 +3005,7 @@ class Game:
                     self.reputation.reputation_score = max(0, self.reputation.reputation_score - 10)
             # When player dismisses the end screen, finish the minigame and return to playing
 
-        if self.state == GameState.HACKING:
-            result = self.hacking_game.update(dt)
-            if result is not None:
-                self.state = GameState.PLAYING
-                if result == "success":
-                    self.player.gain_xp(30)
-                    self.ui.show_notification("Hack successful! +30 XP", NOTIF_SUCCESS)
-                    self.reputation.record_cyberbully_intercept()
-                    # Advance hack objectives
-                    tid = self.hacking_game.target_info.get("id", "")
-                    self.mission_manager.advance_objective_event("hack_target", tid)
-                else:
-                    self.ui.show_notification("Hack failed!", NOTIF_ERROR)
-        elif self.state == GameState.DIALOGUE:
+        if self.state == GameState.DIALOGUE:
             result = self.dialogue_system.update()
             if result is not None:
                 self.state = GameState.PLAYING
@@ -3043,10 +3015,6 @@ class Game:
             self.social_dialogue_manager.update(dt)
             # Check if interaction is finished
             if self.social_dialogue_manager.get_state().name == "IDLE":
-                self.state = GameState.PLAYING
-        elif self.state == GameState.TRADING:
-            result = self.trade_system.update()
-            if result is not None:
                 self.state = GameState.PLAYING
 
         if self.state in (GameState.PLAYING, GameState.COMBAT, GameState.DIALOGUE, GameState.SOCIAL_INTERACTION, GameState.PINGPONG, GameState.BASKETBALL):
@@ -5047,12 +5015,12 @@ class Game:
         draw_table = {
             GameState.PLAYING:           self._draw_world,
             GameState.COMBAT:            lambda: (self._draw_world(), self.combat_system.draw(self.screen, self.camera)),
-            GameState.HACKING:           lambda: self.hacking_game.draw(self.screen),
+            GameState.HACKING:           lambda: None,
             GameState.DIALOGUE:          lambda: (self._draw_world(), self.dialogue_system.draw(self.screen)),
             GameState.SOCIAL_INTERACTION: lambda: (self._draw_world(), self.social_ui.draw(self.screen)),
             GameState.PINGPONG:          lambda: self.pingpong.draw(self.screen),
             GameState.BASKETBALL:        lambda: (self._draw_world(), self.basketball.draw(self.screen, self.camera)),
-            GameState.TRADING:           lambda: (self._draw_world(), self.trade_system.draw(self.screen)),
+            GameState.TRADING:           lambda: self._draw_world(),
             GameState.PAUSED:            lambda: (
                 (self._draw_world(), self.basketball.draw(self.screen, self.camera)) if getattr(self, 'previous_state', None) == GameState.BASKETBALL else self._draw_world(),
                 self.ui.draw_pause_menu(self.screen, getattr(self, 'pause_sel', 0), self.pause_options)
