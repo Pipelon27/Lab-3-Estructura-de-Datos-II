@@ -563,9 +563,18 @@
             "id": "ava2_q2",
             "speaker": "Player",
             "text": "[Give Hacked Credentials] Alan Chen gave me these hacked high school system credentials.",
-            "consequences": {"give_hacked_credentials": true},
+            "consequences": {},
             "is_player_choice": true,
-            "children": []
+            "children": [
+              {
+                "id": "ava2_r2",
+                "speaker": "Ava Thompson",
+                "text": "Great! What is the username and password for the admin terminal?",
+                "consequences": {"open_give_credentials_ui": true},
+                "is_player_choice": false,
+                "children": []
+              }
+            ]
           }
         ]
       }

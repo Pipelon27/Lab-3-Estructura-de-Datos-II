@@ -239,6 +239,7 @@ class Phone:
         self.active_chat: Optional[str]    = None   # npc_id
         self.active_task: Optional[object] = None
         self.active_post: Optional[SocialPost] = None
+        self.selected_social_post_index = 0
 
         self._hud_anchor: Optional[pygame.Rect] = None
         self._pending_teleport: Optional[tuple] = None
@@ -403,6 +404,7 @@ class Phone:
         
         # Clear notifications for the opened app
         if app == PhoneApp.SOCIAL:
+            self.selected_social_post_index = 0
             for p in self.social_posts:
                 if not p.is_read:
                     p.is_read = True
@@ -1210,10 +1212,31 @@ class Phone:
                  (self.social_filter == "mentions" and
                   player in [m.lower() for m in p.mentions])]
 
+        # Auto-scroll to keep selected post visible
+        if posts:
+            self.selected_social_post_index = max(0, min(self.selected_social_post_index, len(posts) - 1))
+            accum_y = 0
+            for idx, post in enumerate(posts):
+                text_h = self._measure_wrap_text(post.content, self._f_body, cw - _PAD * 2 - 54, 14)
+                PH = 16 + text_h + 28
+                has_img = post.image_tag and post.image_tag in self.social_images
+                if has_img:
+                    PH += 210 + 12
+                
+                if idx == self.selected_social_post_index:
+                    viewport_h = ch - (y - cy) - 20
+                    current_scroll = self._scroll[PhoneApp.SOCIAL]
+                    if accum_y < current_scroll:
+                        self._scroll[PhoneApp.SOCIAL] = accum_y
+                    elif accum_y + PH > current_scroll + viewport_h:
+                        self._scroll[PhoneApp.SOCIAL] = accum_y + PH - viewport_h
+                    break
+                accum_y += PH + _GAP
+
         sc = self._scroll[PhoneApp.SOCIAL]
         yoff = y - sc
 
-        for post in posts:
+        for index, post in enumerate(posts):
             text_h = self._measure_wrap_text(post.content, self._f_body, cw - _PAD * 2 - 54, 14)
             PH = 16 + text_h + 28
             
@@ -1228,7 +1251,11 @@ class Phone:
                 break
 
             card = pygame.Rect(cx + _PAD, yoff, cw - _PAD * 2, PH)
-            self._rrect(s, PH_CARD, card, 0, PH_BD, 1) # Flat Twitter-like cards
+            is_selected = (index == self.selected_social_post_index)
+            if is_selected:
+                self._rrect(s, PH_CARD, card, 0, (255, 0, 0), 2)
+            else:
+                self._rrect(s, PH_CARD, card, 0, PH_BD, 1) # Flat Twitter-like cards
 
             # Profile Pic (Left)
             av_radius = 16
@@ -1656,7 +1683,10 @@ class Phone:
 
         if controller.is_cancel_pressed():
             if self._view == "app":
-                self.go_home()
+                if self.current_app == PhoneApp.SOCIAL and self.active_post is not None:
+                    self.active_post = None
+                else:
+                    self.go_home()
             elif self._view == "map":
                 self._map_close_to_home()
             else:
@@ -1683,11 +1713,57 @@ class Phone:
                 self._start_app_splash(self.selected_app)
                 
         elif self._view == "app":
-            menu_v = controller.get_menu_direction()
-            if menu_v == -1:  # up
-                self._scroll[self.current_app] = max(0, self._scroll[self.current_app] - 30)
-            elif menu_v == 1: # down
-                self._scroll[self.current_app] += 30
+            if self.current_app == PhoneApp.SOCIAL:
+                # Switching tabs using LB/RB in Social App
+                # LB is 4, RB is 5
+                filters_order = ["all", "anonymous", "mentions"]
+                if controller.is_button_pressed(4):  # LB
+                    idx = filters_order.index(self.social_filter)
+                    self.social_filter = filters_order[(idx - 1) % len(filters_order)]
+                    self._scroll[PhoneApp.SOCIAL] = 0
+                    self.selected_social_post_index = 0
+                elif controller.is_button_pressed(5):  # RB
+                    idx = filters_order.index(self.social_filter)
+                    self.social_filter = filters_order[(idx + 1) % len(filters_order)]
+                    self._scroll[PhoneApp.SOCIAL] = 0
+                    self.selected_social_post_index = 0
+
+                # Right joystick scrolling
+                if abs(controller.right_stick_y) > 0.05:
+                    self._scroll[PhoneApp.SOCIAL] = max(0, self._scroll[PhoneApp.SOCIAL] + int(controller.right_stick_y * 10))
+                
+                if self.active_post is None:
+                    # In list view: D-pad navigates posts, A confirms
+                    player = self.player_name
+                    posts = [p for p in self.social_posts if
+                             self.social_filter == "all" or
+                             (self.social_filter == "anonymous" and p.is_anonymous) or
+                             (self.social_filter == "mentions" and
+                              player in [m.lower() for m in p.mentions])]
+                    
+                    menu_v = controller.get_menu_direction()
+                    if posts:
+                        if menu_v == -1: # Up
+                            self.selected_social_post_index = max(0, self.selected_social_post_index - 1)
+                        elif menu_v == 1: # Down
+                            self.selected_social_post_index = min(len(posts) - 1, self.selected_social_post_index + 1)
+                            
+                        if controller.is_confirm_pressed():
+                            idx = max(0, min(self.selected_social_post_index, len(posts) - 1))
+                            self.active_post = posts[idx]
+                else:
+                    # In detail view: D-pad scrolls
+                    menu_v = controller.get_menu_direction()
+                    if menu_v == -1: # Up
+                        self._scroll[self.current_app] = max(0, self._scroll[self.current_app] - 30)
+                    elif menu_v == 1: # Down
+                        self._scroll[self.current_app] += 30
+            else:
+                menu_v = controller.get_menu_direction()
+                if menu_v == -1:  # up
+                    self._scroll[self.current_app] = max(0, self._scroll[self.current_app] - 30)
+                elif menu_v == 1: # down
+                    self._scroll[self.current_app] += 30
 
     def handle_input(self, event: pygame.event.Event) -> bool:
         """Return True if event was consumed."""
@@ -1807,8 +1883,16 @@ class Phone:
                                 post._liked = True
                                 post.likes += 1
                             return True
+                    player = self.player_name
+                    posts = [p for p in self.social_posts if
+                             self.social_filter == "all" or
+                             (self.social_filter == "anonymous" and p.is_anonymous) or
+                             (self.social_filter == "mentions" and
+                              player in [m.lower() for m in p.mentions])]
                     for rect, post in self._post_rects:
                         if rect.collidepoint((lx, ly)):
+                            if post in posts:
+                                self.selected_social_post_index = posts.index(post)
                             self.active_post = post
                             return True
 

@@ -100,6 +100,7 @@ class Game:
         self.selected_yearbook_group = "Athletes"
         self.yearbook_scroll_offset = 0
         self.pause_sel      = 0
+        self.give_credentials_button_hovered = False
 
         # Transition cooldown (prevents rapid re-triggering)
         self._transition_cooldown: float = 0.0
@@ -1091,6 +1092,15 @@ class Game:
                         elif not self.ui.wallet_bg_rect.collidepoint(event.pos) and not self.ui.wallet_bill_rect.collidepoint(event.pos):
                             self.state = GameState.PLAYING
                             self.wallet_focus_item = None
+                elif self.state == GameState.GIVE_CREDENTIALS:
+                    cx, cy = SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2
+                    btn_w = 1100
+                    btn_h = 60
+                    btn_x = cx - btn_w // 2
+                    btn_y = cy + 180
+                    button_rect = pygame.Rect(btn_x, btn_y, btn_w, btn_h)
+                    if button_rect.collidepoint(event.pos):
+                        self._confirm_give_credentials()
             elif event.type == pygame.MOUSEBUTTONUP:
                 if self.state == GameState.BASKETBALL:
                     self.basketball.handle_input(event)
@@ -1239,6 +1249,8 @@ class Game:
             self._handle_controller_hacking(controller)
         elif self.state == GameState.WALLET:
             self._handle_controller_wallet(controller)
+        elif self.state == GameState.GIVE_CREDENTIALS:
+            self._handle_controller_give_credentials(controller)
         elif self.state == GameState.MAP:
             self._handle_controller_map(controller)
         elif self.state == GameState.SOCIAL_INTERACTION:
@@ -1486,6 +1498,16 @@ class Game:
             elif controller.is_button_pressed(XBOX_RB):
                 self.yearbook_scroll_offset += 1
                 print(f"[Yearbook] Controller scrolled DOWN. Offset: {self.yearbook_scroll_offset}")
+
+    def _handle_controller_give_credentials(self, controller):
+        """Handle controller input during GIVE_CREDENTIALS state."""
+        if controller.is_cancel_pressed():
+            self.state = GameState.PLAYING
+            return
+
+        if controller.is_confirm_pressed():
+            self._confirm_give_credentials()
+            return
 
     def _handle_controller_map(self, controller):
         """Handle controller input during MAP state."""
@@ -1736,6 +1758,7 @@ class Game:
             GameState.INVENTORY_SCREEN: lambda e: self.inventory.handle_input(e),
             GameState.SKILL_TREE_SCREEN:lambda e: self.player.skill_tree.handle_input(e, self.player),
             GameState.WALLET:           self._keys_wallet,
+            GameState.GIVE_CREDENTIALS: self._keys_give_credentials,
             GameState.PAUSED:           self._keys_paused,
             GameState.MISSION_SELECT:   self._keys_mission_select,
             GameState.GAME_OVER:        self._keys_game_over,
@@ -1764,6 +1787,13 @@ class Game:
                 print(f"[Yearbook] Keyboard scrolled DOWN. Offset: {self.yearbook_scroll_offset}")
             elif event.key in (pygame.K_ESCAPE, pygame.K_i):
                 self.active_wallet_item = None
+
+    def _keys_give_credentials(self, event: pygame.event.Event):
+        """Handle keyboard input while in the give credentials view."""
+        if event.key == pygame.K_ESCAPE:
+            self.state = GameState.PLAYING
+        elif event.key in (pygame.K_RETURN, pygame.K_SPACE, pygame.K_e):
+            self._confirm_give_credentials()
 
     # ── key handlers per state ────────────────────────────────
 
@@ -2757,7 +2787,9 @@ class Game:
             new_text = getattr(self, '_current_main_mission_text', None)
             self._last_mission_text = new_text
             if old_text is not None and new_text is not None:
-                if not (self.multiplayer and not self.is_host):
+                # Do not level up for mission 5
+                is_mission_5 = ("Mission 5:" in old_text or "Mission 5:" in new_text)
+                if not is_mission_5 and not (self.multiplayer and not self.is_host):
                     self.player.level += 1
                     from settings import SKILL_POINT_PER_LEVEL
                     self.player.skill_points += SKILL_POINT_PER_LEVEL
@@ -3010,6 +3042,19 @@ class Game:
             if result is not None:
                 self.state = GameState.PLAYING
                 self._apply_dialogue_result(result)
+        elif self.state == GameState.GIVE_CREDENTIALS:
+            # Check mouse hover on warning button
+            mx, my = pygame.mouse.get_pos()
+            cx, cy = SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2
+            btn_w = 1100
+            btn_h = 60
+            btn_x = cx - btn_w // 2
+            btn_y = cy + 180
+            btn_rect = pygame.Rect(btn_x, btn_y, btn_w, btn_h)
+            if self.controller and self.controller.connected and self.controller.last_input_method == "controller":
+                self.give_credentials_button_hovered = True
+            else:
+                self.give_credentials_button_hovered = btn_rect.collidepoint((mx, my))
         elif self.state == GameState.SOCIAL_INTERACTION:
             # Update social dialogue manager
             self.social_dialogue_manager.update(dt)
@@ -4273,9 +4318,7 @@ class Game:
                 self._current_main_mission_text = "Mission 6: Gain 70 Tech Club reputation, then return to Alan Chen in his discreet location."
         if "alan_chen_rep_check" in result:
             tech_rep = self.reputation.get("tech_club")
-            overall_rep = self.reputation.reputation_score
-            max_group_rep = max(self.reputation.standings.values()) if hasattr(self.reputation, 'standings') and self.reputation.standings else 0
-            if tech_rep >= 70 or overall_rep >= 70 or max_group_rep >= 70:
+            if tech_rep >= 70:
                 self.ui.show_notification("Alan Chen nods: 'You've earned my trust. Here are the hacked credentials.'", NOTIF_SUCCESS)
                 m_obj = self.mission_manager.missions.get("mission_tech_club_rep")
                 if m_obj:
@@ -4293,8 +4336,7 @@ class Game:
                 self.mission_manager.activate_mission("mission_return_tech_lab")
                 self._current_main_mission_text = "Mission 7: Return to the Tech Lab and give the hacked credentials to Ava Thompson."
             else:
-                curr_disp = max(tech_rep, overall_rep, max_group_rep)
-                self.ui.show_notification(f"Alan Chen shakes his head: 'You need 70 reputation (Current: {curr_disp}). I can't trust you yet.'", NOTIF_ERROR)
+                self.ui.show_notification(f"Alan Chen shakes his head: 'You need 70 Tech Lab reputation (Current: {tech_rep}). I can't trust you yet.'", NOTIF_ERROR)
         if "give_hacked_credentials" in result:
             if self.inventory.has_item("Hacked Credentials"):
                 if self.multiplayer:
@@ -4332,6 +4374,9 @@ class Game:
                 self.ui.show_notification(f"Axel sneers: 'You need 60 Popular reputation (Current: {pop_rep}). Get lost!'", NOTIF_ERROR)
         if result.get("day1_complete"):
             self._complete_day1_story()
+        if "open_give_credentials_ui" in result:
+            self.state = GameState.GIVE_CREDENTIALS
+            self.give_credentials_button_hovered = False
         if "xp" in result:
             self.player.gain_xp(result["xp"])
         if "reveal_mask" in result:
@@ -4382,6 +4427,33 @@ class Game:
             self.basketball.start(self.player, opponent, floor, is_coop=is_coop, ally=ally, opp2=opp2, is_host=self.is_host)
             self._play_basketball_music()
             self.state = GameState.BASKETBALL
+
+    def _confirm_give_credentials(self):
+        """Deliver the credentials to Ava, completing Mission 7 and starting Mission 8."""
+        if self.inventory.has_item("Hacked Credentials"):
+            if self.multiplayer:
+                self.ui.show_notification("Ava Thompson: 'We have the credentials, but I need someone who really knows their way around this system. Lena, can you help us with the mainframe computer?'", NOTIF_SUCCESS, 8.0)
+            else:
+                self.ui.show_notification("Ava Thompson: 'We have the credentials, but I need someone who really knows their way around this system. Aiden, call your sister Lena to complete the inspection—she's the one who handles technology best.'", NOTIF_SUCCESS, 8.0)
+            self._ava_needs_to_walk_to_computer = True
+            m_obj = self.mission_manager.missions.get("mission_return_tech_lab")
+            if m_obj and m_obj.status != MissionStatus.COMPLETED:
+                m_obj.status = MissionStatus.COMPLETED
+                for obj in m_obj.objectives:
+                    obj.completed = True
+                    obj.progress = obj.required
+                self.mission_manager.completed_ids.add("mission_return_tech_lab")
+                self.mission_manager.unlock_mission("mission_high_school_mainframe")
+                self.mission_manager.activate_mission("mission_high_school_mainframe")
+                self.mission_manager._refresh_availability()
+                if self.multiplayer:
+                    self._current_main_mission_text = "Mission 8: Lena must go to the computer marked with X in the Tech Lab and extract information."
+                else:
+                    self._current_main_mission_text = "Mission 8: Switch to Lena, go to the computer marked with X in the Tech Lab and extract information."
+            self.state = GameState.PLAYING
+        else:
+            self.ui.show_notification("Ava Thompson looks at you: 'You don't have the credentials yet. Go talk to Alan Chen.'", NOTIF_ERROR)
+            self.state = GameState.PLAYING
 
     # ── network ───────────────────────────────────────────────
 
@@ -5053,6 +5125,14 @@ class Game:
                 ),
             ),
             GameState.MAINFRAME:         lambda: (self._draw_world(), self.ui.draw_mainframe(self.screen, self)),
+            GameState.GIVE_CREDENTIALS:  lambda: (
+                self._draw_world(),
+                self.ui.draw_give_credentials_window(
+                    self.screen,
+                    self.controller.connected if self.controller else False,
+                    self.give_credentials_button_hovered
+                )
+            ),
             GameState.GAME_OVER:         lambda: self.ui.draw_game_over(self.screen, self.reputation.calculate_ending()),
             GameState.VICTORY:           lambda: self.ui.draw_victory_credits(self.screen, self),
             GameState.MAP:               lambda: self._draw_map(),

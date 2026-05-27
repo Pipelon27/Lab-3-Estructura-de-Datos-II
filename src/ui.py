@@ -157,6 +157,9 @@ class UI:
     def trigger_level_up(self, money_amount: int = 10):
         self._level_up_timer = 4.0
         self._level_up_money = money_amount
+        # Controller vibration when leveling up
+        from src.controller import get_controller
+        get_controller().rumble(0.6, 0.6, 600)
 
     def trigger_announcement(self, title: str, sub: str):
         self._announcement_title = title
@@ -1584,3 +1587,65 @@ class UI:
             # Controller focus highlight
             if controller_connected:
                 pygame.draw.rect(screen, (255, 255, 255), ack_btn.inflate(6, 6), 2, border_radius=12)
+
+    def draw_give_credentials_window(self, screen: pygame.Surface, controller_connected: bool, button_hovered: bool):
+        # Draw semi-transparent background
+        overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 200))
+        screen.blit(overlay, (0, 0))
+        
+        cx, cy = SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2
+        
+        # 1. Draw Ava's face/dialogue prompt at the top
+        box_w = 750
+        box_h = 80
+        box_x = cx - box_w // 2
+        box_y = cy - 250
+        pygame.draw.rect(screen, (35, 35, 50), (box_x, box_y, box_w, box_h), border_radius=8)
+        pygame.draw.rect(screen, UI_ACCENT, (box_x, box_y, box_w, box_h), 2, border_radius=8)
+        
+        ava_text = "Ava Thompson: 'Great! What is the username and password for the admin terminal?'"
+        font_box = pygame.font.Font(VT323_PATH, 20)
+        t_surf = font_box.render(ava_text, True, UI_ACCENT)
+        screen.blit(t_surf, t_surf.get_rect(center=(cx, box_y + box_h // 2)))
+        
+        # 2. Draw Hacked Credentials card (exactly as in draw_wallet)
+        big_cred = pygame.Rect(cx - 250, cy - 150, 500, 300)
+        pygame.draw.rect(screen, (245, 245, 250), big_cred, border_radius=8)
+        pygame.draw.rect(screen, UI_ACCENT, big_cred, 4, border_radius=8)
+        
+        header = self.font_menu.render("TECH LAB ADMIN - CREDENTIALS", True, (180, 40, 40))
+        screen.blit(header, header.get_rect(center=(cx, big_cred.y + 40)))
+        pygame.draw.line(screen, (180, 40, 40), (big_cred.x + 20, big_cred.y + 70), (big_cred.right - 20, big_cred.y + 70), 3)
+        
+        y_off = big_cred.y + 110
+        details = [
+            "SYSTEM: Ravenside High School Mainframe",
+            "USERNAME: admin_techlab",
+            "PASSWORD: pWd_sMiLe_cLuB_99!",
+            "STATUS: ACTIVE (HACKED BY ALAN CHEN)",
+        ]
+        for d in details:
+            text = self.font_hud_md.render(d, True, BLACK)
+            screen.blit(text, (big_cred.x + 40, y_off))
+            y_off += 40
+
+        # 3. Draw the warning / confirm button at the bottom
+        btn_w = 1100
+        btn_h = 60
+        btn_x = cx - btn_w // 2
+        btn_y = cy + 180
+        btn_rect = pygame.Rect(btn_x, btn_y, btn_w, btn_h)
+        
+        bg_col = (180, 40, 40) if button_hovered else (120, 20, 20)
+        pygame.draw.rect(screen, bg_col, btn_rect, border_radius=10)
+        pygame.draw.rect(screen, (255, 100, 100), btn_rect, 2, border_radius=10)
+        
+        btn_text = "Becareful to give this hacked credentials to someone that seems smiling to you but don't who she really is!"
+        font_btn = pygame.font.Font(VT323_PATH, 16)
+        btn_surf = font_btn.render(btn_text, True, WHITE)
+        screen.blit(btn_surf, btn_surf.get_rect(center=btn_rect.center))
+        
+        hint_text = "[A] Confirm  |  [B] Cancel" if controller_connected else "Click button to confirm. Press ESC to cancel."
+        hint_surf = self.font_hint.render(hint_text, True, UI_TEXT_DIM)
+        screen.blit(hint_surf, hint_surf.get_rect(center=(cx, btn_y + btn_h + 24)))

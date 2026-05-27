@@ -186,6 +186,7 @@ class GameState(Enum):
     INTRO_CINEMATIC  = auto()
     MISSION_SELECT   = auto()
     MAINFRAME        = auto()
+    GIVE_CREDENTIALS = auto()
 
 
 class Character(Enum):

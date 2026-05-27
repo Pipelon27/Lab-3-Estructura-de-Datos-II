@@ -20,7 +20,7 @@ from settings import (
     NOTIF_SUCCESS,
     SCREEN_WIDTH, SCREEN_HEIGHT,
     DATA_DIR,
-    Character, VT323_PATH)
+    Character, VT323_PATH, MissionStatus)
 
 
 # ══════════════════════════════════════════════════════════════
@@ -125,7 +125,25 @@ class DialogueTree:
 
     def get_choices(self) -> list[DialogueNode]:
         """Return available player choices (children flagged as choices)."""
-        return [c for c in self.current.children if c.is_player_choice]
+        choices = [c for c in self.current.children if c.is_player_choice]
+        system = getattr(self, "dialogue_system", None)
+        if system and getattr(system, "game", None):
+            game = system.game
+            filtered_choices = []
+            for c in choices:
+                # Show "Did you find anything about the Smile Club?" only during Mission 4
+                if c.id == "ava2_q1":
+                    m_obj = game.mission_manager.missions.get("mission_tech_lab_ava")
+                    if not (m_obj and m_obj.status == MissionStatus.ACTIVE):
+                        continue
+                # Show "[Give Hacked Credentials]" only during Mission 7
+                if c.id == "ava2_q2":
+                    m_obj = game.mission_manager.missions.get("mission_return_tech_lab")
+                    if not (m_obj and m_obj.status == MissionStatus.ACTIVE):
+                        continue
+                filtered_choices.append(c)
+            return filtered_choices
+        return choices
 
     def get_npc_continuation(self) -> DialogueNode | None:
         """If there is exactly one non-choice child, return it (auto-advance)."""
@@ -289,6 +307,7 @@ class DialogueSystem:
             return
 
         tree.reset()
+        tree.dialogue_system = self
         self.active_tree = tree
         self.npc         = npc
         self.player      = player
