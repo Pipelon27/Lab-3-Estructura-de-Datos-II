@@ -4555,7 +4555,7 @@ class Game:
             if pygame.mixer.get_init():
                 path = os.path.join("assets", "sounds", "Flashing Lights.mp3")
                 pygame.mixer.music.load(path)
-                pygame.mixer.music.set_volume(0.25)
+                pygame.mixer.music.set_volume(0.375)
                 pygame.mixer.music.play(-1)
         except Exception:
             pass

@@ -157,6 +157,8 @@ class BasketballGame:
                 continue
             try:
                 self.sounds[name] = pygame.mixer.Sound(path)
+                if name == "steal":
+                    self.sounds[name].set_volume(0.5)
             except pygame.error:
                 pass
 
