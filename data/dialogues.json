@@ -553,7 +553,7 @@
                 "id": "ava2_r1",
                 "speaker": "Ava Thompson",
                 "text": "They're encrypting everything. But Alan Chen claims to have actual hacked evidence against them. He is usually found in discreet places. Check your map to find him.",
-                "consequences": {"reputation_changes": {"tech_club": 10}, "mission_unlock": "mission_alan_chen_bathroom", "complete_tech_lab_ava": true, "show_alan_chen_map": true},
+                "consequences": {"reputation_changes": {"tech_club": 10}, "mission_unlock": "mission_alan_chen_bathroom", "complete_tech_lab_ava": true, "show_alan_chen_map": true, "level_up": true},
                 "is_player_choice": false,
                 "children": []
               }

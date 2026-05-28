@@ -226,6 +226,7 @@ class BasketballGame:
         self.opp_on_fire = False
         self.opp_hold_timer = 0.0
         self.opp2_hold_timer = 0.0
+        self._lt_was_pressed = False
 
     def reset_positions(self):
         # Place player on left, opp on right
@@ -550,21 +551,25 @@ class BasketballGame:
                 if self.player_z == 0:
                     self.player_vz = self.jump_speed
 
-            # Shoot with X button (Hold to build power, Release to shoot)
-            if controller.is_button_pressed(2): # XBOX_X is button index 2
-                if self.ball_held_by == 'player':
+            # Shoot with Y Button: Hold to charge, Release to shoot
+            if controller.is_button_held(3):  # Y Button (index 3) is held down
+                if self.ball_held_by == 'player' and not self.shooting:
                     self.shooting = True
                     self.shoot_bar = 0.0
                     self.shoot_dir = 1
-            elif controller.is_button_released(2): # XBOX_X released
+            elif controller.is_button_released(3):  # Y Button just released
                 if self.shooting and self.ball_held_by == 'player':
                     self.player_shoot_anim = 0.0
                     self.player_pending_shot = self.shoot_bar
                     self.shooting = False
 
-            # Block/Steal with B button
+            # Block/Steal with B button (when not holding ball)
+            # Pass with B button (when holding ball in co-op)
             if controller.is_button_pressed(1): # XBOX_B is button index 1
-                if self.ball_held_by != 'player' and self.player_z == 0:
+                if self.ball_held_by == 'player' and self.is_coop and self.ally:
+                    # Pass to ally in co-op mode
+                    self._initiate_pass('player', 'ally')
+                elif self.ball_held_by != 'player' and self.player_z == 0:
                     self.blocking = True
                     self.block_timer = 0.3
                     # Steal check
@@ -1867,7 +1872,7 @@ class BasketballGame:
         if self.show_menu:
             if controller_connected:
                 menu_text = self._font.render("Press A or START to start Basketball!", True, WHITE)
-                controls_text = self._font.render("Left Stick to Move | Hold/Release X to Shoot | B to Block | A to Jump", True, (200, 200, 200))
+                controls_text = self._font.render("Left Stick to Move | Hold/Release Y to Shoot | B to Block | A to Jump", True, (200, 200, 200))
             else:
                 menu_text = self._font.render("Press SPACE to start Basketball!", True, WHITE)
                 controls_text = self._font.render("WASD to move | Left Click hold to shoot | Right Click to block | Space to Jump", True, (200, 200, 200))

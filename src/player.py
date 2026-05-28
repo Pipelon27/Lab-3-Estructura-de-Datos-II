@@ -446,6 +446,8 @@ class Player:
             self.xp -= XP_PER_LEVEL
             self.level += 1
             self.skill_points += SKILL_POINT_PER_LEVEL
+            # Fully restore health on level up
+            self.health = self.max_health
 
     # ── damage ────────────────────────────────────────────────
 

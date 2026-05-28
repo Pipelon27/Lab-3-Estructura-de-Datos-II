@@ -94,6 +94,13 @@ class ControllerManager:
         self.rt_value = 0.0
         self.lt_value = 0.0
         
+        # Trigger ranges for dynamic calibration
+        self._lt_min = 0.0
+        self._lt_max = 1.0
+        self._rt_min = 0.0
+        self._rt_max = 1.0
+
+        
         # Button states (current frame)
         self.buttons_pressed = set()
         self.buttons_held = set()
@@ -107,6 +114,10 @@ class ControllerManager:
         # Dash trigger (RT) debounce
         self._rt_was_pressed = False
         self.dash_triggered = False
+        
+        # Trigger activation trackers (to handle uninitialized pygame trigger values starting at 0.0)
+        self._lt_active = False
+        self._rt_active = False
         
         # Hot-swap detection
         self._last_joystick_count = 0
@@ -177,11 +188,34 @@ class ControllerManager:
             self.dpad_x = hat_x  # -1 left, 0 neutral, 1 right
             self.dpad_y = hat_y  # Pygame hat_y is 1 up, -1 down
         
-        # Update triggers (normalize from -1,1 to 0,1 range)
+        # Update triggers (normalize to 0,1 range dynamically)
         raw_rt = self.joystick.get_axis(XBOX_AXIS_RT)
         raw_lt = self.joystick.get_axis(XBOX_AXIS_LT)
-        self.rt_value = self._normalize_trigger(raw_rt)
-        self.lt_value = self._normalize_trigger(raw_lt)
+        
+        # Auto-calibrate trigger ranges to support both 0.0 to 1.0 and -1.0 to 1.0 mappings
+        if raw_lt < self._lt_min:
+            self._lt_min = raw_lt
+        if raw_lt > self._lt_max:
+            self._lt_max = raw_lt
+            
+        if raw_rt < self._rt_min:
+            self._rt_min = raw_rt
+        if raw_rt > self._rt_max:
+            self._rt_max = raw_rt
+            
+        # Compute normalized values
+        lt_range = self._lt_max - self._lt_min
+        if lt_range > 0.01:
+            self.lt_value = max(0.0, min(1.0, (raw_lt - self._lt_min) / lt_range))
+        else:
+            self.lt_value = 0.0
+            
+        rt_range = self._rt_max - self._rt_min
+        if rt_range > 0.01:
+            self.rt_value = max(0.0, min(1.0, (raw_rt - self._rt_min) / rt_range))
+        else:
+            self.rt_value = 0.0
+
         
         # Dash detection (RT pressed)
         rt_pressed = self.rt_value > TRIGGER_THRESHOLD
@@ -343,12 +377,12 @@ class ControllerManager:
         return XBOX_BACK in self.buttons_pressed
     
     def is_attack_pressed(self) -> bool:
-        """RB button pressed (light attack / hack)."""
-        return XBOX_RB in self.buttons_pressed
+        """LB button pressed (light attack / hack)."""
+        return XBOX_LB in self.buttons_pressed
     
     def is_block_pressed(self) -> bool:
-        """LB button pressed (heavy attack / block)."""
-        return XBOX_LB in self.buttons_pressed
+        """RB button pressed (heavy attack / block)."""
+        return XBOX_RB in self.buttons_pressed
     
     def is_interact_pressed(self) -> bool:
         """A button pressed (interact - same as confirm)."""

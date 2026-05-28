@@ -64,7 +64,7 @@
       "title": "Earn Alan's Trust",
       "description": "Alan Chen won't give you the hacked information until you prove yourself. Gain at least 70 Tech Club reputation, then return to him in his discreet location.",
       "objectives": [
-        {"type": "talk_to", "target": "npc_alan_chen", "description": "Return to Alan Chen with 70 Tech Club reputation", "required": 1}
+        {"type": "special", "target": "alan_chen_credentials", "description": "Return to Alan Chen with 70 Tech Club reputation", "required": 1}
       ],
       "prerequisites": ["mission_alan_chen_bathroom"],
       "rewards": {
@@ -110,9 +110,9 @@
     {
       "id": "mission_server_room",
       "title": "Server Room Access",
-      "description": "Ava Thompson told you to gain reputation and find out who is behind the Smile Club. Go talk to Marcus Green in the Athletic Coliseum.",
+      "description": "Ava Thompson told you to gain reputation and find out who is behind the Smile Club. Go talk to Marcus Green in the Athletic Coliseum and play 1v1.",
       "objectives": [
-        {"type": "talk_to", "target": "npc_marcus_green", "description": "Talk to Marcus Green in the Athletic Coliseum", "required": 1}
+        {"type": "talk_to", "target": "npc_marcus_green", "description": "Talk to Marcus Green in the Athletic Coliseum and play 1v1", "required": 1}
       ],
       "prerequisites": ["mission_high_school_mainframe"],
       "rewards": {

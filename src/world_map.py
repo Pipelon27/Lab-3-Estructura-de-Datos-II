@@ -216,9 +216,9 @@ class WorldMap:
 
         # Floor tab navigation with LB/RB
         if controller.is_block_pressed():
-            self._change_tab(-1)
-        elif controller.is_attack_pressed():
             self._change_tab(1)
+        elif controller.is_attack_pressed():
+            self._change_tab(-1)
 
         # Room selection via D-pad
         menu_dir = controller.get_menu_direction()

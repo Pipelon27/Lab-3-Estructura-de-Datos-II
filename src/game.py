@@ -155,6 +155,7 @@ class Game:
         self._ava_phone_timer: float = 15.0              # Countdown timer
         self._ava_phone_timer_active: bool = False        # Countdown running
         self._ava_phone_completed: bool = False           # Mission 12 done
+        self._ava_phone_failed: bool = False              # Mission 12 failed state
         self._ava_phone_found_chat: bool = False          # Group chat discovered
         # Coop: Lena talks to NPCs to add time
         self._coop_time_bonus_npcs: set = set()           # NPCs Lena has talked to
@@ -816,6 +817,14 @@ class Game:
             self.mission_manager.completed_ids.add("mission_high_school_mainframe")
         self._complete_day2_story()
 
+    def _trigger_mainframe_alarm(self):
+        self.mainframe_screen = "alarm"
+        self.mainframe_focus_idx = 0
+        try:
+            self.controller.rumble(0.8, 0.8, 1000)
+        except Exception:
+            pass
+
     def _handle_mainframe_event(self, event):
         if event.type == pygame.KEYDOWN:
             if self.mainframe_screen == "login":
@@ -842,7 +851,7 @@ class Game:
                             self.mainframe_pass_input += event.unicode
             elif self.mainframe_screen == "desktop":
                 if event.key == pygame.K_ESCAPE:
-                    self.mainframe_screen = "alarm"
+                    self._trigger_mainframe_alarm()
             elif self.mainframe_screen == "mail":
                 if event.key == pygame.K_ESCAPE:
                     self.mainframe_screen = "desktop"
@@ -888,7 +897,7 @@ class Game:
                 if mail_icon.collidepoint(pos):
                     self.mainframe_screen = "mail"
                 elif disc_icon.collidepoint(pos):
-                    self.mainframe_screen = "alarm"
+                    self._trigger_mainframe_alarm()
 
             elif self.mainframe_screen == "mail":
                 back_btn = pygame.Rect(cx - 380, cy - 230, 80, 35)
@@ -897,7 +906,7 @@ class Game:
                 if back_btn.collidepoint(pos):
                     self.mainframe_screen = "desktop"
                 elif disc_btn.collidepoint(pos):
-                    self.mainframe_screen = "alarm"
+                    self._trigger_mainframe_alarm()
                 elif eli_item.collidepoint(pos):
                     self.mainframe_screen = "mail_view"
                     self.mainframe_selected_email = "eli"
@@ -909,7 +918,7 @@ class Game:
                 if back_btn.collidepoint(pos) or close_btn.collidepoint(pos):
                     self.mainframe_screen = "mail"
                 elif disc_btn.collidepoint(pos):
-                    self.mainframe_screen = "alarm"
+                    self._trigger_mainframe_alarm()
 
             elif self.mainframe_screen == "alarm":
                 ack_btn = pygame.Rect(cx - 180, cy + 230, 360, 55)
@@ -985,8 +994,9 @@ class Game:
                             if getattr(self, "_ava_phone_completed", False):
                                 self._show_post_phone_monologue()
                 elif event.type == pygame.MOUSEBUTTONDOWN:
-                    for rect, key in getattr(self, "_ava_phone_chat_rects", []):
+                    for idx, (rect, key) in enumerate(getattr(self, "_ava_phone_chat_rects", [])):
                         if rect.collidepoint(event.pos):
+                            self._ava_phone_selected_idx = idx
                             self._ava_phone_active_chat = key
                             break
                 continue
@@ -1117,6 +1127,11 @@ class Game:
                 self._advance_oscar_win_dialogue()
             return
 
+        if getattr(self, "_marcus_win_dialogue_active", False):
+            if controller.is_confirm_pressed() or controller.is_interact_pressed():
+                self._advance_marcus_win_dialogue()
+            return
+
         if getattr(self, "_ava_rooftop_dialogue_active", False):
             if controller.is_confirm_pressed() or controller.is_interact_pressed():
                 self._advance_ava_rooftop_dialogue()
@@ -1149,12 +1164,34 @@ class Game:
                     self._ava_phone_timer_active = False
                     if getattr(self, "_ava_phone_completed", False):
                         self._show_post_phone_monologue()
+                return
+
+            if getattr(self, "_ava_phone_active_chat", None) is None:
+                chat_keys = [
+                    "npc_mia", "npc_sophie", "npc_dylan", "npc_rnd_01",
+                    "npc_rnd_02", "npc_rnd_03", "npc_rnd_04", "npc_rnd_05",
+                    "group_smile_club"
+                ]
+                menu_v = controller.get_menu_direction()
+                if not hasattr(self, "_ava_phone_selected_idx"):
+                    self._ava_phone_selected_idx = 0
+                if menu_v == -1: # UP
+                    self._ava_phone_selected_idx = (self._ava_phone_selected_idx - 1) % len(chat_keys)
+                elif menu_v == 1: # DOWN
+                    self._ava_phone_selected_idx = (self._ava_phone_selected_idx + 1) % len(chat_keys)
+
+                if controller.is_confirm_pressed():
+                    if 0 <= self._ava_phone_selected_idx < len(chat_keys):
+                        self._ava_phone_active_chat = chat_keys[self._ava_phone_selected_idx]
             return
 
-        # During the ping pong minigame, delegate all controller input (including
-        # Start/pause) directly to the minigame so the pause menu works there.
+        # During the ping pong and basketball minigames, delegate all controller input
+        # directly to the minigame so the pause menus and custom controls work correctly.
         if self.state == GameState.PINGPONG:
             self._handle_controller_pingpong(controller)
+            return
+        elif self.state == GameState.BASKETBALL:
+            self.basketball.handle_controller(controller)
             return
 
         # ── universal controller buttons ──
@@ -1255,8 +1292,6 @@ class Game:
             self._handle_controller_map(controller)
         elif self.state == GameState.SOCIAL_INTERACTION:
             self.social_dialogue_manager.handle_controller(controller)
-        elif self.state == GameState.BASKETBALL:
-            self.basketball.handle_controller(controller)
         elif self.state == GameState.MAINFRAME:
             self._handle_controller_mainframe(controller)
         elif self.state == GameState.TRADING:
@@ -1267,6 +1302,14 @@ class Game:
             self._handle_controller_skill_tree(controller)
         elif self.state == GameState.HELP:
             self._handle_controller_help(controller)
+        elif self.state == GameState.GAME_OVER:
+            if controller.is_confirm_pressed() or controller.is_cancel_pressed() or controller.is_pause_pressed():
+                self.return_to_menu = True
+                self.running = False
+        elif self.state == GameState.VICTORY:
+            if controller.is_confirm_pressed() or controller.is_cancel_pressed() or controller.is_pause_pressed():
+                self.return_to_menu = True
+                self.running = False
 
 
     def _toggle_pause(self):
@@ -1550,7 +1593,7 @@ class Game:
             if self.mainframe_screen == "login":
                 self.state = GameState.PLAYING
             elif self.mainframe_screen == "desktop":
-                self.mainframe_screen = "alarm"
+                self._trigger_mainframe_alarm()
             elif self.mainframe_screen == "mail":
                 self.mainframe_screen = "desktop"
                 self.mainframe_focus_idx = 0
@@ -1608,8 +1651,7 @@ class Game:
                     self.mainframe_screen = "mail"
                     self.mainframe_focus_idx = 0
                 elif self.mainframe_focus_idx == 3:
-                    self.mainframe_screen = "alarm"
-                    self.mainframe_focus_idx = 0
+                    self._trigger_mainframe_alarm()
 
         elif self.mainframe_screen == "mail":
             # 6 focusable items:
@@ -1627,8 +1669,7 @@ class Game:
                     self.mainframe_screen = "desktop"
                     self.mainframe_focus_idx = 0
                 elif self.mainframe_focus_idx == 1:
-                    self.mainframe_screen = "alarm"
-                    self.mainframe_focus_idx = 0
+                    self._trigger_mainframe_alarm()
                 elif self.mainframe_focus_idx == 2:
                     self.mainframe_screen = "mail_view"
                     self.mainframe_selected_email = "eli"
@@ -1649,8 +1690,7 @@ class Game:
                     self.mainframe_screen = "mail"
                     self.mainframe_focus_idx = 0
                 elif self.mainframe_focus_idx == 1:
-                    self.mainframe_screen = "alarm"
-                    self.mainframe_focus_idx = 0
+                    self._trigger_mainframe_alarm()
 
         elif self.mainframe_screen == "alarm":
             # Only 1 focusable item: 0: Acknowledge & Escape
@@ -1675,7 +1715,7 @@ class Game:
         if controller.is_skill_tree_pressed() or controller.is_cancel_pressed():
             self.state = GameState.PLAYING
             return
-        self.skill_tree.handle_controller(controller, self.player)
+        self.player.skill_tree.handle_controller(controller, self.player)
 
     def _handle_controller_help(self, controller):
         """Handle controller input in Help Screen."""
@@ -1898,7 +1938,7 @@ class Game:
             self.running = False
 
     def _keys_game_over(self, event: pygame.event.Event):
-        if event.key == KEY_PAUSE:
+        if event.key in (KEY_PAUSE, pygame.K_RETURN, pygame.K_SPACE):
             self.return_to_menu = True
             self.running = False
 
@@ -1925,7 +1965,7 @@ class Game:
             ("mission_tech_club_rep", 2, "Day 2: Earn Alan's Trust", "Mission 6: Gain 70 Tech Club reputation, then return to Alan Chen."),
             ("mission_return_tech_lab", 2, "Day 2: Return to Ava Thompson", "Mission 7: Deliver the hacked credentials to Ava Thompson."),
             ("mission_high_school_mainframe", 2, "Day 2: High School Mainframe", "Mission 8: Switch to Lena, go to the computer marked with X in the Tech Lab and extract information."),
-            ("mission_server_room", 3, "Day 3: Talk to Marcus Green", "Mission 9: Talk to Marcus Green in the Athletic Coliseum."),
+            ("mission_server_room", 3, "Day 3: Talk to Marcus Green", "Mission 9: Talk to Marcus Green in the Athletic Coliseum and play 1v1."),
             ("mission_rooftop_party", 4, "Day 4: Rooftop Party", "Mission 10: Go to the Rooftop party and hang out with the populars."),
             ("mission_talk_ava_rooftop", 4, "Day 4: Find Ava at the Rooftop Party", "Mission 11: Talk to Ava Thompson at the rooftop party."),
             ("mission_check_ava_phone", 4, "Day 4: Check Ava's Phone", "Mission 12: Check Ava Thompson's phone before she comes back (15 seconds!)."),
@@ -2089,7 +2129,7 @@ class Game:
             self.player.rect.center = (1520, 770)   # Near the phone chair
             self.current_floor = FLOOR_ROOFTOP
         elif target_id == "mission_final_showdown":
-            self.player.rect.center = (800, 1760)   # Near basement stairs on 1F
+            self.player.rect.center = (900, 1680)   # On the basement stairs on 1F (clear of the center wall)
             self.current_floor = FLOOR_1F
         elif target_id == "mission_server_room":
             self.player.rect.center = (900, 980)    # Athletic Coliseum interior
@@ -2787,9 +2827,10 @@ class Game:
             new_text = getattr(self, '_current_main_mission_text', None)
             self._last_mission_text = new_text
             if old_text is not None and new_text is not None:
-                # Do not level up for mission 5
+                # Do not level up for mission 5 or mission 4
                 is_mission_5 = ("Mission 5:" in old_text or "Mission 5:" in new_text)
-                if not is_mission_5 and not (self.multiplayer and not self.is_host):
+                is_mission_4 = ("Mission 4:" in old_text or "Mission 4:" in new_text)
+                if not is_mission_5 and not is_mission_4 and not (self.multiplayer and not self.is_host):
                     self.player.level += 1
                     from settings import SKILL_POINT_PER_LEVEL
                     self.player.skill_points += SKILL_POINT_PER_LEVEL
@@ -3285,27 +3326,65 @@ class Game:
         import math
         for _npc in npcs_on_floor:
             if getattr(_npc, 'is_hostile', False) and _npc.health > 0:
+                is_boss = _npc.id in getattr(self, "_final_smile_ids", ())
+                
+                # Determine target player (closest one if co-op)
+                target_player = self.player
                 dist = math.hypot(_npc.rect.centerx - self.player.rect.centerx, _npc.rect.centery - self.player.rect.centery)
-                if _npc.id in getattr(self, "_final_smile_ids", ()) and getattr(self, "_final_reveal_finished", False):
+                
+                if self.multiplayer and getattr(self, "remote_player", None) and self.remote_player.current_floor == self.current_floor:
+                    r_dist = math.hypot(_npc.rect.centerx - self.remote_player.rect.centerx, _npc.rect.centery - self.remote_player.rect.centery)
+                    if r_dist < dist:
+                        target_player = self.remote_player
+                        dist = r_dist
+
+                if is_boss and getattr(self, "_final_reveal_finished", False):
                     _npc.is_hostile = True
                     self._keep_npc_in_smile_room(_npc)
-                    _npc.target_pos = self.player.rect.center
+                    _npc.target_pos = target_player.rect.center
                     _npc.ai_enabled = True
-                elif dist > 400:
-                    _npc.is_hostile = False
-                    _npc.target_pos = None
-                else:
-                    _npc.target_pos = self.player.rect.center
-                    _npc.ai_enabled = True
+                    
                     if dist < 60:
                         if getattr(_npc, 'attack_cooldown', 0) <= 0:
-                            dmg = getattr(_npc, 'target_damage', 8)
-                            self.player.take_damage(dmg)
                             _npc.attack_cooldown = 1.0
-                            self.ui.show_notification(f"{_npc.name} attacked you!", NOTIF_ERROR)
-                            controller = get_controller()
-                            if controller.connected:
-                                controller.rumble(0.5, 0.5, 200)
+                            _npc.attack_timer = 0.2  # Trigger punch animation
+                            
+                            # Face target player
+                            dx = target_player.rect.centerx - _npc.rect.centerx
+                            dy = target_player.rect.centery - _npc.rect.centery
+                            if abs(dx) > abs(dy):
+                                _npc.direction = Direction.RIGHT if dx > 0 else Direction.LEFT
+                            else:
+                                _npc.direction = Direction.DOWN if dy > 0 else Direction.UP
+                                
+                            target_player.take_damage(getattr(_npc, 'attack_damage', 15))
+                            target_player.hurt_timer = 0.4  # Trigger get-hit animation
+                            
+                            self.ui.show_notification(f"{_npc.name} attacked {target_player.character.value.title()}!", NOTIF_ERROR)
+                            
+                            if target_player == self.player:
+                                controller = get_controller()
+                                if controller.connected:
+                                    controller.rumble(0.6, 0.6, 200)
+                else:
+                    # Normal hostile NPC behavior
+                    if dist > 400:
+                        _npc.is_hostile = False
+                        _npc.target_pos = None
+                    else:
+                        _npc.target_pos = target_player.rect.center
+                        _npc.ai_enabled = True
+                        if dist < 60:
+                            if getattr(_npc, 'attack_cooldown', 0) <= 0:
+                                dmg = getattr(_npc, 'target_damage', 8)
+                                target_player.take_damage(dmg)
+                                target_player.hurt_timer = 0.4
+                                _npc.attack_cooldown = 1.0
+                                self.ui.show_notification(f"{_npc.name} attacked you!", NOTIF_ERROR)
+                                if target_player == self.player:
+                                    controller = get_controller()
+                                    if controller.connected:
+                                        controller.rumble(0.5, 0.5, 200)
 
         # ── Player pushes NPCs on contact ──────────────────────────────────
         self._check_final_fight_complete()
@@ -4305,6 +4384,15 @@ class Game:
             self._current_main_mission_text = "Mission 5: Open map to find Alan Chen's discreet location and talk to him."
         if result.get("show_alan_chen_map"):
             self._alan_chen_map_unlocked = True
+        if result.get("level_up"):
+            if not (self.multiplayer and not self.is_host):
+                self.player.level += 1
+                from settings import SKILL_POINT_PER_LEVEL
+                self.player.skill_points += SKILL_POINT_PER_LEVEL
+                self.player.money += 10
+                if hasattr(self.ui, 'trigger_level_up'):
+                    self.ui.trigger_level_up(10)
+                self._last_known_level = self.player.level
         if result.get("talked_to_alan_chen_first"):
             m_obj = self.mission_manager.missions.get("mission_alan_chen_bathroom")
             if m_obj and m_obj.status != MissionStatus.COMPLETED:
@@ -4327,11 +4415,16 @@ class Game:
                         obj.completed = True
                         obj.progress = obj.required
                     self.mission_manager.completed_ids.add("mission_tech_club_rep")
-                if not self.inventory.has_item("Hacked Credentials"):
-                    self.inventory.add_item(
-                        "Hacked Credentials", ItemCategory.NOTE,
-                        "Hacked high school system credentials provided by Alan Chen.",
-                    )
+                    if m_obj.rewards:
+                        self._apply_rewards(m_obj.rewards)
+                    msg = self.mission_manager.get_motivational_message()
+                    self.ui.show_notification(f"✅ Mission complete! {msg}", NOTIF_SUCCESS, 5.0)
+                else:
+                    if not self.inventory.has_item("Hacked Credentials"):
+                        self.inventory.add_item(
+                            "Hacked Credentials", ItemCategory.NOTE,
+                            "Hacked high school system credentials provided by Alan Chen.",
+                        )
                 self.mission_manager.unlock_mission("mission_return_tech_lab")
                 self.mission_manager.activate_mission("mission_return_tech_lab")
                 self._current_main_mission_text = "Mission 7: Return to the Tech Lab and give the hacked credentials to Ava Thompson."
@@ -5110,7 +5203,7 @@ class Game:
             ),
             GameState.INVENTORY_SCREEN:  lambda: self.ui.draw_inventory(self.screen, self.inventory),
             GameState.SKILL_TREE_SCREEN: lambda: self.ui.draw_skill_tree(self.screen, self.player.skill_tree, self.player),
-            GameState.HELP:              lambda: self.ui.draw_help_screen(self.screen, self.character),
+            GameState.HELP:              lambda: self.ui.draw_help_screen(self.screen, self.character, self.controller.connected if self.controller else False),
             GameState.WALLET:            lambda: (
                 self._draw_world(),
                 self.ui.draw_wallet(
@@ -6092,8 +6185,10 @@ class Game:
         self._ava_phone_timer       = 15.0
         self._ava_phone_timer_active = True
         self._ava_phone_prompt_active = False
+        self._ava_phone_selected_idx = 0
         # Build Ava's phone messages
         self._build_ava_phone_messages()
+
 
     def _build_ava_phone_messages(self):
         """Populate Ava's fake phone with lots of chats (including the secret group chat)."""
@@ -6202,13 +6297,16 @@ class Game:
         if self._ava_phone_timer <= 0.0:
             self._ava_phone_timer       = 0.0
             self._ava_phone_timer_active = False
-            self._ava_phone_spying       = False
-            self._ava_phone_on_chair = False
             
             if getattr(self, "_ava_phone_completed", False):
+                self._ava_phone_spying       = False
+                self._ava_phone_on_chair = False
                 self._show_post_phone_monologue()
             else:
                 # Ava returns → mission fail
+                self._ava_phone_failed = True
+                self._ava_phone_spying = True  # Keep overlay active to show Failed Screen
+                self._ava_phone_on_chair = True
                 self.ui.show_notification("Ava came back! You didn't have enough time...", NOTIF_ERROR, 5.0)
                 # Respawn Ava
                 ava = self.npc_manager.get_npc_by_id("npc_ava_thompson")
@@ -6222,6 +6320,7 @@ class Game:
         self._ava_phone_found_chat   = True
         self._ava_phone_completed    = True
         self._ava_phone_on_chair     = False
+        self._ava_phone_failed       = False
 
         m = self.mission_manager.missions.get("mission_check_ava_phone")
         if m:
@@ -6230,6 +6329,24 @@ class Game:
                 obj.completed = True
                 obj.progress  = obj.required
             self.mission_manager.completed_ids.add("mission_check_ava_phone")
+
+    def _restart_ava_phone_mission(self):
+        """Restarts Mission 12, resetting the timer and Ava's position."""
+        self._ava_phone_failed = False
+        self._ava_phone_timer = 15.0
+        self._ava_phone_timer_active = True
+        self._ava_phone_spying = True
+        self._ava_phone_on_chair = True
+        self._ava_phone_active_chat = None
+        self._ava_phone_selected_idx = 0
+        
+        # Reset Ava Thompson to her walked away position (so she isn't right next to the player)
+        ava = self.npc_manager.get_npc_by_id("npc_ava_thompson")
+        if ava:
+            ava.current_floor = FLOOR_ROOFTOP
+            ava.rect.center = (1784, 400)
+            ava.target_pos = (1784, 400)
+            ava.ai_enabled = False
 
     def _show_post_phone_monologue(self):
         """Narrative text box: player reacts to Ava's phone."""
@@ -6333,6 +6450,8 @@ class Game:
             npc.health = max(npc.health, npc.max_health)
             npc.knockout_timer = 0.0
             npc.show_name = False
+            # Set attack damage to 10 for these specific NPCs in final mission
+            npc.attack_damage = 10
             self._load_sprite_sheet_for_npc(npc, os.path.join(base, sprite_name))
         self._final_smile_room_ready = True
 
@@ -6626,6 +6745,11 @@ class Game:
             self.screen.blit(header, (ph_x + 10, content_y))
             content_y += 22
 
+            chat_keys = [
+                "npc_mia", "npc_sophie", "npc_dylan", "npc_rnd_01",
+                "npc_rnd_02", "npc_rnd_03", "npc_rnd_04", "npc_rnd_05",
+                "group_smile_club"
+            ]
             chat_names = {
                 "npc_mia":      "Mia Nakamura",
                 "npc_sophie":   "Sophie Chen",
@@ -6638,12 +6762,22 @@ class Game:
                 "group_smile_club": "📍 Group Chat",
             }
             self._ava_phone_chat_rects = []
-            for key, label in chat_names.items():
+            
+            if not hasattr(self, "_ava_phone_selected_idx"):
+                self._ava_phone_selected_idx = 0
+
+            for idx, key in enumerate(chat_keys):
+                label = chat_names[key]
                 row_rect = pygame.Rect(ph_x + 6, content_y, ph_w - 12, 34)
                 col = (70, 20, 50) if key == "group_smile_club" else (40, 15, 30)
                 bd  = (255, 80, 160) if key == "group_smile_club" else (80, 30, 60)
                 pygame.draw.rect(self.screen, col, row_rect, border_radius=6)
-                pygame.draw.rect(self.screen, bd, row_rect, 1, border_radius=6)
+                
+                # Check if selected (draw green frame around it)
+                if self._ava_phone_selected_idx == idx:
+                    pygame.draw.rect(self.screen, (37, 211, 102), row_rect, 2, border_radius=6)
+                else:
+                    pygame.draw.rect(self.screen, bd, row_rect, 1, border_radius=6)
                 
                 # Avatar
                 avatar = self._get_ava_phone_avatar(label)
@@ -7181,7 +7315,7 @@ class Game:
             self.mission_manager.unlock_mission("mission_server_room")
             self.mission_manager.activate_mission("mission_server_room")
             self.mission_manager._refresh_availability()
-            self._current_main_mission_text = "Mission 9: Talk to Marcus Green in the Athletic Coliseum."
+            self._current_main_mission_text = "Mission 9: Talk to Marcus Green in the Athletic Coliseum and play 1v1."
         elif self.day_number == 4:
             self.mission_manager.unlock_mission("mission_rooftop_party")
             self.mission_manager.activate_mission("mission_rooftop_party")

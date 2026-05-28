@@ -205,14 +205,14 @@ class CombatSystem:
                 self._npc_counter_attack()
 
         elif self.state == CombatState.BLOCKING:
-            from src.controller import get_controller, XBOX_B, XBOX_LB
+            from src.controller import get_controller, XBOX_B, XBOX_RB
             controller = get_controller()
             controller_connected = controller.connected and getattr(controller, "last_input_method", "keyboard") == "controller"
 
             if controller_connected:
                 block_held = (
                     controller.is_button_held(XBOX_B) or
-                    controller.is_button_held(XBOX_LB) or
+                    controller.is_button_held(XBOX_RB) or
                     controller.lt_value > 0.3
                 )
                 if not block_held:

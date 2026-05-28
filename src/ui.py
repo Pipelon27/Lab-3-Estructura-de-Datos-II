@@ -819,7 +819,7 @@ class UI:
 
     # ── help screen ───────────────────────────────────────────
 
-    def draw_help_screen(self, screen: pygame.Surface, character: Character):
+    def draw_help_screen(self, screen: pygame.Surface, character: Character, controller_connected: bool = False):
         """Full-screen help / controls reference."""
         screen.fill(UI_BG)
         cx = SCREEN_WIDTH // 2
@@ -829,52 +829,59 @@ class UI:
             self.font_title.render("HELP  —  Controls", True, UI_ACCENT).get_rect(center=(cx, 45)),
         )
 
+        header_y = 80
+        screen.blit(self.font_hud_lg.render("Action", True, UI_TEXT), (80, header_y))
+        screen.blit(self.font_hud_lg.render("Keyboard", True, UI_TEXT), (380, header_y))
+        screen.blit(self.font_hud_lg.render("Controller", True, UI_TEXT), (680, header_y))
+        pygame.draw.line(screen, UI_ACCENT, (60, header_y + 30), (SCREEN_WIDTH - 60, header_y + 30), 2)
+
         lines = [
-            ("Movement",     "W A S D"),
-            ("Sprint",       "Hold SHIFT"),
-            ("Interact",     "E"),
-            ("Use Item",     "E"),
-            ("Inventory",    "I"),
-            ("Skill Tree",   "K"),
-            ("Map",          "M"),
-            ("Help",         "H"),
-            ("Pause",        "ESC"),
+            ("Movement",     "W A S D",      "Left Stick"),
+            ("Sprint",       "Hold SHIFT",   "Hold LT / RT"),
+            ("Interact / OK","E / Enter",    "A Button"),
+            ("Cancel / Back","ESC / B",      "B Button"),
+            ("Wallet",       "I",            "X Button"),
+            ("Skill Tree",   "K",            "Y Button"),
+            ("Map",          "M",            "Back / View"),
+            ("Help",         "H",            "H (Keyboard)"),
+            ("Pause",        "ESC",          "Start / Menu"),
         ]
 
         lines += [
-            ("", ""),
-            ("── COMBAT ──", ""),
-            ("Light Attack", "J"),
-            ("Heavy Attack", "U"),
-            ("Block",        "L"),
-            ("Dash",         "SPACE"),
+            ("", "", ""),
+            ("── COMBAT ──", "", ""),
+            ("Light Attack", "J",            "LB Button"),
+            ("Heavy Attack", "U",            "RB Button"),
+            ("Block",        "L",            "RB Button (Hold)"),
+            ("Dash",         "SPACE",        "RT Trigger / Y Button"),
         ]
 
         lines += [
-            ("", ""),
-            ("── TIPS ──", ""),
-            ("Talk to NPCs to uncover the Smile Club.", ""),
-            ("Your actions affect your reputation!", ""),
-            ("Help others during 'bad day' events.", ""),
-            ("Discover the truth behind the Smile Club.", ""),
+            ("", "", ""),
+            ("── TIPS ──", "", ""),
+            ("Talk to NPCs to uncover the Smile Club.", "", ""),
+            ("Your actions affect your reputation!", "", ""),
+            ("Help others during 'bad day' events.", "", ""),
+            ("Discover the truth behind the Smile Club.", "", ""),
         ]
 
-        y = 100
-        for label, value in lines:
+        y = header_y + 45
+        for label, kb_val, gp_val in lines:
             if label.startswith("──"):
                 screen.blit(self.font_hud_lg.render(label, True, UI_ACCENT), (60, y))
             elif label == "":
                 pass
-            elif value:
+            elif kb_val or gp_val:
                 screen.blit(self.font_hud_md.render(label, True, UI_TEXT), (80, y))
-                screen.blit(self.font_hud_md.render(value, True, UI_ACCENT), (380, y))
+                screen.blit(self.font_hud_md.render(kb_val, True, UI_ACCENT), (380, y))
+                screen.blit(self.font_hud_md.render(gp_val, True, UI_ACCENT), (680, y))
             else:
                 screen.blit(self.font_hud_sm.render(label, True, UI_TEXT_DIM), (100, y))
-            y += 28
+            y += 26
 
         screen.blit(
             self.font_hint.render("Press H to close", True, UI_TEXT_DIM),
-            (cx - 60, SCREEN_HEIGHT - 30),
+            (cx - 60, SCREEN_HEIGHT - 35),
         )
 
     # ── inventory / skill tree delegates ──────────────────────
@@ -902,9 +909,18 @@ class UI:
         desc_surf = self.font_hud_md.render("You were defeated. The Smile Club remains in the shadows.", True, UI_TEXT)
         screen.blit(desc_surf, desc_surf.get_rect(center=(cx, 340)))
 
+        from src.controller import get_controller
+        controller = get_controller()
+        controller_connected = controller.connected and getattr(controller, "last_input_method", "keyboard") == "controller"
+
+        if controller_connected:
+            hint_txt = "Press A to return to menu"
+        else:
+            hint_txt = "Press ENTER or ESC to return to menu"
+
         screen.blit(
-            self.font_hint.render("Press ESC to return to menu", True, UI_TEXT_DIM),
-            self.font_hint.render("Press ESC to return to menu", True, UI_TEXT_DIM).get_rect(center=(cx, SCREEN_HEIGHT - 60))
+            self.font_hint.render(hint_txt, True, UI_TEXT_DIM),
+            self.font_hint.render(hint_txt, True, UI_TEXT_DIM).get_rect(center=(cx, SCREEN_HEIGHT - 60))
         )
 
     def draw_victory_credits(self, screen: pygame.Surface, game):

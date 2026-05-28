@@ -3030,13 +3030,24 @@ class SchoolMap:
             f.garden_decorations.append(('sprite', 3100 - 25, ty, next_bush()))
             f.garden_decorations.append(('sprite', 3880 + 25, ty, next_bush()))
 
-        # Parking Lot lights (faros) - moved inside parking lot area
-        f.garden_decorations.append(('top_sprite', 0, 2150, 'assets/UI/faro.png'))
-        f.garden_decorations.append(('top_sprite', 1150, 2150, 'assets/UI/faro.png'))
-        f.garden_decorations.append(('top_sprite', 0, 2600, 'assets/UI/faro.png'))
-        f.garden_decorations.append(('top_sprite', 1150, 2760, 'assets/UI/faro.png'))
-        f.garden_decorations.append(('top_sprite', 600, 2150, 'assets/UI/faro.png'))
-        f.garden_decorations.append(('top_sprite', 600, 2600, 'assets/UI/faro.png'))
+        # Campus path streetlights (faros)
+        # 1) Road to English Gardens
+        # path_gardens_v (left side of vertical path to gardens)
+        for y in [1300, 1550, 1800]:
+            f.garden_decorations.append(('top_sprite', 1060, y, 'assets/UI/faro.png'))
+        # path_gardens_h (bottom side of horizontal path to gardens)
+        for x in [1350]:
+            f.garden_decorations.append(('top_sprite', x, 2070, 'assets/UI/faro.png'))
+
+        # 2) Road to Athletic Coliseum
+        # path_coliseum_v (left side of vertical path to coliseum)
+        for y in [1200, 1450, 1700]:
+            f.garden_decorations.append(('top_sprite', 3270, y, 'assets/UI/faro.png'))
+        # path_coliseum_h (bottom side of horizontal path to coliseum)
+        for x in [2750, 3050]:
+            f.garden_decorations.append(('top_sprite', x, 2070, 'assets/UI/faro.png'))
+
+
 
         # Portal: building entrance → 1F reception
         f.transitions.append(FloorTransition(
